@@ -2,6 +2,7 @@
 
 import CallToAction from "@/components/CallToAction";
 import FAQSection from "@/components/FAQSection";
+import MaxWidthWrapper from "@/components/MaxWidthWrapper";
 import StepsSections from "@/components/StepsSections";
 import dynamic from "next/dynamic";
 
@@ -11,56 +12,55 @@ const DynamicReviews = dynamic(() => import("@/components/Reviews"), {
 
 export default function Page() {
   return (
-    <div className="overflow-hidden">
-      <div className="relative">
-        <div className="w-full lg:h-full absolute bg-opacity-0 backdrop-blur-3xl"></div>
-        <div className="container pt-[90px] lg:relative lg:min-h-[490px] lg:pt-[160px] lg:pb-10 lg:flex lg:flex-col lg:justify-center lg:items-center">
-          <div className="relative w-full flex justify-center">
-            <h1 className="text-neutral-ink-900 mb-8 text-center lg:text-center H30B tlg:H56B !leading-normal">
-              Générer vos bulletins scolaires
-            </h1>
-          </div>
-          <div className="text-neutral-600 relative text-center tlg:text-left T16R tlg:T20R">
-            {" "}
-            Simplifiez la gestion et la distribution des bulletins scolaires semestriels des
-            apprenants, <br /> avec notre application innovante.
-          </div>
-          <CallToAction />
-        </div>
-      </div>
+    <div className="bg-slate-50 grainy-light">
+      <section>
+        <MaxWidthWrapper className="pb-24 pt-10 sm:pb-22 lg:gap-x-0 xl:gap-x-8 lg:pt-20 xl:pt-22 lg:pb-50">
+          <div className="col-span-2 px-6 lg:px-0 lg:pt-4">
+            <div className="relative mx-auto text-center lg:text-left flex flex-col items-center lg:items-center">
+              <h1 className="relative w-fit tracking-tight text-balance mt-16 font-bold !leading-tight text-gray-900 text-5xl md:text-6xl lg:text-7xl">
+                Générer vos bulletins scolaires
+              </h1>
 
-      <section className="lg:pt-24 lg:pb-[120px]" id="utilisation">
-        <div className="container">
-          <div className="lg:max-w-[60%] mx-auto">
-            <h2 className="text-center lg:text-4xl text-2xl font-bold leading-10">
-              Comment <span className="inline-block leading-normal text-primary-50"> générer</span>{" "}
-              des bulletins pour les apprenants ?
+              <div>
+                <p className="mt-8 text-lg max-w-prose text-center lg:text-center text-balance md:text-wrap">
+                  Simplifiez la gestion et la distribution des{" "}
+                  <span className="font-semibold">bulletins scolaires</span> semestriels des
+                  apprenants, avec notre application innovante.
+                </p>
+                <CallToAction />
+              </div>
+            </div>
+          </div>
+        </MaxWidthWrapper>
+      </section>
+
+      <section className="bg-slate-100 grainy-dark py-24" id="utilisation">
+        <MaxWidthWrapper className="flex flex-col items-center gap-16 sm:gap-32">
+          <div className="flex flex-col lg:flex-row items-center gap-4 sm:gap-6">
+            <h2 className="order-1 mt-2 tracking-tight text-center !leading-tight font-bold text-4xl md:text-5xl text-gray-900">
+              Comment <span className="relative px-2 text-primary-50"> générer</span> des bulletins
+              pour les apprenants ?
             </h2>
           </div>
           <StepsSections />
+        </MaxWidthWrapper>
+        <div className="pt-16">
+          <DynamicReviews />
         </div>
       </section>
 
-      <section>
-        <h2 className="text-center lg:text-4xl text-2xl font-bold leading-10">
-          Voici quelques{" "}
-          <span className="inline-block leading-normal text-primary-50"> modèles</span> de bulletins
-        </h2>
-        <DynamicReviews />
-      </section>
-
       <section
-        className="py-10 tlg:py-[120px] bg-gradient-to-r from-third-50 to-primary-50 snap-block"
+        className="py-10 lg:py-[60px] bg-gradient-to-r from-third-50 to-primary-50 snap-block"
         id="faq"
       >
-        <div className="container flex lg:flex-rowflex-col lg:gap-[112px]">
-          <div className="mb-6 lg:mb-12tlg:w-1/2">
+        <div className="container flex lg:flex-row flex-col lg:gap-[112px]">
+          <div className="mb-6 lg:mb-12 lg:w-1/2">
             <h2 className="text-white text-2xl lg:text-4xl font-bold lg:leading-[46px]">
               Questions fréquemment
               <br /> posées
             </h2>
-            <p className="text-white text-sm tlg:text-xl font-medium tlg:leading-7 leading-tight mt-6">
-              Si vous êtes bloqué quelquepart, nous sommes là pour vous aider !
+            <p className="text-white text-sm lg:text-xl font-medium lg:leading-7 leading-tight mt-6">
+              Si vous êtes bloqué quelque part, nous sommes là pour vous aider !
             </p>
           </div>
           <FAQSection />

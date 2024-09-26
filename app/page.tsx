@@ -6,31 +6,34 @@ import { getServerUrl } from "@/lib/getServerUrl";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function Page() {
   const { status } = useSession();
   const router = useRouter();
   const serverUrl = getServerUrl();
 
-  if (status === "authenticated") {
-    // Example usage of serverUrl
-    fetch(`${serverUrl}/api/auth/providers`)
-      .then((response) => {
+  useEffect(() => {
+    const fetchProviders = async () => {
+      try {
+        const response = await fetch(`${serverUrl}/api/auth/providers`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        return response.json();
-      })
-      .then((data) => {
+        const data = await response.json();
         console.log("Providers:", data);
-      })
-      .catch((error) => {
+      } catch (error) {
         console.error("Error fetching providers:", error);
-      });
-    if (process.env.NODE_ENV === "production") {
-      router.push("/home");
+      }
+    };
+
+    if (status === "authenticated") {
+      fetchProviders();
+      if (process.env.NODE_ENV === "production") {
+        router.push("/home");
+      }
     }
-  }
+  }, [status, serverUrl, router]);
 
   return (
     <main className="relative h-screen w-full">

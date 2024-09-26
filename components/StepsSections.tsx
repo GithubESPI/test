@@ -1,9 +1,9 @@
 import { stepsData } from "@/constants";
-import Image from "next/image"; // Importer le composant Image
+import Image from "next/image";
 
 const StepsSection = () => {
   return (
-    <div className="space-y-12 pt-10 lg:pt-[72px] lg:space-y-20">
+    <div className="space-y-12 pt-10 lg:pt-[12px] lg:space-y-20">
       {stepsData.map((step, index) => (
         <div
           key={index}
@@ -11,7 +11,7 @@ const StepsSection = () => {
             index % 2 === 1 ? "flex-row-reverse" : ""
           }`}
         >
-          <div className="flex flex-col gap-5 w-full tlg:w-1/2">
+          <div className="flex flex-col gap-5 w-full lg:w-1/2">
             <div
               className={`w-14 h-14 bg-${
                 index % 2 === 0 ? "violet" : "cyan"
@@ -28,7 +28,7 @@ const StepsSection = () => {
             </div>
           </div>
 
-          <div className="flex flex-col justify-center w-full tlg:w-1/2">
+          <div className="flex flex-col justify-center w-full lg:w-1/2">
             <div className="max-w-[921px] m-auto bg-white lg:p-6 p-3 rounded-2xl shadow-wtm-image-compare-shadow sm:mt-10">
               <div className="h-auto w-full">
                 <div className="flex justify-center items-center">
@@ -44,13 +44,13 @@ const StepsSection = () => {
                           className="relative w-full rounded-2xl slider-feature-split-line rendered"
                         />
                       ) : (
-                        step.imageSrc && ( // Vérifiez que `step.imageSrc` n'est pas undefined
+                        step.imageSrc && (
                           <Image
                             src={step.imageSrc}
                             alt="video placeholder"
-                            width={921} // Ajoutez une largeur et une hauteur pour optimiser les performances
+                            width={921}
                             height={518}
-                            layout="responsive" // Vous pouvez utiliser "responsive" ou "intrinsic"
+                            layout="responsive"
                             className="relative w-full rounded-2xl slider-feature-split-line rendered"
                             loading="lazy"
                           />

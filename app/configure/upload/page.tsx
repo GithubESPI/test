@@ -22,8 +22,6 @@ const Page = () => {
   const [wordFile, setWordFile] = useState<File | null>(null);
 
   useEffect(() => {
-    console.log("Session status: ", status);
-    console.log("Session data: ", session);
     if (session) {
       console.log("Session user: ", session.user);
     }
@@ -31,26 +29,19 @@ const Page = () => {
 
   const { startUpload } = useUploadThing("excelUploader", {
     onClientUploadComplete: () => {
-      console.log("Upload complete");
       const configId = session?.user?.id;
       startTransition(() => {
-        console.log(`Redirecting to /configure/design?id=${configId}`);
         router.push(`/configure/design?id=${configId}`);
       });
     },
     onUploadProgress(p) {
-      console.log(`Upload progress: ${p}`);
       setUploadProgress(p);
     },
   });
 
   const onDropRejected = (rejectedFiles: FileRejection[]) => {
     const [file] = rejectedFiles;
-
     setIsDragOver(false);
-
-    console.log(`File rejected: ${file.file.name} of type ${file.file.type}`);
-
     toast({
       title: `${file.file.type} type is not supported.`,
       description: "Please choose a PNG, JPG, JPEG, Excel, or Word document instead.",
@@ -60,10 +51,6 @@ const Page = () => {
 
   const onDropAccepted = (acceptedFiles: File[]) => {
     const userId = session?.user?.id;
-
-    console.log("Accepted files: ", acceptedFiles);
-    console.log("User ID: ", userId);
-
     if (!userId) {
       toast({
         title: "User ID not found",
@@ -96,12 +83,9 @@ const Page = () => {
   };
 
   useEffect(() => {
-    console.log("useEffect triggered");
     if (excelFile && wordFile) {
       const userId = session?.user?.id;
-      console.log("User ID in useEffect: ", userId);
       if (userId) {
-        console.log("Starting upload");
         setIsUploading(true);
         startUpload([excelFile, wordFile], { userId });
         setMissingFile(null);
