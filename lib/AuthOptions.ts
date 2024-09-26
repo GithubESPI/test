@@ -83,8 +83,9 @@ export const authOptions: NextAuthOptions = {
         return false; // Return false on error
       }
     },
-    async session({ session }) {
-      // Ajoutez des informations supplémentaires à la session si nécessaire
+    async session({ session, user }) {
+      // Ajoutez l'ID de l'utilisateur à la session
+      session.user.id = user.id;
       return session;
     },
   },

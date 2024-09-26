@@ -6,19 +6,9 @@ import { useUploadThing } from "@/lib/uploadthing";
 import { cn } from "@/lib/utils";
 import { FileUp, Loader2, MousePointerSquareDashed } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { redirect } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import Dropzone, { FileRejection } from "react-dropzone";
-
-/* eslint-disable no-console */
-
-const log = (message: string, data?: unknown, error: boolean = false) => {
-  if (process.env.NODE_ENV === "development") {
-    const output = data ? `${message} ${JSON.stringify(data, null, 2)}` : message;
-    error ? console.error(output) : console.log(output);
-  }
-};
-/* eslint-disable no-console */
 
 const Page = () => {
   const { toast } = useToast();
@@ -26,18 +16,30 @@ const Page = () => {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [missingFile, setMissingFile] = useState<string | null>(null);
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [wordFile, setWordFile] = useState<File | null>(null);
 
+  useEffect(() => {
+    console.log("Session status: ", status);
+    console.log("Session data: ", session);
+    if (session) {
+      console.log("Session user: ", session.user);
+    }
+  }, [session, status]);
+
   const { startUpload } = useUploadThing("excelUploader", {
     onClientUploadComplete: () => {
+      console.log("Upload complete");
       const configId = session?.user?.id;
       startTransition(() => {
-        redirect(`/configure/design?id=${configId}`);
+        console.log(`Redirecting to /configure/design?id=${configId}`);
+        router.push(`/configure/design?id=${configId}`);
       });
     },
     onUploadProgress(p) {
+      console.log(`Upload progress: ${p}`);
       setUploadProgress(p);
     },
   });
@@ -47,7 +49,7 @@ const Page = () => {
 
     setIsDragOver(false);
 
-    log(`Fichier rejeté: ${file.file.name} de type ${file.file.type}`);
+    console.log(`File rejected: ${file.file.name} of type ${file.file.type}`);
 
     toast({
       title: `${file.file.type} type is not supported.`,
@@ -59,7 +61,8 @@ const Page = () => {
   const onDropAccepted = (acceptedFiles: File[]) => {
     const userId = session?.user?.id;
 
-    log("Fichiers acceptés: ", acceptedFiles);
+    console.log("Accepted files: ", acceptedFiles);
+    console.log("User ID: ", userId);
 
     if (!userId) {
       toast({
@@ -93,9 +96,12 @@ const Page = () => {
   };
 
   useEffect(() => {
+    console.log("useEffect triggered");
     if (excelFile && wordFile) {
       const userId = session?.user?.id;
+      console.log("User ID in useEffect: ", userId);
       if (userId) {
+        console.log("Starting upload");
         setIsUploading(true);
         startUpload([excelFile, wordFile], { userId });
         setMissingFile(null);
