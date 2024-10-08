@@ -167,7 +167,7 @@ const DesignPreview = () => {
   // };
 
   return (
-    <>
+    <div>
       <div className="mt-20 flex flex-col items-center md:grid text-sm sm:grid-cols-12 sm:grid-rows-1 sm:gap-x-6 md:gap-x-8 lg:gap-x-12">
         <div className="md:col-span-4 lg:col-span-3 md:row-span-2 md:row-end-2">
           <Bulletin className={cn("max-w-[150px] md:max-w-full")} imgSrc="" />
@@ -186,10 +186,10 @@ const DesignPreview = () => {
               {isLoading ? (
                 <LoaderCircle className="animate-spin" />
               ) : (
-                <>
+                <div>
                   Générer vos bulletins
                   <ArrowRight className="h-4 w-4 ml-1.5 inline" />
-                </>
+                </div>
               )}
             </Button>
             &nbsp;&nbsp;
@@ -222,7 +222,7 @@ const DesignPreview = () => {
       >
         {isLoading && <Progress value={progress} className="w-full" />}
       </LoginModal>
-    </>
+    </div>
   );
 };
 

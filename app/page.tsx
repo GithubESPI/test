@@ -64,7 +64,7 @@ export default function Page() {
                 Connectez-vous
               </CardTitle>
               <CardDescription className="text-center pb-8 pt-3">
-                Pour continuer sur l&apos;application des bulletin
+                Pour continuer sur l&apos;application des bulletins
               </CardDescription>
               <ButtonProvider />
             </CardContent>
