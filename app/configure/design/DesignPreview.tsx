@@ -46,7 +46,7 @@ const DesignPreview = () => {
   const websocketRef = useRef<WebSocket | null>(null);
 
   const initializeWebSocket = (sessionId: string) => {
-    const ws = new WebSocket(`ws://https://backbulletin-bceehth0acgwc7gr.canadacentral-01.azurewebsites.net/ws/progress/${sessionId}`);
+    const ws = new WebSocket(`ws://http://20.216.213.212/ws/progress/${sessionId}`);
     websocketRef.current = ws;
 
     ws.onopen = () => {
@@ -85,7 +85,7 @@ const DesignPreview = () => {
       initializeWebSocket(sessionId);
 
       const generateResponse = await fetch(
-        "https://backbulletin-bceehth0acgwc7gr.canadacentral-01.azurewebsites.net/upload-and-integrate-excel-and-word",
+        "http://20.216.213.212/upload-and-integrate-excel-and-word",
         {
           method: "POST",
           headers: {
