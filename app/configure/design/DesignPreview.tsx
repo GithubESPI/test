@@ -117,7 +117,7 @@ const DesignPreview = () => {
         );
         // setShowImportButton(true); // Affiche le bouton d'importation après un succès
         const link = document.createElement("a");
-        link.href = `https://backbulletin-bceehth0acgwc7gr.canadacentral-01.azurewebsites.net/download-zip/${encodeURIComponent(
+        link.href = `http://20.216.213.212/download-zip/${encodeURIComponent(
           generateData.zip_path.split("\\").pop() || ""
         )}`;
         link.setAttribute("download", "bulletins.zip");
@@ -147,7 +147,7 @@ const DesignPreview = () => {
   //   setModalMessage("Importation des bulletins depuis le répertoire en cours...");
 
   //   try {
-  //     const response = await fetch("https://backbulletin-bceehth0acgwc7gr.canadacentral-01.azurewebsites.net/import-bulletins-from-directory", {
+  //     const response = await fetch("http://20.216.213.212/import-bulletins-from-directory", {
   //       method: "POST",
   //     });
 
