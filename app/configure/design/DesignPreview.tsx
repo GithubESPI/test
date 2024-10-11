@@ -46,7 +46,7 @@ const DesignPreview = () => {
   const websocketRef = useRef<WebSocket | null>(null);
 
   const initializeWebSocket = (sessionId: string) => {
-    const ws = new WebSocket(`wss://http://20.216.213.212/ws/progress/${sessionId}`);
+    const ws = new WebSocket(`wss://http://instancebulletins.groupe-espi.fr/ws/progress/${sessionId}`);
     websocketRef.current = ws;
 
     ws.onopen = () => {
@@ -85,7 +85,7 @@ const DesignPreview = () => {
       initializeWebSocket(sessionId);
 
       const generateResponse = await fetch(
-        "http://20.216.213.212/upload-and-integrate-excel-and-word",
+        "http://instancebulletins.groupe-espi.fr/upload-and-integrate-excel-and-word",
         {
           method: "POST",
           headers: {
@@ -117,7 +117,7 @@ const DesignPreview = () => {
         );
         // setShowImportButton(true); // Affiche le bouton d'importation après un succès
         const link = document.createElement("a");
-        link.href = `http://20.216.213.212/download-zip/${encodeURIComponent(
+        link.href = `http://instancebulletins.groupe-espi.fr/download-zip/${encodeURIComponent(
           generateData.zip_path.split("\\").pop() || ""
         )}`;
         link.setAttribute("download", "bulletins.zip");
@@ -147,7 +147,7 @@ const DesignPreview = () => {
   //   setModalMessage("Importation des bulletins depuis le répertoire en cours...");
 
   //   try {
-  //     const response = await fetch("http://20.216.213.212/import-bulletins-from-directory", {
+  //     const response = await fetch("http://instancebulletins.groupe-espi.fr/import-bulletins-from-directory", {
   //       method: "POST",
   //     });
 
