@@ -9,7 +9,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { sessionId, excelUrl, wordUrl } = req.body;
 
   try {
-    const response = await fetch("https://bulletinappservice-hvb6epfjfrc8gbdm.francecentral-01.azurewebsites.net/upload-and-integrate-excel-and-word", {
+    const response = await fetch("https://bulletin-espi-api.fly.dev/upload-and-integrate-excel-and-word", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
