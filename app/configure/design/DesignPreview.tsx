@@ -46,7 +46,7 @@ const DesignPreview = () => {
   const websocketRef = useRef<WebSocket | null>(null);
 
   const initializeWebSocket = (sessionId: string) => {
-    const ws = new WebSocket(`wss://https://bulletinappservice-hvb6epfjfrc8gbdm.francecentral-01.azurewebsites.net/ws/progress/${sessionId}`);
+    const ws = new WebSocket(`wss://https://bulletin-espi-api.fly.dev/ws/progress/${sessionId}`);
     websocketRef.current = ws;
 
     ws.onopen = () => {
@@ -85,7 +85,7 @@ const DesignPreview = () => {
       initializeWebSocket(sessionId);
 
       const generateResponse = await fetch(
-        "https://bulletinappservice-hvb6epfjfrc8gbdm.francecentral-01.azurewebsites.net/upload-and-integrate-excel-and-word",
+        "https://bulletin-espi-api.fly.dev/upload-and-integrate-excel-and-word",
         {
           method: "POST",
           headers: {
@@ -117,7 +117,7 @@ const DesignPreview = () => {
         );
         // setShowImportButton(true); // Affiche le bouton d'importation après un succès
         const link = document.createElement("a");
-        link.href = `https://bulletinappservice-hvb6epfjfrc8gbdm.francecentral-01.azurewebsites.net/download-zip/${encodeURIComponent(
+        link.href = `https://bulletin-espi-api.fly.dev/download-zip/${encodeURIComponent(
           generateData.zip_path.split("\\").pop() || ""
         )}`;
         link.setAttribute("download", "bulletins.zip");
@@ -147,7 +147,7 @@ const DesignPreview = () => {
   //   setModalMessage("Importation des bulletins depuis le répertoire en cours...");
 
   //   try {
-  //     const response = await fetch("https://bulletinappservice-hvb6epfjfrc8gbdm.francecentral-01.azurewebsites.net/import-bulletins-from-directory", {
+  //     const response = await fetch("https://bulletin-espi-api.fly.dev/import-bulletins-from-directory", {
   //       method: "POST",
   //     });
 
