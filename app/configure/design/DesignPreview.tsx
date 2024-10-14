@@ -46,7 +46,7 @@ const DesignPreview = () => {
   const websocketRef = useRef<WebSocket | null>(null);
 
   const initializeWebSocket = (sessionId: string) => {
-    const ws = new WebSocket(`wss://https://backendespi.fly.dev/ws/progress/${sessionId}`);
+    const ws = new WebSocket(`wss://backendespi.fly.dev/ws/progress/${sessionId}`);
     websocketRef.current = ws;
 
     ws.onopen = () => {
@@ -98,6 +98,7 @@ const DesignPreview = () => {
           }),
         }
       );
+
 
       if (!generateResponse.ok) {
         const errorText = await generateResponse.text();
