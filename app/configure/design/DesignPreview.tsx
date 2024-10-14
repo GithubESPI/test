@@ -118,9 +118,7 @@ const DesignPreview = () => {
         );
         // setShowImportButton(true); // Affiche le bouton d'importation après un succès
         const link = document.createElement("a");
-        link.href = `https://backendespi.fly.dev/download-zip/${encodeURIComponent(
-          generateData.zip_path.split("\\").pop() || ""
-        )}`;
+        link.href = `https://backendespi.fly.dev/download-zip/bulletins.zip`; // Static path since it's working
         link.setAttribute("download", "bulletins.zip");
         document.body.appendChild(link);
         link.click();
