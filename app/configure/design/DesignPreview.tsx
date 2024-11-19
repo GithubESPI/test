@@ -117,7 +117,6 @@ const DesignPreview = () => {
           "Les bulletins sont dans le dossier de téléchargement de votre navigateur."
         );
         // setShowImportButton(true); // Affiche le bouton d'importation après un succès
-        const zipFilename = generateData.zip_path;
         const link = document.createElement("a");
         link.href = `https://backendespi.fly.dev/download-zip/bulletins.zip`;
         link.setAttribute("download", "bulletins.zip");
