@@ -50,12 +50,12 @@ const DesignPreview = () => {
     websocketRef.current = ws;
 
     ws.onopen = () => {
-      log("WebSocket connection established");
+      log("✅ WebSocket connection established");
     };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      log(`WebSocket message received: ${JSON.stringify(data)}`);
+      log(`📩 WebSocket message received: ${JSON.stringify(data)}`);
 
       if (data.progress !== undefined) {
         setProgress(data.progress);
@@ -63,12 +63,16 @@ const DesignPreview = () => {
       }
 
       if (data.progress === 100) {
-        setModalMessage("Génération terminée ! Vérification du fichier...");
+        setModalMessage("✅ Génération terminée ! Vérification du fichier...");
       }
     };
 
+    ws.onerror = (error) => {
+      log(`❌ WebSocket error: ${error}`);
+    };
+
     ws.onclose = () => {
-      log("WebSocket connection closed");
+      log("⚠️ WebSocket connection closed");
       websocketRef.current = null;
     };
   };
