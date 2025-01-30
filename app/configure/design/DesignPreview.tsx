@@ -46,7 +46,7 @@ const DesignPreview = () => {
   const websocketRef = useRef<WebSocket | null>(null);
 
   const initializeWebSocket = (user_id: string) => {
-    const ws = new WebSocket(`wss://backendespi.fly.dev/ws/progress/${user_id}`);
+    const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${user_id}`);
     websocketRef.current = ws;
 
     ws.onopen = () => {
@@ -85,7 +85,7 @@ const DesignPreview = () => {
       initializeWebSocket(user_id);
 
       const generateResponse = await fetch(
-        "https://backendespi.fly.dev/upload-and-integrate-excel-and-word",
+        "https://bulletins-app.fly.dev//upload-and-integrate-excel-and-word",
         {
           method: "POST",
           headers: {
@@ -117,7 +117,7 @@ const DesignPreview = () => {
         );
         // setShowImportButton(true); // Affiche le bouton d'importation après un succès
         const link = document.createElement("a");
-        link.href = `https://backendespi.fly.dev/download-zip/bulletins.zip`;
+        link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
         link.setAttribute("download", "bulletins.zip");
         document.body.appendChild(link);
         link.click();
