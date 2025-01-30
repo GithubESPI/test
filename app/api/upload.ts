@@ -22,7 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           "Accept": "application/json"
         },
         body: JSON.stringify({
-          sessionId,
+          user_Id,
           excelUrl,
           wordUrl,
         }),
