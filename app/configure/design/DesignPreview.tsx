@@ -65,73 +65,73 @@ const DesignPreview = () => {
     };
   };
 
-const handleGenerate = async () => {
-  setIsLoading(true);
-  setIsModalOpen(true);
-  setIsSuccess(null);
-  setModalMessage("Chargement ...");
+  const handleGenerate = async () => {
+    setIsLoading(true);
+    setIsModalOpen(true);
+    setIsSuccess(null);
+    setModalMessage("Chargement ...");
 
-  try {
-    // Récupérer les documents Excel et Word depuis Next.js API
-    const response = await fetch(`/api/documents?userId=${sessionId}`);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
+    try {
+      // Récupérer les documents Excel et Word depuis Next.js API
+      const response = await fetch(`/api/documents?userId=${sessionId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
 
-    await checkUrlAccess(data.excelUrl);
-    await checkUrlAccess(data.wordUrl);
+      await checkUrlAccess(data.excelUrl);
+      await checkUrlAccess(data.wordUrl);
 
-    // Initialiser la connexion WebSocket
-    initializeWebSocket(sessionId);
+      // Initialiser la connexion WebSocket
+      initializeWebSocket(sessionId);
 
-    // Envoyer les fichiers à FastAPI sur Fly.io
-    const generateResponse = await fetch(`https://bulletins-app.fly.dev/upload-and-integrate-excel-and-word`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        user_id: sessionId,
-        excelUrl: data.excelUrl,
-        wordUrl: data.wordUrl,
-      }),
-    });
+      // Envoyer les fichiers à FastAPI sur Fly.io
+      const generateResponse = await fetch(
+        `https://bulletins-app.fly.dev/upload-and-integrate-excel-and-word`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: sessionId,
+            excelUrl: data.excelUrl,
+            wordUrl: data.wordUrl,
+          }),
+        }
+      );
 
-    if (!generateResponse.ok) {
-      const errorText = await generateResponse.text();
-      throw new Error(errorText || "Erreur inconnue lors de la génération des documents");
-    }
+      if (!generateResponse.ok) {
+        const errorText = await generateResponse.text();
+        throw new Error(errorText || "Erreur inconnue lors de la génération des documents");
+      }
 
-    const generateData = await generateResponse.json();
+      const generateData = await generateResponse.json();
 
-    if (generateData.message.includes("Files processed and zipped successfully")) {
-      setIsSuccess(true);
-      setModalMessage("Les bulletins sont prêts. Téléchargement en cours...");
-      
-      // Déclencher le téléchargement du fichier ZIP
-      const link = document.createElement("a");
-      link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
-      link.setAttribute("download", "bulletins.zip");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } else {
+      if (generateData.message.includes("Files processed and zipped successfully")) {
+        setIsSuccess(true);
+        setModalMessage("Les bulletins sont prêts. Téléchargement en cours...");
+
+        // Déclencher le téléchargement du fichier ZIP
+        const link = document.createElement("a");
+        link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
+        link.setAttribute("download", "bulletins.zip");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        setIsSuccess(false);
+        setModalMessage("Erreur lors de la génération des bulletins.");
+      }
+    } catch (error) {
+      log(`Erreur lors de la génération des documents: ${error}`, true);
       setIsSuccess(false);
-      setModalMessage("Erreur lors de la génération des bulletins.");
+      setModalMessage("Erreur lors de la génération des documents.");
+    } finally {
+      setIsLoading(false);
+      if (websocketRef.current) {
+        websocketRef.current.close();
+      }
     }
-  } catch (error) {
-    log(`Erreur lors de la génération des documents: ${error}`, true);
-    setIsSuccess(false);
-    setModalMessage("Erreur lors de la génération des documents.");
-  } finally {
-    setIsLoading(false);
-    if (websocketRef.current) {
-      websocketRef.current.close();
-    }
-  }
-};
-
+  };
 
   // const handleImportFromDirectory = async () => {
   //   setIsImportingFromDirectory(true);
