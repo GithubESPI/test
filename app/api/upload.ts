@@ -6,18 +6,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).end(); // Method Not Allowed
   }
 
-  const { sessionId, excelUrl, wordUrl } = req.body;
+  const { userId, excelUrl, wordUrl } = req.body;
 
   try {
-    const response = await fetch("https://backendespi.fly.dev/upload-and-integrate-excel-and-word", {
+    const response = await fetch("https://bulletins-app.fly.dev/process-excel", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        sessionId,
-        excelUrl,
-        wordUrl,
+        excel_url: excelUrl,
+        word_url: wordUrl,
+        user_id: userId,
       }),
     });
 
@@ -29,9 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const data = await response.json();
     res.status(200).json(data);
   } catch (error: unknown) {
-    // Remplacez `any` par `unknown`
     if (error instanceof Error) {
-      // Vérifiez si l'erreur est une instance d'Error
       res.status(500).json({ error: error.message });
     } else {
       res.status(500).json({ error: "An unknown error occurred" });
