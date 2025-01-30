@@ -32,7 +32,7 @@ const checkUrlAccess = async (url: string): Promise<void> => {
 
 const DesignPreview = () => {
   const { data: session } = useSession();
-  const user_id = session?.user?.id ?? "";
+  const sessionId = session?.user?.id ?? "";
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [modalMessage, setModalMessage] = useState<string>("");
@@ -45,8 +45,8 @@ const DesignPreview = () => {
 
   const websocketRef = useRef<WebSocket | null>(null);
 
-  const initializeWebSocket = (user_id: string) => {
-    const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${user_id}`);
+  const initializeWebSocket = (sessionId: string) => {
+    const ws = new WebSocket(`wss://backendespi.fly.dev/ws/progress/${sessionId}`);
     websocketRef.current = ws;
 
     ws.onopen = () => {
@@ -72,7 +72,7 @@ const DesignPreview = () => {
     setModalMessage("Chargement ...");
 
     try {
-      const response = await fetch(`/api/documents?userId=${user_id}`);
+      const response = await fetch(`/api/documents?userId=${sessionId}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -82,17 +82,17 @@ const DesignPreview = () => {
       await checkUrlAccess(data.wordUrl);
 
       // Initialize WebSocket connection to receive progress updates
-      initializeWebSocket(user_id);
+      initializeWebSocket(sessionId);
 
       const generateResponse = await fetch(
-        "https://bulletins-app.fly.dev//upload-and-integrate-excel-and-word",
+        "https://backendespi.fly.dev/upload-and-integrate-excel-and-word",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            user_id: user_id,
+            sessionId: sessionId,
             excelUrl: data.excelUrl,
             wordUrl: data.wordUrl,
           }),
@@ -117,7 +117,7 @@ const DesignPreview = () => {
         );
         // setShowImportButton(true); // Affiche le bouton d'importation après un succès
         const link = document.createElement("a");
-        link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
+        link.href = `https://backendespi.fly.dev/download-zip/bulletins.zip`;
         link.setAttribute("download", "bulletins.zip");
         document.body.appendChild(link);
         link.click();
