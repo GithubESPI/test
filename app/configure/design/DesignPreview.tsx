@@ -18,18 +18,6 @@ const log = (message: string, error: boolean = false) => {
 };
 /* eslint-enable no-console */
 
-const checkUrlAccess = async (url: string): Promise<void> => {
-  try {
-    const response = await fetch(url, { method: "HEAD" });
-    if (!response.ok) {
-      throw new Error(`Access denied to URL: ${url}`);
-    }
-  } catch (error: unknown) {
-    log(`Failed to access URL: ${url}`, true);
-    throw error;
-  }
-};
-
 const DesignPreview = () => {
   const { data: session } = useSession();
   const userId = session?.user?.id ?? "";
@@ -42,133 +30,114 @@ const DesignPreview = () => {
 
   const websocketRef = useRef<WebSocket | null>(null);
 
-  const initializeWebSocket = (userId: string) => {
-    const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${userId}`);
-    websocketRef.current = ws;
-
-    ws.onopen = () => {
-      log("WebSocket connection established");
-    };
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      log("WebSocket message received:", data);
-      setProgress(data.progress);
-    };
-
-    ws.onclose = () => {
-      log("WebSocket connection closed");
-      websocketRef.current = null;
-    };
-  };
-
   const handleGenerate = async () => {
-  setIsLoading(true);
-  setIsModalOpen(true);
-  setIsSuccess(null);
-  setModalMessage("Chargement ...");
+    setIsLoading(true);
+    setIsModalOpen(true);
+    setIsSuccess(null);
+    setModalMessage("Chargement ...");
 
-  try {
-    const response = await fetch(`/api/documents?userId=${userId}`);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-
-    // Initialize WebSocket connection
-    const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${userId}`);
-    
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      setProgress(data.progress);
-    };
-
-    // Première étape : Traitement de l'Excel
-    const formData = new FormData();
-    formData.append('excel_url', data.excelUrl);
-    formData.append('word_url', data.wordUrl);
-    formData.append('user_id', userId);
-
-    const generateResponse = await fetch(
-      "https://bulletins-app.fly.dev/process-excel",
-      {
-        method: "POST",
-        body: formData,
-        headers: {
-          'Accept': 'application/json',
-        }
+    try {
+      const response = await fetch(`/api/documents?userId=${userId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    );
+      const data = await response.json();
 
-    if (!generateResponse.ok) {
-      throw new Error("Erreur lors du traitement de l'Excel");
-    }
-
-    const generateData = await generateResponse.json();
-
-    // Deuxième étape : Génération du template Word
-    const wordTemplateResponse = await fetch(
-      "https://bulletins-app.fly.dev/get-word-template",
-      {
-        method: "POST",
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          user_id: userId
-        }),
-      }
-    );
-
-    if (!wordTemplateResponse.ok) {
-      throw new Error("Erreur lors de la génération du template Word");
-    }
-
-    const wordTemplateData = await wordTemplateResponse.json();
-
-    // Téléchargement du ZIP
-    if (wordTemplateData.message === "Bulletins générés et compressés avec succès") {
-      setIsSuccess(true);
-      setModalMessage("Les bulletins ont été générés avec succès");
+      // Initialize WebSocket connection
+      websocketRef.current = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${userId}`);
       
-      // Télécharger le fichier ZIP
-      const zipResponse = await fetch(
-        `https://bulletins-app.fly.dev/download-zip/bulletins.zip`,
+      websocketRef.current.onmessage = (event) => {
+        const wsData = JSON.parse(event.data);
+        setProgress(wsData.progress);
+      };
+
+      // Première étape : Traitement de l'Excel
+      const formData = new FormData();
+      formData.append('excel_url', data.excelUrl);
+      formData.append('word_url', data.wordUrl);
+      formData.append('user_id', userId);
+
+      const generateResponse = await fetch(
+        "https://bulletins-app.fly.dev/process-excel",
         {
+          method: "POST",
+          body: formData,
           headers: {
-            'Accept': 'application/zip'
+            'Accept': 'application/json',
           }
         }
       );
 
-      if (!zipResponse.ok) {
-        throw new Error("Erreur lors du téléchargement du ZIP");
+      if (!generateResponse.ok) {
+        throw new Error("Erreur lors du traitement de l'Excel");
       }
 
-      // Créer un blob à partir de la réponse
-      const blob = await zipResponse.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'bulletins.zip';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } else {
-      setIsSuccess(false);
-      setModalMessage("Erreur lors de la génération des bulletins");
-    }
+      // Deuxième étape : Génération du template Word
+      const wordTemplateResponse = await fetch(
+        "https://bulletins-app.fly.dev/get-word-template",
+        {
+          method: "POST",
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            user_id: userId
+          }),
+        }
+      );
 
-  } catch (error) {
-    console.error('Error:', error);
-    setIsSuccess(false);
-    setModalMessage(error instanceof Error ? error.message : "Une erreur est survenue");
-  } finally {
-    setIsLoading(false);
-  }
-};
+      if (!wordTemplateResponse.ok) {
+        throw new Error("Erreur lors de la génération du template Word");
+      }
+
+      const wordTemplateData = await wordTemplateResponse.json();
+
+      // Téléchargement du ZIP
+      if (wordTemplateData.message === "Bulletins générés et compressés avec succès") {
+        setIsSuccess(true);
+        setModalMessage("Les bulletins ont été générés avec succès");
+        
+        // Télécharger le fichier ZIP
+        const zipResponse = await fetch(
+          `https://bulletins-app.fly.dev/download-zip/bulletins.zip`,
+          {
+            headers: {
+              'Accept': 'application/zip'
+            }
+          }
+        );
+
+        if (!zipResponse.ok) {
+          throw new Error("Erreur lors du téléchargement du ZIP");
+        }
+
+        // Créer un blob à partir de la réponse
+        const blob = await zipResponse.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'bulletins.zip';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        setIsSuccess(false);
+        setModalMessage("Erreur lors de la génération des bulletins");
+      }
+
+    } catch (error) {
+      console.error('Error:', error);
+      setIsSuccess(false);
+      setModalMessage(error instanceof Error ? error.message : "Une erreur est survenue");
+    } finally {
+      if (websocketRef.current) {
+        websocketRef.current.close();
+      }
+      setIsLoading(false);
+    }
+  };
   
   return (
     <>
