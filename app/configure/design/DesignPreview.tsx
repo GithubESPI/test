@@ -81,6 +81,7 @@ const DesignPreview = () => {
       // Initialize WebSocket connection to receive progress updates
       initializeWebSocket(userId);
 
+      // Première étape : Traitement de l'Excel
       const formData = new FormData();
       formData.append('excel_url', data.excelUrl);
       formData.append('word_url', data.wordUrl);
@@ -101,11 +102,31 @@ const DesignPreview = () => {
 
       const generateData = await generateResponse.json();
 
+      // Deuxième étape : Génération du template Word
+      const wordTemplateResponse = await fetch(
+        "https://bulletins-app.fly.dev/get-word-template",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            user_id: userId
+          }),
+        }
+      );
+
+      if (!wordTemplateResponse.ok) {
+        throw new Error("Erreur lors de la génération du template Word");
+      }
+
+      const wordTemplateData = await wordTemplateResponse.json();
+
       if (generateData.message.includes("Failed to fetch API data")) {
         setModalMessage(
           "Impossible de récupérer les données de Yparéo. Veuillez réessayer plus tard."
         );
-      } else if (generateData.message.includes("Bulletins générés et compressés avec succès")) {
+      } else if (wordTemplateData.message.includes("Bulletins générés et compressés avec succès")) {
         setIsSuccess(true);
         setModalMessage(
           "Les bulletins sont dans le dossier de téléchargement de votre navigateur."
