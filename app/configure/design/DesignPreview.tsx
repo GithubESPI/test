@@ -55,8 +55,16 @@ const DesignPreview = () => {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      log("WebSocket message received:", data);
-      setProgress(data.progress);
+      log(`WebSocket message received: ${JSON.stringify(data)}`);
+
+      if (data.progress !== undefined) {
+        setProgress(data.progress);
+        setModalMessage(`Progression: ${data.progress}%`);
+      }
+
+      if (data.progress === 100) {
+        setModalMessage("Génération terminée ! Vérification du fichier...");
+      }
     };
 
     ws.onclose = () => {
