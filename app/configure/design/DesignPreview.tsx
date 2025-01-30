@@ -78,8 +78,13 @@ const DesignPreview = () => {
       await checkUrlAccess(data.excelUrl);
       await checkUrlAccess(data.wordUrl);
 
-      // Initialize WebSocket connection to receive progress updates
-      initializeWebSocket(userId);
+      // Initialize WebSocket connection
+      const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${userId}`);
+      
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        setProgress(data.progress);
+      };
 
       // Première étape : Traitement de l'Excel
       const formData = new FormData();
@@ -91,13 +96,15 @@ const DesignPreview = () => {
         "https://bulletins-app.fly.dev/process-excel",
         {
           method: "POST",
-          body: formData
+          body: formData,
+          headers: {
+            'Accept': 'application/json',
+          }
         }
       );
 
       if (!generateResponse.ok) {
-        const errorText = await generateResponse.text();
-        throw new Error(errorText || "Unknown error during document generation");
+        throw new Error("Erreur lors du traitement de l'Excel");
       }
 
       const generateData = await generateResponse.json();
@@ -108,7 +115,8 @@ const DesignPreview = () => {
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
           },
           body: JSON.stringify({
             user_id: userId
@@ -122,39 +130,49 @@ const DesignPreview = () => {
 
       const wordTemplateData = await wordTemplateResponse.json();
 
-      if (generateData.message.includes("Failed to fetch API data")) {
-        setModalMessage(
-          "Impossible de récupérer les données de Yparéo. Veuillez réessayer plus tard."
-        );
-      } else if (wordTemplateData.message.includes("Bulletins générés et compressés avec succès")) {
+      // Téléchargement du ZIP
+      if (wordTemplateData.message === "Bulletins générés et compressés avec succès") {
         setIsSuccess(true);
-        setModalMessage(
-          "Les bulletins sont dans le dossier de téléchargement de votre navigateur."
+        setModalMessage("Les bulletins ont été générés avec succès");
+        
+        // Télécharger le fichier ZIP
+        const zipResponse = await fetch(
+          `https://bulletins-app.fly.dev/download-zip/bulletins.zip`,
+          {
+            headers: {
+              'Accept': 'application/zip'
+            }
+          }
         );
-        const link = document.createElement("a");
-        link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
-        link.setAttribute("download", "bulletins.zip");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+
+        if (!zipResponse.ok) {
+          throw new Error("Erreur lors du téléchargement du ZIP");
+        }
+
+        // Créer un blob à partir de la réponse
+        const blob = await zipResponse.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'bulletins.zip';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
       } else {
         setIsSuccess(false);
-        setModalMessage(
-          "Erreur lors de la génération des bulletins. Veuillez vérifier les détails."
-        );
+        setModalMessage("Erreur lors de la génération des bulletins");
       }
+
     } catch (error) {
-      log(`Error generating documents: ${error}`, true);
+      console.error('Error:', error);
       setIsSuccess(false);
-      setModalMessage("Erreur lors de la génération des documents.");
+      setModalMessage(error instanceof Error ? error.message : "Une erreur est survenue");
     } finally {
       setIsLoading(false);
-      if (websocketRef.current) {
-        websocketRef.current.close();
-      }
     }
-  };
-
+};
+  
   return (
     <>
       <div className="mt-20 flex flex-col items-center md:grid text-sm sm:grid-cols-12 sm:grid-rows-1 sm:gap-x-6 md:gap-x-8 lg:gap-x-12">
