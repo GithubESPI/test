@@ -65,80 +65,73 @@ const DesignPreview = () => {
     };
   };
 
-  const handleGenerate = async () => {
-    setIsLoading(true);
-    setIsModalOpen(true);
-    setIsSuccess(null);
-    setModalMessage("Chargement ...");
+const handleGenerate = async () => {
+  setIsLoading(true);
+  setIsModalOpen(true);
+  setIsSuccess(null);
+  setModalMessage("Chargement ...");
 
-    try {
-      const response = await fetch(`/api/documents?userId=${sessionId}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-
-      await checkUrlAccess(data.excelUrl);
-      await checkUrlAccess(data.wordUrl);
-
-      // Initialize WebSocket connection to receive progress updates
-      initializeWebSocket(sessionId);
-
-      const generateResponse = await fetch(
-        "https://backendespi.fly.dev/upload-and-integrate-excel-and-word",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            sessionId: sessionId,
-            excelUrl: data.excelUrl,
-            wordUrl: data.wordUrl,
-          }),
-        }
-      );
-
-      if (!generateResponse.ok) {
-        const errorText = await generateResponse.text();
-        throw new Error(errorText || "Unknown error during document generation");
-      }
-
-      const generateData = await generateResponse.json();
-
-      if (generateData.message.includes("Failed to fetch API data")) {
-        setModalMessage(
-          "Impossible de récupérer les données de Yparéo. Veuillez réessayer plus tard."
-        );
-      } else if (generateData.message.includes("zipped successfully")) {
-        setIsSuccess(true);
-        setModalMessage(
-          "Les bulletins sont dans le dossier de téléchargement de votre navigateur."
-        );
-        // setShowImportButton(true); // Affiche le bouton d'importation après un succès
-        const link = document.createElement("a");
-        link.href = `https://backendespi.fly.dev/download-zip/bulletins.zip`;
-        link.setAttribute("download", "bulletins.zip");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        setIsSuccess(false);
-        setModalMessage(
-          "Erreur lors de la génération des bulletins. Veuillez vérifier les détails."
-        );
-      }
-    } catch (error) {
-      log(`Error generating documents: ${error}`, true);
-      setIsSuccess(false);
-      setModalMessage("Erreur lors de la génération des documents.");
-    } finally {
-      setIsLoading(false);
-      if (websocketRef.current) {
-        websocketRef.current.close(); // Close WebSocket connection
-      }
+  try {
+    // Récupérer les documents Excel et Word depuis Next.js API
+    const response = await fetch(`/api/documents?userId=${sessionId}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
-  };
+    const data = await response.json();
+
+    await checkUrlAccess(data.excelUrl);
+    await checkUrlAccess(data.wordUrl);
+
+    // Initialiser la connexion WebSocket
+    initializeWebSocket(sessionId);
+
+    // Envoyer les fichiers à FastAPI sur Fly.io
+    const generateResponse = await fetch(`https://bulletins-app.fly.dev/upload-and-integrate-excel-and-word`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: sessionId,
+        excelUrl: data.excelUrl,
+        wordUrl: data.wordUrl,
+      }),
+    });
+
+    if (!generateResponse.ok) {
+      const errorText = await generateResponse.text();
+      throw new Error(errorText || "Erreur inconnue lors de la génération des documents");
+    }
+
+    const generateData = await generateResponse.json();
+
+    if (generateData.message.includes("Files processed and zipped successfully")) {
+      setIsSuccess(true);
+      setModalMessage("Les bulletins sont prêts. Téléchargement en cours...");
+      
+      // Déclencher le téléchargement du fichier ZIP
+      const link = document.createElement("a");
+      link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
+      link.setAttribute("download", "bulletins.zip");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      setIsSuccess(false);
+      setModalMessage("Erreur lors de la génération des bulletins.");
+    }
+  } catch (error) {
+    log(`Erreur lors de la génération des documents: ${error}`, true);
+    setIsSuccess(false);
+    setModalMessage("Erreur lors de la génération des documents.");
+  } finally {
+    setIsLoading(false);
+    if (websocketRef.current) {
+      websocketRef.current.close();
+    }
+  }
+};
+
 
   // const handleImportFromDirectory = async () => {
   //   setIsImportingFromDirectory(true);
