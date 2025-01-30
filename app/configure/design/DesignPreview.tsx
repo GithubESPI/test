@@ -18,9 +18,21 @@ const log = (message: string, error: boolean = false) => {
 };
 /* eslint-enable no-console */
 
+const checkUrlAccess = async (url: string): Promise<void> => {
+  try {
+    const response = await fetch(url, { method: "HEAD" });
+    if (!response.ok) {
+      throw new Error(`Access denied to URL: ${url}`);
+    }
+  } catch (error: unknown) {
+    log(`Failed to access URL: ${url}`, true);
+    throw error;
+  }
+};
+
 const DesignPreview = () => {
   const { data: session } = useSession();
-  const userId = session?.user?.id ?? "";
+  const sessionId = session?.user?.id ?? "";
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [modalMessage, setModalMessage] = useState<string>("");
@@ -28,7 +40,30 @@ const DesignPreview = () => {
   const [isSuccess, setIsSuccess] = useState<boolean | null>(null);
   const [progress, setProgress] = useState<number>(0);
 
+  // const [isImportingFromDirectory, setIsImportingFromDirectory] = useState<boolean>(false);
+  // const [showImportButton, setShowImportButton] = useState<boolean>(false); // Ajout d'un état pour contrôler l'affichage du bouton d'importation
+
   const websocketRef = useRef<WebSocket | null>(null);
+
+  const initializeWebSocket = (sessionId: string) => {
+    const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${userId}`);
+    websocketRef.current = ws;
+
+    ws.onopen = () => {
+      log("WebSocket connection established");
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      log("WebSocket message received:", data);
+      setProgress(data.progress);
+    };
+
+    ws.onclose = () => {
+      log("WebSocket connection closed");
+      websocketRef.current = null;
+    };
+  };
 
   const handleGenerate = async () => {
     setIsLoading(true);
@@ -43,102 +78,93 @@ const DesignPreview = () => {
       }
       const data = await response.json();
 
-      // Initialize WebSocket connection
-      websocketRef.current = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${userId}`);
-      
-      websocketRef.current.onmessage = (event) => {
-        const wsData = JSON.parse(event.data);
-        setProgress(wsData.progress);
-      };
+      await checkUrlAccess(data.excelUrl);
+      await checkUrlAccess(data.wordUrl);
 
-      // Première étape : Traitement de l'Excel
-      const formData = new FormData();
-      formData.append('excel_url', data.excelUrl);
-      formData.append('word_url', data.wordUrl);
-      formData.append('user_id', userId);
+      // Initialize WebSocket connection to receive progress updates
+      initializeWebSocket(sessionId);
 
       const generateResponse = await fetch(
         "https://bulletins-app.fly.dev/process-excel",
         {
           method: "POST",
-          body: formData,
           headers: {
-            'Accept': 'application/json',
-          }
-        }
-      );
-
-      if (!generateResponse.ok) {
-        throw new Error("Erreur lors du traitement de l'Excel");
-      }
-
-      // Deuxième étape : Génération du template Word
-      const wordTemplateResponse = await fetch(
-        "https://bulletins-app.fly.dev/get-word-template",
-        {
-          method: "POST",
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            user_id: userId
+            sessionId: sessionId,
+            excelUrl: data.excelUrl,
+            wordUrl: data.wordUrl,
           }),
         }
       );
 
-      if (!wordTemplateResponse.ok) {
-        throw new Error("Erreur lors de la génération du template Word");
+
+      if (!generateResponse.ok) {
+        const errorText = await generateResponse.text();
+        throw new Error(errorText || "Unknown error during document generation");
       }
 
-      const wordTemplateData = await wordTemplateResponse.json();
+      const generateData = await generateResponse.json();
 
-      // Téléchargement du ZIP
-      if (wordTemplateData.message === "Bulletins générés et compressés avec succès") {
-        setIsSuccess(true);
-        setModalMessage("Les bulletins ont été générés avec succès");
-        
-        // Télécharger le fichier ZIP
-        const zipResponse = await fetch(
-          `https://bulletins-app.fly.dev/download-zip/bulletins.zip`,
-          {
-            headers: {
-              'Accept': 'application/zip'
-            }
-          }
+      if (generateData.message.includes("Failed to fetch API data")) {
+        setModalMessage(
+          "Impossible de récupérer les données de Yparéo. Veuillez réessayer plus tard."
         );
-
-        if (!zipResponse.ok) {
-          throw new Error("Erreur lors du téléchargement du ZIP");
-        }
-
-        // Créer un blob à partir de la réponse
-        const blob = await zipResponse.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'bulletins.zip';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+      } else if (generateData.message.includes("zipped successfully")) {
+        setIsSuccess(true);
+        setModalMessage(
+          "Les bulletins sont dans le dossier de téléchargement de votre navigateur."
+        );
+        // setShowImportButton(true); // Affiche le bouton d'importation après un succès
+        const link = document.createElement("a");
+        link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
+        link.setAttribute("download", "bulletins.zip");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       } else {
         setIsSuccess(false);
-        setModalMessage("Erreur lors de la génération des bulletins");
+        setModalMessage(
+          "Erreur lors de la génération des bulletins. Veuillez vérifier les détails."
+        );
       }
-
     } catch (error) {
-      console.error('Error:', error);
+      log(`Error generating documents: ${error}`, true);
       setIsSuccess(false);
-      setModalMessage(error instanceof Error ? error.message : "Une erreur est survenue");
+      setModalMessage("Erreur lors de la génération des documents.");
     } finally {
-      if (websocketRef.current) {
-        websocketRef.current.close();
-      }
       setIsLoading(false);
+      if (websocketRef.current) {
+        websocketRef.current.close(); // Close WebSocket connection
+      }
     }
   };
-  
+
+  // const handleImportFromDirectory = async () => {
+  //   setIsImportingFromDirectory(true);
+  //   setModalMessage("Importation des bulletins depuis le répertoire en cours...");
+
+  //   try {
+  //     const response = await fetch("https://backendespi.fly.dev/import-bulletins-from-directory", {
+  //       method: "POST",
+  //     });
+
+  //     if (!response.ok) {
+  //       const errorText = await response.text();
+  //       throw new Error(errorText || "Unknown error during import from directory");
+  //     }
+
+  //     const data = await response.json();
+  //     setModalMessage(`Importation terminée : ${data.message}`);
+  //   } catch (error) {
+  //     log(`Error importing documents from directory: ${error}`, true);
+  //     setModalMessage("Erreur lors de l'importation des bulletins depuis le répertoire.");
+  //   } finally {
+  //     setIsImportingFromDirectory(false);
+  //   }
+  // };
+
   return (
     <>
       <div className="mt-20 flex flex-col items-center md:grid text-sm sm:grid-cols-12 sm:grid-rows-1 sm:gap-x-6 md:gap-x-8 lg:gap-x-12">
@@ -154,6 +180,7 @@ const DesignPreview = () => {
 
         <div className="sm:col-span-12 md:col-span-9 text-base">
           <div className="flex justify-start pb-12">
+            {/* Le bouton de génération de documents */}
             <Button className="px-4 sm:px-6 lg:px-8" onClick={handleGenerate} disabled={isLoading}>
               {isLoading ? (
                 <LoaderCircle className="animate-spin" />
@@ -164,6 +191,24 @@ const DesignPreview = () => {
                 </>
               )}
             </Button>
+            &nbsp;&nbsp;
+            {/* Le bouton d'importation qui apparait après la génération */}
+            {/* {showImportButton && (
+              <Button
+                className="pr-4 pl-2 sm:px-6 lg:px-8"
+                onClick={handleImportFromDirectory}
+                disabled={isImportingFromDirectory}
+              >
+                {isImportingFromDirectory ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <>
+                    Importer sur Yparéo
+                    <ArrowRight className="h-4 w-4 ml-1.5 inline" />
+                  </>
+                )}
+              </Button>
+            )} */}
           </div>
         </div>
       </div>
