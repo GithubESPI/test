@@ -81,18 +81,16 @@ const DesignPreview = () => {
       // Initialize WebSocket connection to receive progress updates
       initializeWebSocket(userId);
 
+      const formData = new FormData();
+      formData.append('excel_url', data.excelUrl);
+      formData.append('word_url', data.wordUrl);
+      formData.append('user_id', userId);
+
       const generateResponse = await fetch(
         "https://bulletins-app.fly.dev/process-excel",
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            excel_url: data.excelUrl,
-            word_url: data.wordUrl,
-            user_id: userId,
-          }),
+          body: formData
         }
       );
 
