@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { ArrowRight, LoaderCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /* eslint-disable no-console */
 // Fonction de journalisation
@@ -65,11 +65,31 @@ const DesignPreview = () => {
     };
   };
 
+  const pollDownloadStatus = async () => {
+    const maxAttempts = 10;
+    let attempt = 0;
+
+    while (attempt < maxAttempts) {
+      const response = await fetch(`https://bulletins-app.fly.dev/download-zip/bulletins.zip`, {
+        method: "HEAD",
+      });
+
+      if (response.ok) {
+        return true;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 5000)); // Attendre 5 secondes avant de réessayer
+      attempt++;
+    }
+
+    return false;
+  };
+
   const handleGenerate = async () => {
     setIsLoading(true);
     setIsModalOpen(true);
     setIsSuccess(null);
-    setModalMessage("Chargement ...");
+    setModalMessage("Envoi des fichiers au serveur...");
 
     try {
       // Récupérer les documents Excel et Word depuis Next.js API
@@ -84,6 +104,7 @@ const DesignPreview = () => {
 
       // Initialiser la connexion WebSocket
       initializeWebSocket(sessionId);
+      setModalMessage("Traitement en cours...");
 
       // Envoyer les fichiers à FastAPI sur Fly.io
       const generateResponse = await fetch(
@@ -108,18 +129,19 @@ const DesignPreview = () => {
 
       if (generateData.message.includes("Files processed and zipped successfully")) {
         setIsSuccess(true);
-        setModalMessage("Les bulletins sont prêts. Téléchargement en cours...");
+        setModalMessage("Les bulletins sont prêts. Vérification du fichier ZIP en cours...");
 
-        // Déclencher le téléchargement du fichier ZIP
-        const link = document.createElement("a");
-        link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
-        link.setAttribute("download", "bulletins.zip");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        setIsSuccess(false);
-        setModalMessage("Erreur lors de la génération des bulletins.");
+        if (await pollDownloadStatus()) {
+          const link = document.createElement("a");
+          link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
+          link.setAttribute("download", "bulletins.zip");
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } else {
+          setIsSuccess(false);
+          setModalMessage("Le fichier ZIP n'est pas encore prêt. Veuillez réessayer plus tard.");
+        }
       }
     } catch (error) {
       log(`Erreur lors de la génération des documents: ${error}`, true);
@@ -156,6 +178,14 @@ const DesignPreview = () => {
   //     setIsImportingFromDirectory(false);
   //   }
   // };
+
+  useEffect(() => {
+    return () => {
+      if (websocketRef.current) {
+        websocketRef.current.close();
+      }
+    };
+  }, []);
 
   return (
     <>
