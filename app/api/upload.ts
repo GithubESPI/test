@@ -10,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const response = await fetch(
-      "https://backendespi.fly.dev/upload-and-integrate-excel-and-word",
+      "https://bulletins-app.fly.dev//upload-and-integrate-excel-and-word",
       {
         method: "POST",
         headers: {
