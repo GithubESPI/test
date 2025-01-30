@@ -9,14 +9,11 @@ import { ArrowRight, LoaderCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRef, useState } from "react";
 
-/* eslint-disable no-console */
-// Fonction de journalisation
 const log = (message: string, error: boolean = false) => {
   if (process.env.NODE_ENV === "development") {
     error ? console.error(message) : console.log(message);
   }
 };
-/* eslint-enable no-console */
 
 const checkUrlAccess = async (url: string): Promise<void> => {
   try {
@@ -39,14 +36,10 @@ const DesignPreview = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean | null>(null);
   const [progress, setProgress] = useState<number>(0);
-
-  // const [isImportingFromDirectory, setIsImportingFromDirectory] = useState<boolean>(false);
-  // const [showImportButton, setShowImportButton] = useState<boolean>(false); // Ajout d'un état pour contrôler l'affichage du bouton d'importation
-
   const websocketRef = useRef<WebSocket | null>(null);
 
   const initializeWebSocket = (sessionId: string) => {
-    const ws = new WebSocket(`wss://backendespi.fly.dev/ws/progress/${sessionId}`);
+    const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${sessionId}`);
     websocketRef.current = ws;
 
     ws.onopen = () => {
@@ -72,6 +65,7 @@ const DesignPreview = () => {
     setModalMessage("Chargement ...");
 
     try {
+      // Get document URLs from our Next.js API
       const response = await fetch(`/api/documents?userId=${sessionId}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -81,23 +75,21 @@ const DesignPreview = () => {
       await checkUrlAccess(data.excelUrl);
       await checkUrlAccess(data.wordUrl);
 
-      // Initialize WebSocket connection to receive progress updates
+      // Initialize WebSocket connection
       initializeWebSocket(sessionId);
 
-      const generateResponse = await fetch(
-        "https://backendespi.fly.dev/upload-and-integrate-excel-and-word",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            sessionId: sessionId,
-            excelUrl: data.excelUrl,
-            wordUrl: data.wordUrl,
-          }),
-        }
-      );
+      // Process the documents through our Next.js API
+      const generateResponse = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          excelUrl: data.excelUrl,
+          wordUrl: data.wordUrl,
+        }),
+      });
 
       if (!generateResponse.ok) {
         const errorText = await generateResponse.text();
@@ -108,16 +100,15 @@ const DesignPreview = () => {
 
       if (generateData.message.includes("Failed to fetch API data")) {
         setModalMessage(
-          "Impossible de récupérer les données de Yparéo. Veuillez réessayer plus tard."
+          "Impossible de récupérer les données. Veuillez réessayer plus tard."
         );
       } else if (generateData.message.includes("zipped successfully")) {
         setIsSuccess(true);
         setModalMessage(
           "Les bulletins sont dans le dossier de téléchargement de votre navigateur."
         );
-        // setShowImportButton(true); // Affiche le bouton d'importation après un succès
         const link = document.createElement("a");
-        link.href = `https://backendespi.fly.dev/download-zip/bulletins.zip`;
+        link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
         link.setAttribute("download", "bulletins.zip");
         document.body.appendChild(link);
         link.click();
@@ -135,34 +126,10 @@ const DesignPreview = () => {
     } finally {
       setIsLoading(false);
       if (websocketRef.current) {
-        websocketRef.current.close(); // Close WebSocket connection
+        websocketRef.current.close();
       }
     }
   };
-
-  // const handleImportFromDirectory = async () => {
-  //   setIsImportingFromDirectory(true);
-  //   setModalMessage("Importation des bulletins depuis le répertoire en cours...");
-
-  //   try {
-  //     const response = await fetch("https://backendespi.fly.dev/import-bulletins-from-directory", {
-  //       method: "POST",
-  //     });
-
-  //     if (!response.ok) {
-  //       const errorText = await response.text();
-  //       throw new Error(errorText || "Unknown error during import from directory");
-  //     }
-
-  //     const data = await response.json();
-  //     setModalMessage(`Importation terminée : ${data.message}`);
-  //   } catch (error) {
-  //     log(`Error importing documents from directory: ${error}`, true);
-  //     setModalMessage("Erreur lors de l'importation des bulletins depuis le répertoire.");
-  //   } finally {
-  //     setIsImportingFromDirectory(false);
-  //   }
-  // };
 
   return (
     <>
@@ -179,8 +146,11 @@ const DesignPreview = () => {
 
         <div className="sm:col-span-12 md:col-span-9 text-base">
           <div className="flex justify-start pb-12">
-            {/* Le bouton de génération de documents */}
-            <Button className="px-4 sm:px-6 lg:px-8" onClick={handleGenerate} disabled={isLoading}>
+            <Button 
+              className="px-4 sm:px-6 lg:px-8" 
+              onClick={handleGenerate} 
+              disabled={isLoading}
+            >
               {isLoading ? (
                 <LoaderCircle className="animate-spin" />
               ) : (
@@ -190,24 +160,6 @@ const DesignPreview = () => {
                 </>
               )}
             </Button>
-            &nbsp;&nbsp;
-            {/* Le bouton d'importation qui apparait après la génération */}
-            {/* {showImportButton && (
-              <Button
-                className="pr-4 pl-2 sm:px-6 lg:px-8"
-                onClick={handleImportFromDirectory}
-                disabled={isImportingFromDirectory}
-              >
-                {isImportingFromDirectory ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <>
-                    Importer sur Yparéo
-                    <ArrowRight className="h-4 w-4 ml-1.5 inline" />
-                  </>
-                )}
-              </Button>
-            )} */}
           </div>
         </div>
       </div>
