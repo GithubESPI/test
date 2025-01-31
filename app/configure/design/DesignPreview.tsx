@@ -51,25 +51,31 @@ const DesignPreview = () => {
   };
 
   const initializeWebSocket = (sessionId: string) => {
+    if (websocketRef.current) {
+      log("⚠️ WebSocket déjà actif, pas besoin de recréer.");
+      return;
+    }
+
     const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${sessionId}`);
     websocketRef.current = ws;
 
     ws.onopen = () => {
-      log("✅ WebSocket connection established");
+      log("✅ WebSocket connection établie");
     };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       log(`📩 WebSocket message reçu: ${JSON.stringify(data)}`);
-    
+
       if (data.progress !== undefined) {
         setProgress(data.progress);
         setModalMessage(`Progression: ${data.progress}%`);
       }
-    
+
       if (data.progress === 100) {
-        log("✅ WebSocket a atteint 100%, préparation du téléchargement.");
+        log("✅ WebSocket a atteint 100%, fermeture de la connexion.");
         setModalMessage("✅ Génération terminée ! Vérification du fichier...");
+        ws.close(); // Fermer proprement si tout est OK
       }
     };
 
@@ -79,15 +85,13 @@ const DesignPreview = () => {
 
     ws.onclose = (event) => {
       if (event.wasClean) {
-        log("⚠️ WebSocket connection closed proprement");
+        log("⚠️ WebSocket fermé proprement");
       } else {
-        log("❌ WebSocket connection interrompue, tentative de reconnexion...");
+        log("❌ WebSocket interrompu, tentative de reconnexion...");
         reconnectWebSocket(sessionId);
       }
       websocketRef.current = null;
     };
-
-
   };
 
   const pollDownloadStatus = async () => {
