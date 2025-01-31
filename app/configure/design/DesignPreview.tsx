@@ -45,6 +45,11 @@ const DesignPreview = () => {
 
   const websocketRef = useRef<WebSocket | null>(null);
 
+  const reconnectWebSocket = (sessionId: string) => {
+    log("🔄 Tentative de reconnexion au WebSocket...");
+    setTimeout(() => initializeWebSocket(sessionId), 3000); // Reconnexion après 3 secondes
+  };
+
   const initializeWebSocket = (sessionId: string) => {
     const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${sessionId}`);
     websocketRef.current = ws;
@@ -55,15 +60,12 @@ const DesignPreview = () => {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      log(`📩 WebSocket message received: ${JSON.stringify(data)}`);
-
-      if (data.progress !== undefined) {
-        setProgress(data.progress);
-        setModalMessage(`Progression: ${data.progress}%`);
-      }
+      console.log("WebSocket message received:", data);
+      setProgress(data.progress);
+      setModalMessage(`Progression: ${data.progress}%`);
 
       if (data.progress === 100) {
-        setModalMessage("✅ Génération terminée ! Vérification du fichier...");
+        setModalMessage("Téléchargement en cours...");
       }
     };
 
@@ -71,10 +73,16 @@ const DesignPreview = () => {
       log(`❌ WebSocket error: ${error}`);
     };
 
-    ws.onclose = () => {
-      log("⚠️ WebSocket connection closed");
+    ws.onclose = (event) => {
+      if (event.wasClean) {
+        log("⚠️ WebSocket connection closed proprement");
+      } else {
+        log("❌ WebSocket connection interrompue, tentative de reconnexion...");
+        reconnectWebSocket(sessionId);
+      }
       websocketRef.current = null;
     };
+
   };
 
   const pollDownloadStatus = async () => {
