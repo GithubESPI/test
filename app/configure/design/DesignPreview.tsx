@@ -60,7 +60,7 @@ const DesignPreview = () => {
       return;
     }
 
-    const ws = new WebSocket(wss://bulletins-app.fly.dev/ws/progress/${sessionId});
+    const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${sessionId}`);
     websocketRef.current = ws;
     log("🛜 Connexion WebSocket initialisée.");
 
@@ -90,7 +90,9 @@ const DesignPreview = () => {
     log("📡 Début de la vérification du fichier ZIP...");
     for (let attempt = 1; attempt <= 10; attempt++) {
       log(🔍 Tentative ${attempt}/10 pour vérifier le fichier ZIP.);
-      const response = await fetch(https://bulletins-app.fly.dev/download-zip/bulletins.zip, { method: "HEAD" });
+      const response = await fetch(`https://bulletins-app.fly.dev/download-zip/bulletins.zip`, {
+        method: "HEAD",
+      });
 
       if (response.ok) {
         log("📦 Fichier ZIP disponible !");
@@ -111,7 +113,7 @@ const DesignPreview = () => {
 
     try {
       log("📡 Récupération des documents depuis l'API Next.js...");
-      const response = await fetch(/api/documents?userId=${sessionId});
+       const response = await fetch(`/api/documents?userId=${sessionId}`);
       if (!response.ok) throw new Error(HTTP Error! Status: ${response.status});
 
       const data = await response.json();
@@ -125,7 +127,7 @@ const DesignPreview = () => {
       setModalMessage("📊 Traitement en cours...");
 
       log("📡 Envoi des fichiers à FastAPI...");
-      const generateResponse = await fetch(https://bulletins-app.fly.dev/upload-and-integrate-excel-and-word, {
+      const generateResponse = await fetch(`https://bulletins-app.fly.dev/upload-and-integrate-excel-and-word`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, excelUrl: data.excelUrl, wordUrl: data.wordUrl }),
@@ -142,7 +144,7 @@ const DesignPreview = () => {
         if (await pollDownloadStatus()) {
           log("⬇️ Téléchargement du fichier ZIP...");
           const link = document.createElement("a");
-          link.href = https://bulletins-app.fly.dev/download-zip/bulletins.zip;
+          link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
           link.setAttribute("download", "bulletins.zip");
           document.body.appendChild(link);
           link.click();
