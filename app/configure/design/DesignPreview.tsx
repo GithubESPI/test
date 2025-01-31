@@ -19,17 +19,16 @@ const log = (message: string, error: boolean = false) => {
 // Vérification de l'accès à une URL
 const checkUrlAccess = async (url: string): Promise<void> => {
   try {
-    log(🔍 Vérification d'accès à l'URL: ${url});
     const response = await fetch(url, { method: "HEAD" });
     if (!response.ok) {
-      throw new Error(⛔ Accès refusé à l'URL: ${url});
+      throw new Error(`Access denied to URL: ${url}`);
     }
-    log(✅ Accès confirmé: ${url});
   } catch (error: unknown) {
-    log(❌ Erreur d'accès à l'URL: ${url}, true);
+    log(`Failed to access URL: ${url}`, true);
     throw error;
   }
 };
+
 
 const DesignPreview = () => {
   const { data: session } = useSession();
