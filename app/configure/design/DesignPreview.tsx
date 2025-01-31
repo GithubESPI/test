@@ -60,12 +60,16 @@ const DesignPreview = () => {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log("WebSocket message received:", data);
-      setProgress(data.progress);
-      setModalMessage(`Progression: ${data.progress}%`);
-
+      log(`📩 WebSocket message reçu: ${JSON.stringify(data)}`);
+    
+      if (data.progress !== undefined) {
+        setProgress(data.progress);
+        setModalMessage(`Progression: ${data.progress}%`);
+      }
+    
       if (data.progress === 100) {
-        setModalMessage("Téléchargement en cours...");
+        log("✅ WebSocket a atteint 100%, préparation du téléchargement.");
+        setModalMessage("✅ Génération terminée ! Vérification du fichier...");
       }
     };
 
@@ -90,18 +94,21 @@ const DesignPreview = () => {
     let attempt = 0;
 
     while (attempt < maxAttempts) {
+      log(`🔍 Vérification du fichier ZIP (tentative ${attempt + 1}/${maxAttempts})`);
       const response = await fetch(`https://bulletins-app.fly.dev/download-zip/bulletins.zip`, {
         method: "HEAD",
       });
 
       if (response.ok) {
+        log("📦 Fichier ZIP disponible pour téléchargement !");
         return true;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 5000)); // Attendre 5 secondes avant de réessayer
+      await new Promise((resolve) => setTimeout(resolve, 5000));
       attempt++;
     }
 
+    log("❌ Fichier ZIP toujours indisponible après plusieurs tentatives.");
     return false;
   };
 
@@ -202,6 +209,7 @@ const DesignPreview = () => {
   useEffect(() => {
     return () => {
       if (websocketRef.current) {
+        log("🛑 Fermeture du WebSocket lors du démontage du composant");
         websocketRef.current.close();
       }
     };
