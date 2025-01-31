@@ -11,7 +11,9 @@ import { useEffect, useRef, useState } from "react";
 
 // Fonction de journalisation détaillée
 const log = (message: string, error: boolean = false) => {
-  console[error ? "error" : "log"]([LOG] ${message});
+  if (process.env.NODE_ENV === "development") {
+    error ? console.error(message) : console.log(message);
+  }
 };
 
 // Vérification de l'accès à une URL
