@@ -57,7 +57,7 @@ const DesignPreview = () => {
 
   const initializeWebSocket = (sessionId: string) => {
     if (progress === 100) {
-      log("✅ Progression complète, pas de création d'un nouveau WebSocket.");
+      log("✅ Progression complète, pas de reconnexion WebSocket.");
       return;
     }
 
@@ -224,6 +224,7 @@ const DesignPreview = () => {
       if (websocketRef.current) {
         log("🛑 Fermeture du WebSocket lors du démontage du composant");
         websocketRef.current.close();
+        websocketRef.current = null;
       }
     };
   }, []);
