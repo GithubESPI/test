@@ -77,13 +77,9 @@ const DesignPreview = () => {
       log(`❌ WebSocket error: ${error}`);
     };
 
-    ws.onclose = (event) => {
-      if (event.wasClean) {
-        log("⚠️ WebSocket connection closed proprement");
-      } else {
-        log("❌ WebSocket connection interrompue, tentative de reconnexion...");
-        reconnectWebSocket(sessionId);
-      }
+    ws.onclose = () => {
+      log("⚠️ WebSocket connection closed unexpectedly");
+      setModalMessage("⚠️ La connexion a été interrompue.");
       websocketRef.current = null;
     };
 
