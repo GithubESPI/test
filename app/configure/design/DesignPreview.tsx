@@ -78,8 +78,7 @@ const DesignPreview = () => {
     };
 
     ws.onclose = () => {
-      log("⚠️ WebSocket connection closed unexpectedly");
-      setModalMessage("⚠️ La connexion a été interrompue.");
+      log("⚠️ WebSocket connection closed");
       websocketRef.current = null;
     };
 
