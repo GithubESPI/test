@@ -77,10 +77,16 @@ const DesignPreview = () => {
       log(`❌ WebSocket error: ${error}`);
     };
 
-    ws.onclose = () => {
-      log("⚠️ WebSocket connection closed");
+    ws.onclose = (event) => {
+      if (event.wasClean) {
+        log("⚠️ WebSocket connection closed proprement");
+      } else {
+        log("❌ WebSocket connection interrompue, tentative de reconnexion...");
+        reconnectWebSocket(sessionId);
+      }
       websocketRef.current = null;
     };
+
 
   };
 
