@@ -41,64 +41,24 @@ const DesignPreview = () => {
 
   const websocketRef = useRef<WebSocket | null>(null);
 
-  // Reconnexion WebSocket en cas d'échec
-  const reconnectWebSocket = (sessionId: string) => {
-    if (progress === 100) {
-      log("✅ Progression complète, pas de reconnexion WebSocket.");
-      return;
-    }
-    log("🔄 Tentative de reconnexion au WebSocket...");
-    setTimeout(() => initializeWebSocket(sessionId), 3000);
-  };
+  // Vérification et téléchargement du fichier ZIP
+  const downloadZip = async () => {
+    log("📡 Vérification du fichier ZIP avant téléchargement...");
+    const response = await fetch("https://bulletins-app.fly.dev/download-zip/bulletins.zip", { method: "HEAD" });
 
-  // Initialisation WebSocket
-  const initializeWebSocket = (sessionId: string) => {
-    if (progress === 100) return;
-    if (websocketRef.current) {
-      log("⚠️ WebSocket déjà actif, pas de recréation.");
+    if (!response.ok) {
+      log(`❌ Fichier ZIP introuvable. Code HTTP: ${response.status}`, true);
+      setModalMessage("Erreur : Le fichier ZIP n'est pas encore prêt.");
       return;
     }
 
-    const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${sessionId}`);
-    websocketRef.current = ws;
-    log("🛜 Connexion WebSocket initialisée.");
-
-    ws.onopen = () => log("✅ WebSocket connecté.");
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      log(`📩 WebSocket message reçu: ${JSON.stringify(data)}`);
-      if (data.progress !== undefined) {
-        setProgress(data.progress);
-        setModalMessage(`Progression: ${data.progress}%`);
-      }
-      if (data.progress === 100) {
-        log("✅ WebSocket terminé à 100%, fermeture...");
-        setModalMessage("✅ Génération terminée ! Vérification du fichier...");
-        ws.close();
-      }
-    };
-    ws.onerror = (error) => log(`❌ Erreur WebSocket: ${error}`, true);
-    ws.onclose = (event) => {
-      log(`⚠️ WebSocket fermé: ${event.code} (${event.reason})`);
-      if (!event.wasClean) reconnectWebSocket(sessionId);
-    };
-  };
-
-  // Vérification de la disponibilité du fichier ZIP
-  const pollDownloadStatus = async () => {
-    log("📡 Début de la vérification du fichier ZIP...");
-    for (let attempt = 1; attempt <= 10; attempt++) {
-      log(`🔍 Tentative ${attempt}/10 pour vérifier le fichier ZIP.`);
-      const response = await fetch(`https://bulletins-app.fly.dev/download-zip/bulletins.zip`, { method: "HEAD" });
-
-      if (response.ok) {
-        log("📦 Fichier ZIP disponible !");
-        return true;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    }
-    log("❌ Fichier ZIP indisponible après 10 tentatives.", true);
-    return false;
+    log("✅ Le fichier ZIP est accessible, lancement du téléchargement !");
+    const link = document.createElement("a");
+    link.href = "https://bulletins-app.fly.dev/download-zip/bulletins.zip";
+    link.setAttribute("download", "bulletins.zip");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleGenerate = async () => {
@@ -119,10 +79,6 @@ const DesignPreview = () => {
       await checkUrlAccess(data.excelUrl);
       await checkUrlAccess(data.wordUrl);
 
-      log("🔌 Connexion WebSocket...");
-      initializeWebSocket(sessionId);
-      setModalMessage("📊 Traitement en cours...");
-
       log("📡 Envoi des fichiers à FastAPI...");
       const generateResponse = await fetch(`https://bulletins-app.fly.dev/upload-and-integrate-excel-and-word`, {
         method: "POST",
@@ -137,19 +93,8 @@ const DesignPreview = () => {
 
       if (generateData.message.includes("Files processed and zipped successfully")) {
         setIsSuccess(true);
-        setModalMessage("📁 Bulletins prêts. Vérification du fichier ZIP...");
-        if (await pollDownloadStatus()) {
-          log("⬇️ Téléchargement du fichier ZIP...");
-          const link = document.createElement("a");
-          link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
-          link.setAttribute("download", "bulletins.zip");
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        } else {
-          setIsSuccess(false);
-          setModalMessage("Le fichier ZIP n'est pas encore prêt.");
-        }
+        setModalMessage("📁 Bulletins prêts. Téléchargement en cours...");
+        await downloadZip();
       }
     } catch (error) {
       log(`❌ Erreur: ${error}`, true);
@@ -157,29 +102,18 @@ const DesignPreview = () => {
       setModalMessage("Erreur lors de la génération.");
     } finally {
       setIsLoading(false);
-      websocketRef.current?.close();
     }
   };
-
-  useEffect(() => {
-    return () => {
-      websocketRef.current?.close();
-      websocketRef.current = null;
-      log("🛑 Fermeture du WebSocket.");
-    };
-  }, []);
 
   return (
     <>
       <div className="mt-20 flex flex-col items-center">
         <Bulletin className={cn("max-w-[150px]")} imgSrc="" />
         <h3 className="text-3xl font-bold">Vos documents ont bien été déposés.</h3>
-
         <Button className="mt-6 px-6" onClick={handleGenerate} disabled={isLoading}>
           {isLoading ? <LoaderCircle className="animate-spin" /> : <>Générer vos bulletins <ArrowRight className="h-4 w-4 ml-1.5 inline" /></>}
         </Button>
       </div>
-
       <LoginModal isOpen={isModalOpen} setIsOpen={setIsModalOpen} title={isLoading ? "Génération en cours" : isSuccess ? "Félicitations" : "Oups"} description={modalMessage}>
         {isLoading && <Progress value={progress} />}
       </LoginModal>
