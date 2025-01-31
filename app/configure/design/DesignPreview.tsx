@@ -46,11 +46,21 @@ const DesignPreview = () => {
   const websocketRef = useRef<WebSocket | null>(null);
 
   const reconnectWebSocket = (sessionId: string) => {
+    if (progress === 100) {
+      log("✅ Progression complète, pas de reconnexion WebSocket.");
+      return;
+    }
+  
     log("🔄 Tentative de reconnexion au WebSocket...");
     setTimeout(() => initializeWebSocket(sessionId), 3000); // Reconnexion après 3 secondes
   };
 
   const initializeWebSocket = (sessionId: string) => {
+    if (progress === 100) {
+      log("✅ Progression complète, pas de création d'un nouveau WebSocket.");
+      return;
+    }
+
     if (websocketRef.current) {
       log("⚠️ WebSocket déjà actif, pas besoin de recréer.");
       return;
@@ -84,13 +94,11 @@ const DesignPreview = () => {
     };
 
     ws.onclose = (event) => {
-      if (event.wasClean) {
-        log("⚠️ WebSocket fermé proprement");
-      } else {
+      log(`⚠️ WebSocket closed (code: ${event.code}, reason: ${event.reason})`);
+      if (!event.wasClean) {
         log("❌ WebSocket interrompu, tentative de reconnexion...");
         reconnectWebSocket(sessionId);
       }
-      websocketRef.current = null;
     };
   };
 
