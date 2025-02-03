@@ -95,13 +95,17 @@ const DesignPreview = () => {
         if (zipReady) {
           log("📥 Téléchargement du fichier ZIP...");
           const link = document.createElement("a");
-          link.href = `${API_BASE_URL}/download-zip/bulletins.zip`;
-          link.setAttribute("download", "bulletins.zip");
+          link.href = `${API_BASE_URL}/download-zip/${sessionId}.zip`;
+          link.setAttribute("download", `bulletins_${sessionId}.zip`);
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
+
+          setIsSuccess(true); // Met à jour l'état après le téléchargement réussi
+          setModalMessage("✅ Téléchargement réussi ! Vos bulletins sont prêts.");
           ws.close(); // Fermer WebSocket après confirmation du fichier
         } else {
+          setIsSuccess(false);
           setModalMessage("❌ Le fichier ZIP n'est pas encore prêt. Réessayez plus tard.");
         }
       }
@@ -128,7 +132,7 @@ const DesignPreview = () => {
       log(`🔍 Vérification du fichier ZIP (tentative ${attempt + 1}/${maxAttempts})`);
 
       try {
-        const response = await fetch(`${API_BASE_URL}/download-zip/bulletins.zip`, {
+        const response = await fetch(`${API_BASE_URL}/download-zip/${sessionId}.zip`, {
           method: "HEAD",
         });
 
@@ -193,7 +197,7 @@ const DesignPreview = () => {
 
         if (await pollDownloadStatus()) {
           const link = document.createElement("a");
-          link.href = `${API_BASE_URL}/download-zip/bulletins.zip`;
+          link.href = `${API_BASE_URL}/download-zip/${sessionId}.zip`;
           link.setAttribute("download", "bulletins.zip");
           document.body.appendChild(link);
           link.click();
@@ -240,14 +244,12 @@ const DesignPreview = () => {
   // };
 
   useEffect(() => {
-    return () => {
-      if (websocketRef.current) {
-        log("🛑 Fermeture du WebSocket lors du démontage du composant");
-        websocketRef.current.close();
-        websocketRef.current = null;
-      }
-    };
-  }, []);
+    if (isSuccess) {
+      setTimeout(() => {
+        setIsModalOpen(false);
+      }, 5000); // Ferme la modal après 5 secondes
+    }
+  }, [isSuccess]);
 
   return (
     <>
@@ -300,7 +302,7 @@ const DesignPreview = () => {
       <LoginModal
         isOpen={isModalOpen}
         setIsOpen={setIsModalOpen}
-        title={isLoading ? "Génération en cours" : isSuccess ? "Félicitations" : "Oups"}
+        title={isSuccess ? "Félicitations" : "Oups"}
         description={modalMessage}
       >
         {isLoading && <Progress value={progress} className="w-full" />}
