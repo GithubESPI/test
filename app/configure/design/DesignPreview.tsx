@@ -40,6 +40,10 @@ const DesignPreview = () => {
   const [isSuccess, setIsSuccess] = useState<boolean | null>(null);
   const [progress, setProgress] = useState<number>(0);
 
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "https://bulletins-app.fly.dev";
+  const WS_BASE_URL =
+    process.env.NEXT_PUBLIC_WS_BASE_URL || "wss://bulletins-app.fly.dev/ws/progress";
+
   // const [isImportingFromDirectory, setIsImportingFromDirectory] = useState<boolean>(false);
   // const [showImportButton, setShowImportButton] = useState<boolean>(false); // Ajout d'un état pour contrôler l'affichage du bouton d'importation
 
@@ -66,14 +70,14 @@ const DesignPreview = () => {
       return;
     }
 
-    const ws = new WebSocket(`wss://bulletins-app.fly.dev/ws/progress/${sessionId}`);
+    const ws = new WebSocket(`${WS_BASE_URL}/${sessionId}`);
     websocketRef.current = ws;
 
     ws.onopen = () => {
       log("✅ WebSocket connection établie");
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       const data = JSON.parse(event.data);
       log(`📩 WebSocket message reçu: ${JSON.stringify(data)}`);
 
@@ -83,9 +87,23 @@ const DesignPreview = () => {
       }
 
       if (data.progress === 100) {
-        log("✅ WebSocket a atteint 100%, fermeture de la connexion.");
+        log("✅ WebSocket a atteint 100%, vérification du fichier ZIP...");
         setModalMessage("✅ Génération terminée ! Vérification du fichier...");
-        ws.close(); // Fermer proprement si tout est OK
+
+        const zipReady = await pollDownloadStatus(); // Vérifie si le fichier ZIP est bien prêt
+
+        if (zipReady) {
+          log("📥 Téléchargement du fichier ZIP...");
+          const link = document.createElement("a");
+          link.href = `${API_BASE_URL}/download-zip/bulletins.zip`;
+          link.setAttribute("download", "bulletins.zip");
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          ws.close(); // Fermer WebSocket après confirmation du fichier
+        } else {
+          setModalMessage("❌ Le fichier ZIP n'est pas encore prêt. Réessayez plus tard.");
+        }
       }
     };
 
@@ -103,21 +121,26 @@ const DesignPreview = () => {
   };
 
   const pollDownloadStatus = async () => {
-    const maxAttempts = 10;
+    const maxAttempts = 20; // Augmente le nombre de tentatives
     let attempt = 0;
 
     while (attempt < maxAttempts) {
       log(`🔍 Vérification du fichier ZIP (tentative ${attempt + 1}/${maxAttempts})`);
-      const response = await fetch(`https://bulletins-app.fly.dev/download-zip/bulletins.zip`, {
-        method: "HEAD",
-      });
 
-      if (response.ok) {
-        log("📦 Fichier ZIP disponible pour téléchargement !");
-        return true;
+      try {
+        const response = await fetch(`${API_BASE_URL}/download-zip/bulletins.zip`, {
+          method: "HEAD",
+        });
+
+        if (response.ok) {
+          log("📦 Fichier ZIP disponible pour téléchargement !");
+          return true;
+        }
+      } catch (error) {
+        log(`Erreur lors de la vérification du ZIP : ${error}`, true);
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      await new Promise((resolve) => setTimeout(resolve, 5000)); // Attend 5 secondes avant de réessayer
       attempt++;
     }
 
@@ -147,18 +170,15 @@ const DesignPreview = () => {
       setModalMessage("Traitement en cours...");
 
       // Envoyer les fichiers à FastAPI sur Fly.io
-      const generateResponse = await fetch(
-        `https://bulletins-app.fly.dev/upload-and-integrate-excel-and-word`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId: sessionId,
-            excelUrl: data.excelUrl,
-            wordUrl: data.wordUrl,
-          }),
-        }
-      );
+      const generateResponse = await fetch(`${API_BASE_URL}/upload-and-integrate-excel-and-word`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sessionId,
+          excelUrl: data.excelUrl,
+          wordUrl: data.wordUrl,
+        }),
+      });
 
       if (!generateResponse.ok) {
         const errorText = await generateResponse.text();
@@ -173,7 +193,7 @@ const DesignPreview = () => {
 
         if (await pollDownloadStatus()) {
           const link = document.createElement("a");
-          link.href = `https://bulletins-app.fly.dev/download-zip/bulletins.zip`;
+          link.href = `${API_BASE_URL}/download-zip/bulletins.zip`;
           link.setAttribute("download", "bulletins.zip");
           document.body.appendChild(link);
           link.click();
