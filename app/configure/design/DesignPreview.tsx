@@ -65,9 +65,15 @@ const DesignPreview = () => {
       return;
     }
 
-    if (websocketRef.current) {
-      log("⚠️ WebSocket déjà actif, pas besoin de recréer.");
+    if (websocketRef.current?.readyState === WebSocket.OPEN) {
+      log("⚠️ WebSocket déjà actif et ouvert");
       return;
+    }
+
+    // Fermer l'ancienne connexion si elle existe
+    if (websocketRef.current) {
+      websocketRef.current.close();
+      websocketRef.current = null;
     }
 
     const ws = new WebSocket(`${WS_BASE_URL}/${sessionId}`);
@@ -75,53 +81,71 @@ const DesignPreview = () => {
 
     ws.onopen = () => {
       log("✅ WebSocket connection établie");
+      // Envoyer un ping périodique pour maintenir la connexion active
+      const pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send("ping");
+        } else {
+          clearInterval(pingInterval);
+        }
+      }, 30000); // Ping toutes les 30 secondes
     };
 
     ws.onmessage = async (event) => {
-      const data = JSON.parse(event.data);
-      log(`📩 WebSocket message reçu: ${JSON.stringify(data)}`);
+      try {
+        const data = JSON.parse(event.data);
+        log(`📩 WebSocket message reçu: ${JSON.stringify(data)}`);
 
-      if (data.progress !== undefined) {
-        setProgress(data.progress);
-        setModalMessage(`Progression: ${data.progress}%`);
-      }
+        if (data.progress !== undefined) {
+          setProgress(data.progress);
+          setModalMessage(`Progression: ${data.progress}%`);
 
-      if (data.progress === 100) {
-        log("✅ WebSocket a atteint 100%, vérification du fichier ZIP...");
-        setModalMessage("✅ Génération terminée ! Vérification du fichier...");
+          if (data.progress === 100) {
+            log("✅ WebSocket a atteint 100%, vérification du fichier ZIP...");
+            setModalMessage("✅ Génération terminée ! Vérification du fichier...");
 
-        const zipReady = await pollDownloadStatus(); // Vérifie si le fichier ZIP est bien prêt
+            const zipReady = await pollDownloadStatus();
+            if (zipReady) {
+              handleDownload(sessionId);
+              setIsSuccess(true);
+              setModalMessage("✅ Téléchargement réussi ! Vos bulletins sont prêts.");
 
-        if (zipReady) {
-          log("📥 Téléchargement du fichier ZIP...");
-          const link = document.createElement("a");
-          link.href = `${API_BASE_URL}/download-zip/${sessionId}.zip`;
-          link.setAttribute("download", `bulletins_${sessionId}.zip`);
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-
-          setIsSuccess(true); // Met à jour l'état après le téléchargement réussi
-          setModalMessage("✅ Téléchargement réussi ! Vos bulletins sont prêts.");
-          ws.close(); // Fermer WebSocket après confirmation du fichier
-        } else {
-          setIsSuccess(false);
-          setModalMessage("❌ Le fichier ZIP n'est pas encore prêt. Réessayez plus tard.");
+              // Fermer proprement le WebSocket
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.close(1000, "Completed");
+              }
+            } else {
+              setIsSuccess(false);
+              setModalMessage("❌ Le fichier ZIP n'est pas encore prêt. Réessayez plus tard.");
+            }
+          }
         }
+      } catch (error) {
+        log(`Erreur lors du traitement du message WebSocket: ${error}`, true);
       }
     };
 
     ws.onerror = (error) => {
-      log(`❌ WebSocket error: ${error}`);
+      log(`❌ WebSocket error: ${error}`, true);
     };
 
     ws.onclose = (event) => {
       log(`⚠️ WebSocket closed (code: ${event.code}, reason: ${event.reason})`);
-      if (!event.wasClean) {
+      if (!event.wasClean && progress !== 100) {
         log("❌ WebSocket interrompu, tentative de reconnexion...");
         reconnectWebSocket(sessionId);
       }
     };
+  };
+
+  // Fonction utilitaire pour le téléchargement
+  const handleDownload = (sessionId: string) => {
+    const link = document.createElement("a");
+    link.href = `${API_BASE_URL}/download-zip/${sessionId}.zip`;
+    link.setAttribute("download", `bulletins_${sessionId}.zip`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const pollDownloadStatus = async () => {
