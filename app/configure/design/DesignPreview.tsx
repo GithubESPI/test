@@ -180,7 +180,7 @@ const DesignPreview = () => {
     setIsLoading(true);
     setIsModalOpen(true);
     setIsSuccess(null);
-    setModalMessage("Envoi des fichiers au serveur...");
+    setModalMessage("Traitement en cours...");
 
     try {
       // Récupérer les documents Excel et Word depuis Next.js API
@@ -326,7 +326,7 @@ const DesignPreview = () => {
       <LoginModal
         isOpen={isModalOpen}
         setIsOpen={setIsModalOpen}
-        title={isSuccess ? "Félicitations" : "Oups"}
+        title={isLoading ? "Chargement..." : isSuccess ? "Félicitations" : "Oups"}
         description={modalMessage}
       >
         {isLoading && <Progress value={progress} className="w-full" />}
