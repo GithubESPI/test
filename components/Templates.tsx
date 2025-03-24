@@ -9,13 +9,13 @@ const steps = [
     icon: <School className="w-6 h-6" />,
     title: "1. Sélectionnez le campus et le groupe d'apprenants",
     description:
-      "Commencez par choisir votre campus et le groupe d'étudiants pour lesquels vous souhaitez générer les bulletins d'évaluation.",
+      "Commencez par choisir votre campus et le groupe d'apprenants pour lesquels vous souhaitez générer les bulletins.",
   },
   {
     icon: <FileText className="w-6 h-6" />,
-    title: "2. Choisissez la période",
+    title: "2. Choisissez la période d'évaluation",
     description:
-      "Sélectionnez la période correspondante. Les données seront automatiquement récupérées et analysées pour la génération des bulletins.",
+      "Sélectionnez la période d'évaluation correspondante. Les données seront automatiquement récupérées et analysées pour la génération des bulletins.",
   },
   {
     icon: <FileDown className="w-6 h-6" />,
