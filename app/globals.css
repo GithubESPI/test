@@ -62,11 +62,6 @@
   }
 }
 
-img {
-  width: auto;
-  height: auto;
-}
-
 .container {
   max-width: 1172px;
 }
@@ -176,8 +171,25 @@ img {
   background-image: linear-gradient(93deg, #0a5d81, #003349);
 }
 
+.text-wtm-button-linear {
+  color: linear-gradient(93deg, #0a5d81, #003349);
+}
+
 .hover\:bg-wtm-button-linear-reverse:hover {
   background-image: linear-gradient(93deg, #8e413e, #ed6d68);
+}
+
+.form-background {
+  background: linear-gradient(135deg, #f6f8fb 0%, #e5ebf4 100%);
+}
+
+.card-shadow {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.pattern-dots {
+  background-image: radial-gradient(#cbd5e0 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 
 @layer utilities {
