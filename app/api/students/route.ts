@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 3600; // Revalidation toutes les heures (en secondes)
-
 export async function GET() {
   try {
     const baseUrl = process.env.YPAERO_BASE_URL;
@@ -13,14 +11,13 @@ export async function GET() {
 
     const url = `${baseUrl}/r/v1/formation-longue/apprenants?codesPeriode=4`;
 
-    // Pas besoin d'AbortController avec ISR car Next.js gère le timeout
     const response = await fetch(url, {
       method: "GET",
       headers: {
         "X-Auth-Token": apiToken,
         Accept: "application/json",
       },
-      next: { revalidate: 3600 }, // ISR: rafraîchissement toutes les heures
+      cache: "no-store",
     });
 
     if (!response.ok) {
