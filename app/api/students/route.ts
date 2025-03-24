@@ -1,21 +1,29 @@
 import { NextResponse } from "next/server";
 
-// Cette fonction utilise ISR pour mettre en cache les données tout en les revalidant périodiquement
 export async function GET() {
+  console.log("Début de la requête API students");
   try {
     const baseUrl = process.env.YPAERO_BASE_URL;
     const apiToken = process.env.YPAERO_API_TOKEN;
+
+    console.log(`Base URL: ${baseUrl ? "configurée" : "manquante"}`);
+    console.log(`API Token: ${apiToken ? "configuré" : "manquant"}`);
 
     if (!baseUrl || !apiToken) {
       throw new Error("Variables d'environnement manquantes");
     }
 
     const url = `${baseUrl}/r/v1/formation-longue/apprenants?codesPeriode=4`;
+    console.log(`URL de l'API: ${url}`);
 
-    // Créer un controller pour pouvoir ajouter un timeout
+    // Augmenter le timeout à 15 secondes
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => {
+      console.log("Timeout déclenché après 15 secondes");
+      controller.abort();
+    }, 15000);
 
+    console.log("Envoi de la requête...");
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -23,25 +31,25 @@ export async function GET() {
         Accept: "application/json",
       },
       signal: controller.signal,
-      next: { revalidate: 3600 }, // Revalider toutes les heures (3600 secondes)
+      next: { revalidate: 3600 },
     });
 
-    // Nettoyage du timeout
     clearTimeout(timeoutId);
+    console.log(`Réponse reçue avec statut: ${response.status}`);
 
     if (!response.ok) {
       throw new Error(`Erreur HTTP: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
+    console.log("Données reçues avec succès");
     return NextResponse.json(data);
   } catch (error) {
-    console.error("Erreur:", error);
+    console.error("Erreur détaillée:", error);
 
-    // Message d'erreur plus spécifique si c'est un timeout
     if (error instanceof DOMException && error.name === "AbortError") {
       return NextResponse.json(
-        { error: "Délai d'attente dépassé lors de la connexion à l'API externe" },
+        { error: "Délai d'attente dépassé lors de la connexion à l'API externe (15s)" },
         { status: 504 }
       );
     }
