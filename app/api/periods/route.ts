@@ -4,9 +4,51 @@ const token =
   "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MjA0NzYwMDAsImNsdCI6IjNFREI0QUU3LTlGNDEtNDM4QS1CRDE1LTQ1Rjk3MEVEQ0VCOSJ9.q8i-pDiwdf4Zlja-bd9keZTD0IIeJOrKDl8PGai9mPE";
 const url = "https://groupe-espi.ymag.cloud/index.php/r/v1/sql/requeteur";
 
+// Fonction auxiliaire avec retry et timeout
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3) {
+  let lastError;
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 secondes timeout
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Pour traiter la réponse de manière plus robuste
+      const responseText = await response.text();
+      try {
+        return JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Erreur de parsing JSON:", parseError);
+        console.error("Réponse brute:", responseText);
+        throw new Error(`Erreur de parsing JSON: ${responseText.substring(0, 200)}...`);
+      }
+    } catch (error) {
+      console.error(`Tentative ${i + 1}/${maxRetries} échouée:`, error);
+      lastError = error;
+      // Attendre avant de réessayer (backoff exponentiel)
+      if (i < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, i)));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 export async function GET() {
   try {
-    const response = await fetch(url, {
+    const responseData = await fetchWithRetry(url, {
       method: "POST",
       headers: {
         "X-Auth-Token": token,
@@ -17,12 +59,6 @@ export async function GET() {
         sql: "SELECT * FROM PERIODE_EVALUATION ORDER BY NOM_PERIODE_EVALUATION",
       }),
     });
-
-    if (!response.ok) {
-      throw new Error(`Erreur HTTP: ${response.status}`);
-    }
-
-    const responseData = await response.json();
 
     // S'assurer que les données sont un tableau
     const periodsArray = Array.isArray(responseData) ? responseData : Object.values(responseData);
