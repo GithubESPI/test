@@ -32,7 +32,7 @@ interface QueryResults {
 
 async function executeQuery(query: string, token: string): Promise<any[]> {
   try {
-    const url = "https://groupe-espi.ymag.cloud/index.php/r/v1/sql/requeteur";
+    const url = process.env.URL_REQUETEUR!;
     console.log("URL de l'API:", url);
     console.log("Requête SQL:", query);
 
@@ -117,8 +117,7 @@ export async function POST(request: Request) {
 
     console.log("🔍 Période sélectionnée :", periodeEvaluation);
 
-    const token =
-      "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MjA0NzYwMDAsImNsdCI6IjNFREI0QUU3LTlGNDEtNDM4QS1CRDE1LTQ1Rjk3MEVEQ0VCOSJ9.q8i-pDiwdf4Zlja-bd9keZTD0IIeJOrKDl8PGai9mPE";
+    const token = process.env.TOKEN_REQUETEUR!;
 
     // Étape 1️⃣ : Récupérer le NOM_GROUPE à partir du CODE_GROUPE
     const groupQuery = `SELECT NOM_GROUPE, NUMERO_ANNEE, CODE_FORMATION FROM GROUPE WHERE CODE_GROUPE = ${group}`;
