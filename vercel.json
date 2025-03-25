@@ -3,8 +3,22 @@
     "app/api/**/*": {
       "maxDuration": 300
     },
-    "app/api/pdf/route": {
+    "app/api/pdf/route.ts": {
       "maxDuration": 300
     }
-  }
+  },
+  "github": {
+    "silent": true
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate, proxy-revalidate"
+        }
+      ]
+    }
+  ]
 }
