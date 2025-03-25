@@ -22,20 +22,8 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // Configuration expérimentale pour les packages externes
-  experimental: {
-    serverComponentsExternalPackages: ["pdf-lib", "fs", "path", "jszip"],
-  },
-  // Configuration runtime pour le serveur
-  serverRuntimeConfig: {
-    apiTimeout: 120000, // 120 secondes
-  },
-  // Variables d'environnement pour augmenter la mémoire disponible
-  env: {
-    NODE_OPTIONS: "--max-old-space-size=4096",
-  },
-  poweredByHeader: false,
-  compress: true,
 };
 
 export default nextConfig;
+
+module.exports = nextConfig;
