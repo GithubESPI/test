@@ -4,6 +4,7 @@ import fontkit from "@pdf-lib/fontkit"; // Ajoutez cette ligne
 import fs from "fs";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
+import os from "os";
 import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
@@ -1881,13 +1882,15 @@ export async function POST(request: Request) {
     console.log(`ID du fichier ZIP généré: ${zipId}`);
 
     // Stocker le contenu dans notre système de stockage sur disque
-    fileStorage.storeFile(zipId, Buffer.from(zipBuffer), "application/zip");
-    console.log(`Fichier temporaire stocké: ${zipId}, taille: ${zipBuffer.byteLength} octets`);
+    const tmpDir = os.tmpdir();
+    const zipPath = path.join(tmpDir, zipId);
+    fs.writeFileSync(zipPath, Buffer.from(zipBuffer));
 
     // Vérifier que le fichier est bien dans le store
     try {
-      fileStorage.storeFile(zipId, Buffer.from(zipBuffer), "application/zip");
-      console.log(`Fichier temporaire stocké: ${zipId}, taille: ${zipBuffer.byteLength} octets`);
+      const tmpDir = os.tmpdir();
+      const zipPath = path.join(tmpDir, zipId);
+      fs.writeFileSync(zipPath, Buffer.from(zipBuffer));
 
       // Vérifier que le fichier est bien stocké
       if (!fileStorage.hasFile(zipId)) {
