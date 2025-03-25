@@ -1,4 +1,3 @@
-// app/api/download/route.ts
 import { fileStorage } from "@/lib/fileStorage";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -15,6 +14,11 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // 🔥 DEBUG — Liste des fichiers dispo
+    const availableFiles = await fileStorage.getAllFileIds();
+    console.log(`📁 Fichiers disponibles sur Blob (${availableFiles.length}):`);
+    console.log(availableFiles.join(", "));
 
     const fileExists = await fileStorage.hasFile(fileId);
     if (!fileExists) {
