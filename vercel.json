@@ -1,10 +1,11 @@
 {
   "functions": {
-    "app/api/students/route.ts": {
-      "maxDuration": 60
+    "app/api/**/*.ts": {
+      "maxDuration": 300
     },
-    "app/api/sql/route.ts": {
-      "maxDuration": 320
+    "app/api/pdf/route.ts": {
+      "maxDuration": 300,
+      "memory": 3008
     }
   }
 }

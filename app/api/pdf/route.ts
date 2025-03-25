@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { fileStorage } from "@/lib/fileStorage"; // Utiliser fileStorage au lieu de tempFileStorage
-import fontkit from "@pdf-lib/fontkit";
 import fs from "fs";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
@@ -416,29 +415,15 @@ async function createStudentPDF(
     const pdfDoc = await PDFDocument.create();
     let page = pdfDoc.addPage([595.28, 841.89]); // Format A4
 
-    // Charger les polices Poppins (s'ils sont disponibles)
-    let poppinsRegular;
-    let poppinsBold;
-
+    // Avant la boucle des étudiants, préchargez toutes les ressources
+    let poppinsRegular, poppinsBold;
     try {
-      // Chemins vers les fichiers de police (ajustez selon l'emplacement de vos fichiers)
       const poppinsRegularPath = path.join(process.cwd(), "public", "fonts", "Poppins-Regular.ttf");
       const poppinsBoldPath = path.join(process.cwd(), "public", "fonts", "Poppins-Bold.ttf");
-
-      // Lire les fichiers de police
-      const poppinsRegularBytes = fs.readFileSync(poppinsRegularPath);
-      const poppinsBoldBytes = fs.readFileSync(poppinsBoldPath);
-
-      pdfDoc.registerFontkit(fontkit);
-
-      // Incorporer les polices dans le document PDF
-      poppinsRegular = await pdfDoc.embedFont(poppinsRegularBytes);
-      poppinsBold = await pdfDoc.embedFont(poppinsBoldBytes);
-
-      console.log("✅ Polices Poppins chargées avec succès");
+      poppinsRegular = await pdfDoc.embedFont(fs.readFileSync(poppinsRegularPath));
+      poppinsBold = await pdfDoc.embedFont(fs.readFileSync(poppinsBoldPath));
     } catch (error) {
-      console.error("❌ Erreur lors du chargement des polices Poppins:", error);
-      console.log("Utilisation des polices standard comme fallback");
+      console.error("Erreur police Poppins:", error);
     }
 
     // Définir les polices à utiliser (avec fallback sur des polices standard si Poppins n'est pas disponible)
@@ -1764,9 +1749,11 @@ export async function POST(request: Request) {
     // Mise à jour des crédits UE avec la nouvelle fonction
     const updatedSubjects = updateUECredits(sourceMatieres);
     console.log(`✅ Crédits UE mis à jour (${updatedSubjects.length} matières traitées)`);
+    const batchSize = 10;
+    const studentsToProcess = data.APPRENANT.slice(0, batchSize);
 
     // Générer PDFs pour chaque étudiant
-    for (const studentObj of data.APPRENANT) {
+    for (const studentObj of studentsToProcess) {
       try {
         // Extraire les données nécessaires de l'objet étudiant
         const student = {
