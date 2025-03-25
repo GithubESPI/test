@@ -13,13 +13,13 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  webpack: (config) => {
-    config.externals.push({
-      "pdf-lib": "pdf-lib",
-      jszip: "jszip",
-      canvas: "canvas",
-    });
-    return config;
+  experimental: {
+    turbo: {
+      rules: {
+        // Configuration des externals pour Turbopack
+        external: ["pdf-lib", "jszip", "canvas"],
+      },
+    },
   },
   async rewrites() {
     return [
