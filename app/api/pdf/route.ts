@@ -1,24 +1,41 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { fileStorage } from "@/lib/fileStorage"; // Utiliser fileStorage au lieu de tempFileStorage
-import fontkit from "@pdf-lib/fontkit"; // Ajoutez cette ligne
-import fs from "fs";
+import { blobStorage } from "@/lib/blobStorage";
+import fontkit from "@pdf-lib/fontkit";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
-import os from "os";
-import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+// Pour le développement uniquement, utilisez import dynamique pour fs et path
+import * as fs from "fs";
+import * as path from "path";
 
-export const config = {
-  api: {
-    responseLimit: false,
-    bodyParser: {
-      sizeLimit: "50mb",
-    },
-  },
-};
+// Fonction pour charger des ressources (polices, images, signatures)
+// Fonction pour charger des ressources (polices, images, signatures)
+async function loadResource(resourceType: string, filename: string): Promise<Buffer> {
+  try {
+    // En production, les ressources sont stockées dans Vercel Blob
+    if (process.env.NODE_ENV === "production") {
+      const resourcePath = `resources/${resourceType}/${filename}`;
+      const resourceData = await fetch(`${process.env.BLOB_URL || ""}/${resourcePath}`);
 
-// Augmenter le délai d'attente à 5 minutes
-export const maxDuration = 300;
+      if (!resourceData.ok) {
+        throw new Error(`Ressource non trouvée: ${resourcePath}`);
+      }
+
+      return Buffer.from(await resourceData.arrayBuffer());
+    } else {
+      // En développement, utiliser le système de fichiers local
+      // Utiliser les imports déclarés en haut du fichier, pas require()
+      const resourcePath = path.join(process.cwd(), "public", resourceType, filename);
+      return fs.readFileSync(resourcePath);
+    }
+  } catch (error) {
+    console.error(
+      `❌ Erreur lors du chargement de la ressource ${resourceType}/${filename}:`,
+      error
+    );
+    throw error;
+  }
+}
 
 // Type definitions for the student data
 interface StudentData {
@@ -436,8 +453,8 @@ async function createStudentPDF(
     let mainFont, boldFont;
     try {
       // Essayer de charger les polices personnalisées
-      const poppinsRegularPath = path.join(process.cwd(), "public", "fonts", "Poppins-Regular.ttf");
-      const poppinsBoldPath = path.join(process.cwd(), "public", "fonts", "Poppins-Bold.ttf");
+      const poppinsRegularPath = await loadResource("fonts", "Poppins-Regular.ttf");
+      const poppinsBoldPath = await loadResource("fonts", "Poppins-Bold.ttf");
 
       // Vérifier si les fichiers existent avant de les lire
       if (fs.existsSync(poppinsRegularPath) && fs.existsSync(poppinsBoldPath)) {
@@ -669,8 +686,7 @@ async function createStudentPDF(
     // ESPI Logo and header section
     // Logo ESPI (text en lieu de logo)
     try {
-      const logoPath = path.join(process.cwd(), "public", "logo", "espi.jpg");
-      const logoBytes = fs.readFileSync(logoPath);
+      const logoBytes = await loadResource("logo", "espi.jpg");
       const logoImage = await pdfDoc.embedJpg(logoBytes);
 
       // Obtenir les dimensions de l'image
@@ -1524,7 +1540,7 @@ async function createStudentPDF(
     // Si un fichier de signature est disponible pour ce code personnel
     if (signatureFilename) {
       try {
-        const signaturePath = path.join(process.cwd(), "public", "signatures", signatureFilename);
+        const signaturePath = await loadResource("signatures", signatureFilename);
 
         // Vérifier si le fichier existe avant de le lire
         if (!fs.existsSync(signaturePath)) {
@@ -1674,65 +1690,30 @@ export async function POST(request: Request) {
       console.log("Aucune donnée reçue!");
     }
 
-    const data = body.data;
-    const period = body.periodeEvaluation || "Période non spécifiée";
-    const groupName = body.groupName || "Groupe non spécifié";
-
-    // Vérifier la présence des données essentielles
-    if (!data.APPRENANT || data.APPRENANT.length === 0) {
+    // Extract data from the request
+    if (!body.data) {
       return NextResponse.json(
         {
           success: false,
-          error: "Aucune donnée d'apprenant trouvée",
+          error: "Aucune donnée fournie",
         },
         { status: 400 }
       );
     }
 
-    // Check if we have student data
-    // Examiner la structure des données
-    if (data.APPRENANT && data.APPRENANT.length > 0) {
-      console.log("Structure détaillée du premier étudiant:");
-      console.log(JSON.stringify(data.APPRENANT[0], null, 2));
-    }
-
-    if (data.MOYENNES_UE && data.MOYENNES_UE.length > 0) {
-      console.log("Structure détaillée de la première moyenne UE:");
-      console.log(JSON.stringify(data.MOYENNES_UE[0], null, 2));
-      console.log("Type de MOYENNE:", typeof data.MOYENNES_UE[0].MOYENNE);
-      console.log("Valeur de MOYENNE:", data.MOYENNES_UE[0].MOYENNE);
-    }
-
-    if (data.MOYENNE_GENERALE && data.MOYENNE_GENERALE.length > 0) {
-      console.log("Structure détaillée de la première moyenne générale:");
-      console.log(JSON.stringify(data.MOYENNE_GENERALE[0], null, 2));
-      console.log("Type de MOYENNE_GENERALE:", typeof data.MOYENNE_GENERALE[0].MOYENNE_GENERALE);
-      console.log("Valeur de MOYENNE_GENERALE:", data.MOYENNE_GENERALE[0].MOYENNE_GENERALE);
-    }
-
-    if (data.ECTS_PAR_MATIERE && data.ECTS_PAR_MATIERE.length > 0) {
-      const uniqueCount = new Set(
-        data.ECTS_PAR_MATIERE.map((item: any) => `${item.CODE_APPRENANT}_${item.CODE_MATIERE}`)
-      ).size;
-      console.log(
-        `📊 ECTS_PAR_MATIERE: ${data.ECTS_PAR_MATIERE.length} éléments, ${uniqueCount} uniques`
-      );
-      console.log(
-        `📌 Ratio de duplication: ${(data.ECTS_PAR_MATIERE.length / uniqueCount).toFixed(2)}x`
-      );
-    }
+    const data = body.data;
+    const period = body.periodeEvaluation || "Période non spécifiée";
+    const groupName = body.groupName || "Groupe non spécifié";
 
     // Initialize ZIP archive in memory
     const zip = new JSZip();
 
-    // Compteurs
+    // Track failures
     let successCount = 0;
     let failureCount = 0;
-    const errorDetails = [];
 
     // Utiliser les données MATIERE si disponibles, sinon ECTS_PAR_MATIERE
     const sourceMatieres = data.MATIERE || data.ECTS_PAR_MATIERE || [];
-
     // Appliquer la règle : si une matière avec CODE_TYPE_MATIERE "3" a un état "R", ses ECTS passent à 0
     sourceMatieres.forEach((matiere: any) => {
       // Vérifier si la matière est en rattrapage
@@ -1749,21 +1730,11 @@ export async function POST(request: Request) {
     });
 
     // Mise à jour des crédits UE avec la nouvelle fonction
-    let updatedSubjects;
-    try {
-      updatedSubjects = updateUECredits(sourceMatieres);
-      console.log(`Crédits UE mis à jour (${updatedSubjects.length} matières traitées)`);
-    } catch (error) {
-      console.error("Erreur lors de la mise à jour des crédits UE:", error);
-      updatedSubjects = sourceMatieres; // Fallback aux données originales
-    }
-
-    // Limiter le nombre d'étudiants par traitement (éviter les timeouts)
-    const batchSize = 10;
-    const studentsToProcess = data.APPRENANT.slice(0, batchSize);
+    const updatedSubjects = updateUECredits(sourceMatieres);
+    console.log(`✅ Crédits UE mis à jour (${updatedSubjects.length} matières traitées)`);
 
     // Générer PDFs pour chaque étudiant
-    for (const studentObj of studentsToProcess) {
+    for (const studentObj of data.APPRENANT) {
       try {
         // Extraire les données nécessaires de l'objet étudiant
         const student = {
@@ -1775,31 +1746,25 @@ export async function POST(request: Request) {
 
         console.log(`Création du PDF pour ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`);
 
-        // S'assurer que nous avons des données valides
-        const moyennesUE = data.MOYENNES_UE || [];
-        const moyenneGenerale = data.MOYENNE_GENERALE || [];
-        const observations = data.OBSERVATIONS || [];
-        const absences = data.ABSENCE || [];
-        const processedAbsences = processAbsences(absences);
+        const updatedSubjects = updateUECredits(data.ECTS_PAR_MATIERE || []);
 
-        // Créer le PDF
         const pdfBytes = await createStudentPDF(
           student,
-          moyennesUE,
-          moyenneGenerale,
-          observations,
+          data.MOYENNES_UE || [],
+          data.MOYENNE_GENERALE || [],
+          data.OBSERVATIONS || [],
           updatedSubjects,
           data.GROUPE || [],
           data.SITE || [],
           period,
-          absences,
-          processedAbsences,
+          data.ABSENCE || [],
+          processAbsences(data.ABSENCE || []),
           data.PERSONNEL || []
         );
 
         console.log("📌 Matières brutes reçues :", data.ECTS_PAR_MATIERE);
 
-        // Récupérer des informations pour le nom de fichier
+        // Récupérer le nom de la formation à partir des données du groupe
         let nomFormation = "FORMATION";
         if (data.GROUPE && data.GROUPE.length > 0 && data.GROUPE[0].NOM_FORMATION) {
           nomFormation = data.GROUPE[0].NOM_FORMATION.replace(/\s+/g, "_").replace(
@@ -1808,28 +1773,21 @@ export async function POST(request: Request) {
           );
         }
 
-        // Nettoyer la période
+        // Nettoyer la période d'évaluation
         const periodClean = period.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
 
-        // Générer le nom de fichier
+        // Générer le nom de fichier au format demandé
         const filename = `2024-2025_${nomFormation}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
 
         // Add PDF to the zip file (in memory)
         zip.file(filename, pdfBytes);
         console.log(`Fichier ${filename} ajouté au ZIP`);
+
         successCount++;
         console.log(`📄 PDF généré pour ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`);
       } catch (error) {
         failureCount++;
-        let errorMessage = "Erreur inconnue";
-        if (error instanceof Error) {
-          errorMessage = error.message;
-        }
-        console.error(`Erreur pour l'étudiant ${studentObj.NOM_APPRENANT}: ${errorMessage}`);
-        errorDetails.push({
-          etudiant: `${studentObj.NOM_APPRENANT} ${studentObj.PRENOM_APPRENANT}`,
-          erreur: errorMessage,
-        });
+        console.error(`❌ Erreur lors de la génération du PDF pour l'étudiant:`, error);
       }
     }
 
@@ -1849,29 +1807,35 @@ export async function POST(request: Request) {
     const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
     console.log("ZIP généré avec succès");
 
-    let groupNameForFilename =
-      data.GROUPE && data.GROUPE.length > 0 ? data.GROUPE[0].NOM_GROUPE || groupName : groupName; // Valeur par défaut
+    let groupNameForFilename = groupName; // Valeur par défaut
     let periodNameForFilename = period; // Valeur par défaut
 
     // Essayer de récupérer NOM_PERIODE_EVALUATION depuis les données des notes
-    if (
-      data.MOYENNES_UE &&
-      data.MOYENNES_UE.length > 0 &&
-      data.MOYENNES_UE[0].NOM_PERIODE_EVALUATION
-    ) {
-      periodNameForFilename = data.MOYENNES_UE[0].NOM_PERIODE_EVALUATION;
+    if (data.MOYENNES_UE && data.MOYENNES_UE.length > 0) {
+      // Vérifier si le champ existe dans les données
+      const sampleGrade = data.MOYENNES_UE[0];
+      console.log("Exemple de données MOYENNES_UE:", sampleGrade);
+
+      if (sampleGrade.NOM_PERIODE_EVALUATION) {
+        periodNameForFilename = sampleGrade.NOM_PERIODE_EVALUATION;
+        console.log(`NOM_PERIODE_EVALUATION trouvé: "${periodNameForFilename}"`);
+      } else {
+        console.log("NOM_PERIODE_EVALUATION non trouvé dans les données MOYENNES_UE");
+        // Lister toutes les clés disponibles pour aider au débogage
+        console.log("Clés disponibles:", Object.keys(sampleGrade));
+      }
     }
 
-    // 2. Récupérer le nom du groupe depuis les données
+    // Récupérer le nom du groupe depuis les données
     if (data.GROUPE && data.GROUPE.length > 0) {
       groupNameForFilename = data.GROUPE[0].NOM_GROUPE || groupName;
       console.log(`NOM_GROUPE trouvé: "${groupNameForFilename}"`);
     }
 
+    // Nettoyer et formater les valeurs pour le nom du fichier
     const sanitizedGroupName = groupNameForFilename
       .replace(/\s+/g, "_")
       .replace(/[^a-zA-Z0-9_-]/g, "");
-
     const sanitizedPeriod = periodNameForFilename
       .replace(/\s+/g, "_")
       .replace(/[^a-zA-Z0-9_-]/g, "");
@@ -1881,41 +1845,34 @@ export async function POST(request: Request) {
 
     console.log(`ID du fichier ZIP généré: ${zipId}`);
 
-    // Stocker le contenu dans notre système de stockage sur disque
-    const tmpDir = os.tmpdir();
-    const zipPath = path.join(tmpDir, zipId);
-    fs.writeFileSync(zipPath, Buffer.from(zipBuffer));
+    // Stocker le contenu dans notre système de stockage avec Vercel Blob
+    await blobStorage.storeFile(zipId, Buffer.from(zipBuffer), "application/zip");
+    console.log(`Fichier temporaire stocké: ${zipId}, taille: ${zipBuffer.byteLength} octets`);
 
     // Vérifier que le fichier est bien dans le store
-    try {
-      const tmpDir = os.tmpdir();
-      const zipPath = path.join(tmpDir, zipId);
-      fs.writeFileSync(zipPath, Buffer.from(zipBuffer));
-
-      // Vérifier que le fichier est bien stocké
-      if (!fileStorage.hasFile(zipId)) {
-        throw new Error("Le fichier ZIP n'a pas été correctement stocké");
-      }
-
-      // Renvoyer le chemin de téléchargement
-      return NextResponse.json({
-        success: true,
-        path: `/api/download?id=${zipId}`,
-        studentCount: successCount,
-        failedCount: failureCount,
-      });
-    } catch (storageError) {
-      console.error("Erreur lors du stockage du fichier ZIP:", storageError);
-
+    if (await blobStorage.hasFile(zipId)) {
+      console.log(`✅ Confirmation: le fichier ${zipId} existe dans le blobStorage`);
+    } else {
+      console.log(`❌ Erreur: le fichier ${zipId} n'existe PAS dans le blobStorage`);
       return NextResponse.json(
         {
           success: false,
           error: "Erreur lors du stockage du fichier ZIP",
-          details: (storageError as Error).message,
         },
         { status: 500 }
       );
     }
+
+    // Afficher tous les fichiers disponibles
+    const availableFiles = await blobStorage.getAllFileIds();
+    console.log(`Fichiers disponibles dans le store: ${availableFiles.join(", ")}`);
+
+    // Renvoyer un JSON avec le chemin vers l'API de téléchargement
+    return NextResponse.json({
+      success: true,
+      path: `/api/download?id=${zipId}`,
+      studentCount: successCount,
+    });
   } catch (error: any) {
     console.error("❌ Erreur générale lors de la génération des PDFs:", error);
     return NextResponse.json(

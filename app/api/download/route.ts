@@ -1,60 +1,96 @@
-import { fileStorage } from "@/lib/fileStorage";
+// app/api/download/route.ts
+import { blobStorage } from "@/lib/blobStorage";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   try {
+    console.log("blobStorage importé:", blobStorage);
+    console.log("getAllFileIds disponible:", typeof blobStorage.getAllFileIds === "function");
+
+    // Get the file identifier from the query parameter
     const searchParams = request.nextUrl.searchParams;
     const fileId = searchParams.get("id");
 
-    console.log(`📥 Téléchargement demandé pour: ${fileId}`);
+    console.log(`Tentative de téléchargement du fichier avec ID: ${fileId}`);
 
     if (!fileId) {
+      console.log("❌ Erreur: Identifiant de fichier manquant");
       return NextResponse.json(
-        { success: false, error: "Identifiant de fichier manquant" },
+        {
+          success: false,
+          error: "Identifiant de fichier manquant",
+        },
         { status: 400 }
       );
     }
 
-    // 🔥 DEBUG — Liste des fichiers dispo
-    const availableFiles = await fileStorage.getAllFileIds();
-    console.log(`📁 Fichiers disponibles sur Blob (${availableFiles.length}):`);
+    // Afficher les identifiants disponibles
+    const availableFiles = await blobStorage.getAllFileIds();
+    console.log(`Fichiers disponibles (${availableFiles.length}):`);
     console.log(availableFiles.join(", "));
 
-    const fileExists = await fileStorage.hasFile(fileId);
+    // Check if the file exists
+    const fileExists = await blobStorage.hasFile(fileId);
     if (!fileExists) {
-      console.log(`❌ Fichier non trouvé: ${fileId}`);
-      return NextResponse.json({ success: false, error: "Fichier non trouvé" }, { status: 404 });
+      console.log(`❌ Erreur: Fichier non trouvé pour l'ID: ${fileId}`);
+
+      // Vérification supplémentaire: est-ce qu'un fichier similaire existe?
+      const similarFiles = availableFiles.filter(
+        (filename) =>
+          filename.includes(fileId.split("_")[0]) || filename.includes(fileId.split("_")[1] || "")
+      );
+
+      if (similarFiles.length > 0) {
+        console.log(`Fichiers similaires trouvés: ${similarFiles.join(", ")}`);
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Fichier non trouvé",
+        },
+        { status: 404 }
+      );
     }
 
-    const fileInfo = await fileStorage.getFile(fileId);
+    // Get the file
+    const fileInfo = await blobStorage.getFile(fileId);
     if (!fileInfo) {
-      console.log(`❌ Impossible de récupérer les infos du fichier`);
+      console.log(`❌ Erreur: Impossible de lire le fichier pour l'ID: ${fileId}`);
       return NextResponse.json(
-        { success: false, error: "Erreur de récupération" },
+        {
+          success: false,
+          error: "Erreur lors de la récupération du fichier",
+        },
         { status: 500 }
       );
     }
 
-    const blobRes = await fetch(fileInfo.url);
-    if (!blobRes.ok) {
-      throw new Error(`Erreur lors du fetch depuis Vercel Blob`);
-    }
+    console.log(`✅ Fichier trouvé, taille: ${fileInfo.data.length} octets`);
 
-    const arrayBuffer = await blobRes.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    // Return the file as a response
+    const response = new NextResponse(fileInfo.data);
 
-    console.log(`✅ Fichier téléchargé depuis Blob, taille: ${buffer.length} octets`);
-
-    const response = new NextResponse(buffer);
+    // Set appropriate headers
     response.headers.set("Content-Type", fileInfo.contentType);
     response.headers.set("Content-Disposition", `attachment; filename="${fileId}"`);
-    response.headers.set("Cache-Control", "no-cache");
+
+    // Cache control headers
+    response.headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    response.headers.set("Pragma", "no-cache");
+    response.headers.set("Expires", "0");
+
+    console.log("En-têtes de réponse configurés:", Object.fromEntries(response.headers.entries()));
 
     return response;
   } catch (error) {
-    console.error("❌ Erreur route download:", error);
+    console.error("❌ Erreur lors du téléchargement du fichier:", error);
     return NextResponse.json(
-      { success: false, error: "Erreur interne", details: (error as Error).message },
+      {
+        success: false,
+        error: "Erreur lors du téléchargement du fichier",
+        details: (error as Error).message,
+      },
       { status: 500 }
     );
   }
