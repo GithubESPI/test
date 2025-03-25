@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
     turbo: {
       rules: {
         // Configuration des externals pour Turbopack
+
         external: ["pdf-lib", "jszip", "canvas"],
       },
     },
