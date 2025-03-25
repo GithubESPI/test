@@ -4,12 +4,8 @@
       "maxDuration": 300
     },
     "app/api/pdf/route.ts": {
-<<<<<<< HEAD
       "maxDuration": 300,
       "memory": 3008
-=======
-      "maxDuration": 300
->>>>>>> c81cd75cf15a51ea35feb24b0dc77697420949c6
     }
   }
 }
