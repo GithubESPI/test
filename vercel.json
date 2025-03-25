@@ -1,10 +1,7 @@
 {
   "functions": {
-    "app/api/students/route.ts": {
-      "maxDuration": 60
-    },
-    "app/api/sql/route.ts": {
-      "maxDuration": 60
+    "app/api/**/*.ts": {
+      "maxDuration": 60 // All functions can run for a maximum of 5 seconds
     }
   }
 }
