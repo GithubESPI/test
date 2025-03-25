@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { fileStorage } from "@/lib/fileStorage"; // Utiliser fileStorage au lieu de tempFileStorage
+import fontkit from "@pdf-lib/fontkit"; // Ajoutez cette ligne
 import fs from "fs";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
@@ -425,6 +426,8 @@ async function createStudentPDF(
   try {
     // Create a new PDF document
     const pdfDoc = await PDFDocument.create();
+    pdfDoc.registerFontkit(fontkit); // Ajoutez cette ligne
+
     let page = pdfDoc.addPage([595.28, 841.89]); // Format A4
 
     // Avant la boucle des étudiants, préchargez toutes les ressources
@@ -443,7 +446,6 @@ async function createStudentPDF(
         boldFont = poppinsBold;
       } else {
         // Fallback sur des polices standard si les fichiers n'existent pas
-        console.log("Fichiers de police Poppins non trouvés, utilisation des polices standard");
         mainFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
         boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       }
