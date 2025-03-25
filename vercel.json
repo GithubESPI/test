@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/route-name.js": {
+      "maxDuration": 60
+    }
+  }
+}

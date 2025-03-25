@@ -17,7 +17,7 @@ export async function GET() {
         "X-Auth-Token": apiToken,
         Accept: "application/json",
       },
-      cache: "no-store",
+      next: { revalidate: 3600 },
     });
 
     if (!response.ok) {
