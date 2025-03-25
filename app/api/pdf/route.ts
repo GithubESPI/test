@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
+export const runtime = "nodejs";
+
 // Type definitions for the student data
 interface StudentData {
   CODE_APPRENANT: string;
@@ -416,19 +418,31 @@ async function createStudentPDF(
     let page = pdfDoc.addPage([595.28, 841.89]); // Format A4
 
     // Avant la boucle des étudiants, préchargez toutes les ressources
-    let poppinsRegular, poppinsBold;
+    // Avant la boucle des étudiants, préchargez toutes les ressources
+    let mainFont, boldFont;
     try {
+      // Essayer de charger les polices personnalisées
       const poppinsRegularPath = path.join(process.cwd(), "public", "fonts", "Poppins-Regular.ttf");
       const poppinsBoldPath = path.join(process.cwd(), "public", "fonts", "Poppins-Bold.ttf");
-      poppinsRegular = await pdfDoc.embedFont(fs.readFileSync(poppinsRegularPath));
-      poppinsBold = await pdfDoc.embedFont(fs.readFileSync(poppinsBoldPath));
-    } catch (error) {
-      console.error("Erreur police Poppins:", error);
-    }
 
-    // Définir les polices à utiliser (avec fallback sur des polices standard si Poppins n'est pas disponible)
-    const mainFont = poppinsRegular || (await pdfDoc.embedFont(StandardFonts.Helvetica));
-    const boldFont = poppinsBold || (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
+      // Vérifier si les fichiers existent avant de les lire
+      if (fs.existsSync(poppinsRegularPath) && fs.existsSync(poppinsBoldPath)) {
+        const poppinsRegular = await pdfDoc.embedFont(fs.readFileSync(poppinsRegularPath));
+        const poppinsBold = await pdfDoc.embedFont(fs.readFileSync(poppinsBoldPath));
+        mainFont = poppinsRegular;
+        boldFont = poppinsBold;
+      } else {
+        // Fallback sur des polices standard si les fichiers n'existent pas
+        console.log("Fichiers de police Poppins non trouvés, utilisation des polices standard");
+        mainFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      }
+    } catch (error) {
+      console.error("Erreur lors du chargement des polices:", error);
+      // Fallback sur des polices standard en cas d'erreur
+      mainFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    }
 
     // Définir une taille de police plus petite par défaut
     const fontSize = 8;
@@ -1427,7 +1441,6 @@ async function createStudentPDF(
 
     currentY -= 25; // Espace additionnel
 
-    // Vérifier s'il reste assez d'espace pour la signature
     const MIN_SPACE_FOR_SIGNATURE = 100;
     if (currentY < margin + MIN_SPACE_FOR_SIGNATURE) {
       // Pas assez d'espace, créer une nouvelle page
@@ -1455,39 +1468,21 @@ async function createStudentPDF(
     let prenomPersonnel = "";
     let nomFonctionPersonnel = "";
 
-    // Vérifier si les données PERSONNEL sont disponibles
-    console.log("PERSONNEL data:", personnelData);
-    console.log("groupInfo:", groupInfo);
-
     // Vérifier d'abord si les données sont disponibles directement dans groupInfo
-    if (groupInfo.length > 0) {
+    // Chercher d'abord dans groupInfo
+    if (groupInfo && groupInfo.length > 0) {
       codePersonnelGestionnaire = groupInfo[0].CODE_PERSONNEL_GESTIONNAIRE || "";
       nomPersonnel = groupInfo[0].NOM_PERSONNEL || "";
       prenomPersonnel = groupInfo[0].PRENOM_PERSONNEL || "";
       nomFonctionPersonnel = groupInfo[0].NOM_FONCTION_PERSONNEL || "";
-
-      console.log("From groupInfo:", {
-        code: codePersonnelGestionnaire,
-        nom: nomPersonnel,
-        prenom: prenomPersonnel,
-        fonction: nomFonctionPersonnel,
-      });
     }
 
-    // Si aucune donnée n'est disponible dans groupInfo, vérifier si PERSONNEL est disponible
     if ((!nomPersonnel || !prenomPersonnel) && personnelData && personnelData.length > 0) {
       const personnel = personnelData[0];
       codePersonnelGestionnaire = personnel.CODE_PERSONNEL_GESTIONNAIRE || "";
       nomPersonnel = personnel.NOM_PERSONNEL || "";
       prenomPersonnel = personnel.PRENOM_PERSONNEL || "";
       nomFonctionPersonnel = personnel.NOM_FONCTION_PERSONNEL || "";
-
-      console.log("From PERSONNEL data:", {
-        code: codePersonnelGestionnaire,
-        nom: nomPersonnel,
-        prenom: prenomPersonnel,
-        fonction: nomFonctionPersonnel,
-      });
     }
 
     // Fallback si toujours aucune donnée
@@ -1516,15 +1511,19 @@ async function createStudentPDF(
     // Si un fichier de signature est disponible pour ce code personnel
     if (signatureFilename) {
       try {
-        // Déterminer l'extension du fichier pour choisir la méthode d'intégration appropriée
+        const signaturePath = path.join(process.cwd(), "public", "signatures", signatureFilename);
+
+        // Vérifier si le fichier existe avant de le lire
+        if (!fs.existsSync(signaturePath)) {
+          throw new Error(`Fichier de signature non trouvé: ${signaturePath}`);
+        }
+
+        const signatureBytes = fs.readFileSync(signaturePath);
+
+        // Déterminer le type de fichier
         const isJpg =
           signatureFilename.toLowerCase().endsWith(".jpg") ||
           signatureFilename.toLowerCase().endsWith(".jpeg");
-
-        // Chemin vers l'image de signature
-        const signaturePath = path.join(process.cwd(), "public", "signatures", signatureFilename);
-        console.log(`Looking for signature at: ${signaturePath}`);
-        const signatureBytes = fs.readFileSync(signaturePath);
 
         // Intégrer l'image selon son format
         let signatureImage;
@@ -1534,27 +1533,7 @@ async function createStudentPDF(
           signatureImage = await pdfDoc.embedPng(signatureBytes);
         }
 
-        // Obtenir les dimensions de l'image et la redimensionner si nécessaire
-        const originalWidth = signatureImage.width;
-        let scale = 0.2; // Échelle par défaut
-
-        // Ajuster l'échelle en fonction de la largeur de l'image
-        if (originalWidth > 400) scale = 0.15;
-        else if (originalWidth < 200) scale = 0.35;
-
-        // Ajouter une limite de taille maximale pour la signature
-        const MAX_WIDTH = 120; // Limite la signature à 120 points de large
-        const scaleByWidth = signatureImage.scale(scale);
-        let finalScale = scale;
-
-        // Si même avec notre échelle la signature est trop large, réduire davantage
-        if (scaleByWidth.width > MAX_WIDTH) {
-          finalScale = scale * (MAX_WIDTH / scaleByWidth.width);
-        }
-
-        const signatureDims = signatureImage.scale(finalScale);
-
-        // D'abord dessiner l'image de signature
+        // Ajouter textes et signature
         page.drawText(`Signature du ${nomFonctionPersonnel}`, {
           x: pageWidth - margin - 200,
           y: signatureY - 15,
@@ -1562,16 +1541,30 @@ async function createStudentPDF(
           font: mainFont,
         });
 
-        // Afficher le prénom et nom inversés en gras après le texte fonction, mais avant l'image
         page.drawText(`${prenomPersonnel} ${nomPersonnel}`, {
-          // Inverser nom et prénom
           x: pageWidth - margin - 200,
           y: signatureY - 27,
           size: fontSize,
           font: boldFont,
         });
 
-        // Puis dessiner l'image de signature sous les textes
+        // Redimensionner et dessiner l'image de signature
+        const originalWidth = signatureImage.width;
+        let scale = 0.2;
+
+        if (originalWidth > 400) scale = 0.15;
+        else if (originalWidth < 200) scale = 0.35;
+
+        const MAX_WIDTH = 120;
+        const scaleByWidth = signatureImage.scale(scale);
+        let finalScale = scale;
+
+        if (scaleByWidth.width > MAX_WIDTH) {
+          finalScale = scale * (MAX_WIDTH / scaleByWidth.width);
+        }
+
+        const signatureDims = signatureImage.scale(finalScale);
+
         page.drawImage(signatureImage, {
           x: pageWidth - margin - 200,
           y: signatureY - 40 - signatureDims.height,
@@ -1579,12 +1572,13 @@ async function createStudentPDF(
           height: signatureDims.height,
         });
       } catch (error) {
-        console.error(
-          `Erreur lors du chargement de l'image de signature ${signatureFilename}:`,
-          error
-        );
-
-        // En cas d'erreur, revenir à la signature textuelle
+        if (error instanceof Error) {
+          console.error(`Erreur signature: ${error.message}`);
+        } else {
+          console.error("Erreur signature: une erreur inconnue est survenue");
+        }
+        // Fallback en cas d'erreur avec la signature
+        // Pour les codes personnels sans signature, afficher uniquement le texte
         page.drawText(`Signature du: ${nomFonctionPersonnel}`, {
           x: pageWidth - margin - 200,
           y: signatureY - 10,
@@ -1599,16 +1593,9 @@ async function createStudentPDF(
           size: fontSize,
           font: boldFont,
         });
-
-        // Afficher le code personnel
-        page.drawText(`Code personnel: ${codePersonnelGestionnaire}`, {
-          x: pageWidth - margin - 200,
-          y: signatureY - 34,
-          size: fontSize,
-          font: mainFont,
-        });
       }
     } else {
+      // Pas de signature disponible, utiliser le texte
       // Pour les codes personnels sans signature, afficher uniquement le texte
       page.drawText(`Signature du: ${nomFonctionPersonnel}`, {
         x: pageWidth - margin - 200,
@@ -1674,20 +1661,20 @@ export async function POST(request: Request) {
       console.log("Aucune donnée reçue!");
     }
 
-    // Extract data from the request
-    if (!body.data) {
+    const data = body.data;
+    const period = body.periodeEvaluation || "Période non spécifiée";
+    const groupName = body.groupName || "Groupe non spécifié";
+
+    // Vérifier la présence des données essentielles
+    if (!data.APPRENANT || data.APPRENANT.length === 0) {
       return NextResponse.json(
         {
           success: false,
-          error: "Aucune donnée fournie",
+          error: "Aucune donnée d'apprenant trouvée",
         },
         { status: 400 }
       );
     }
-
-    const data = body.data;
-    const period = body.periodeEvaluation || "Période non spécifiée";
-    const groupName = body.groupName || "Groupe non spécifié";
 
     // Check if we have student data
     // Examiner la structure des données
@@ -1725,12 +1712,14 @@ export async function POST(request: Request) {
     // Initialize ZIP archive in memory
     const zip = new JSZip();
 
-    // Track failures
+    // Compteurs
     let successCount = 0;
     let failureCount = 0;
+    const errorDetails = [];
 
     // Utiliser les données MATIERE si disponibles, sinon ECTS_PAR_MATIERE
     const sourceMatieres = data.MATIERE || data.ECTS_PAR_MATIERE || [];
+
     // Appliquer la règle : si une matière avec CODE_TYPE_MATIERE "3" a un état "R", ses ECTS passent à 0
     sourceMatieres.forEach((matiere: any) => {
       // Vérifier si la matière est en rattrapage
@@ -1747,8 +1736,16 @@ export async function POST(request: Request) {
     });
 
     // Mise à jour des crédits UE avec la nouvelle fonction
-    const updatedSubjects = updateUECredits(sourceMatieres);
-    console.log(`✅ Crédits UE mis à jour (${updatedSubjects.length} matières traitées)`);
+    let updatedSubjects;
+    try {
+      updatedSubjects = updateUECredits(sourceMatieres);
+      console.log(`Crédits UE mis à jour (${updatedSubjects.length} matières traitées)`);
+    } catch (error) {
+      console.error("Erreur lors de la mise à jour des crédits UE:", error);
+      updatedSubjects = sourceMatieres; // Fallback aux données originales
+    }
+
+    // Limiter le nombre d'étudiants par traitement (éviter les timeouts)
     const batchSize = 10;
     const studentsToProcess = data.APPRENANT.slice(0, batchSize);
 
@@ -1765,26 +1762,31 @@ export async function POST(request: Request) {
 
         console.log(`Création du PDF pour ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`);
 
-        const updatedSubjects = updateUECredits(data.ECTS_PAR_MATIERE || []);
+        // S'assurer que nous avons des données valides
+        const moyennesUE = data.MOYENNES_UE || [];
+        const moyenneGenerale = data.MOYENNE_GENERALE || [];
+        const observations = data.OBSERVATIONS || [];
+        const absences = data.ABSENCE || [];
+        const processedAbsences = processAbsences(absences);
 
+        // Créer le PDF
         const pdfBytes = await createStudentPDF(
           student,
-          data.MOYENNES_UE || [],
-          data.MOYENNE_GENERALE || [],
-          data.OBSERVATIONS || [],
+          moyennesUE,
+          moyenneGenerale,
+          observations,
           updatedSubjects,
           data.GROUPE || [],
           data.SITE || [],
           period,
-          data.ABSENCE || [],
-          processAbsences(data.ABSENCE || []),
-          data.PERSONNEL || [] // Add this line to pass the PERSONNEL data
+          absences,
+          processedAbsences,
+          data.PERSONNEL || []
         );
 
         console.log("📌 Matières brutes reçues :", data.ECTS_PAR_MATIERE);
 
-        // Par le code suivant:
-        // Récupérer le nom de la formation à partir des données du groupe
+        // Récupérer des informations pour le nom de fichier
         let nomFormation = "FORMATION";
         if (data.GROUPE && data.GROUPE.length > 0 && data.GROUPE[0].NOM_FORMATION) {
           nomFormation = data.GROUPE[0].NOM_FORMATION.replace(/\s+/g, "_").replace(
@@ -1793,21 +1795,28 @@ export async function POST(request: Request) {
           );
         }
 
-        // Nettoyer la période d'évaluation
+        // Nettoyer la période
         const periodClean = period.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
 
-        // Générer le nom de fichier au format demandé
+        // Générer le nom de fichier
         const filename = `2024-2025_${nomFormation}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
 
         // Add PDF to the zip file (in memory)
         zip.file(filename, pdfBytes);
         console.log(`Fichier ${filename} ajouté au ZIP`);
-
         successCount++;
         console.log(`📄 PDF généré pour ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`);
       } catch (error) {
         failureCount++;
-        console.error(`❌ Erreur lors de la génération du PDF pour l'étudiant:`, error);
+        let errorMessage = "Erreur inconnue";
+        if (error instanceof Error) {
+          errorMessage = error.message;
+        }
+        console.error(`Erreur pour l'étudiant ${studentObj.NOM_APPRENANT}: ${errorMessage}`);
+        errorDetails.push({
+          etudiant: `${studentObj.NOM_APPRENANT} ${studentObj.PRENOM_APPRENANT}`,
+          erreur: errorMessage,
+        });
       }
     }
 
@@ -1827,23 +1836,17 @@ export async function POST(request: Request) {
     const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
     console.log("ZIP généré avec succès");
 
-    let groupNameForFilename = groupName; // Valeur par défaut
+    let groupNameForFilename =
+      data.GROUPE && data.GROUPE.length > 0 ? data.GROUPE[0].NOM_GROUPE || groupName : groupName; // Valeur par défaut
     let periodNameForFilename = period; // Valeur par défaut
 
     // Essayer de récupérer NOM_PERIODE_EVALUATION depuis les données des notes
-    if (data.MOYENNES_UE && data.MOYENNES_UE.length > 0) {
-      // Vérifier si le champ existe dans les données
-      const sampleGrade = data.MOYENNES_UE[0];
-      console.log("Exemple de données MOYENNES_UE:", sampleGrade);
-
-      if (sampleGrade.NOM_PERIODE_EVALUATION) {
-        periodNameForFilename = sampleGrade.NOM_PERIODE_EVALUATION;
-        console.log(`NOM_PERIODE_EVALUATION trouvé: "${periodNameForFilename}"`);
-      } else {
-        console.log("NOM_PERIODE_EVALUATION non trouvé dans les données MOYENNES_UE");
-        // Lister toutes les clés disponibles pour aider au débogage
-        console.log("Clés disponibles:", Object.keys(sampleGrade));
-      }
+    if (
+      data.MOYENNES_UE &&
+      data.MOYENNES_UE.length > 0 &&
+      data.MOYENNES_UE[0].NOM_PERIODE_EVALUATION
+    ) {
+      periodNameForFilename = data.MOYENNES_UE[0].NOM_PERIODE_EVALUATION;
     }
 
     // 2. Récupérer le nom du groupe depuis les données
@@ -1852,11 +1855,10 @@ export async function POST(request: Request) {
       console.log(`NOM_GROUPE trouvé: "${groupNameForFilename}"`);
     }
 
-    // Nettoyer et formater les variables du nom de groupe et de période
-    // 3. Nettoyer et formater les valeurs pour le nom du fichier
     const sanitizedGroupName = groupNameForFilename
       .replace(/\s+/g, "_")
       .replace(/[^a-zA-Z0-9_-]/g, "");
+
     const sanitizedPeriod = periodNameForFilename
       .replace(/\s+/g, "_")
       .replace(/[^a-zA-Z0-9_-]/g, "");
@@ -1871,28 +1873,34 @@ export async function POST(request: Request) {
     console.log(`Fichier temporaire stocké: ${zipId}, taille: ${zipBuffer.byteLength} octets`);
 
     // Vérifier que le fichier est bien dans le store
-    if (fileStorage.hasFile(zipId)) {
-      console.log(`✅ Confirmation: le fichier ${zipId} existe dans le fileStorage`);
-    } else {
-      console.log(`❌ Erreur: le fichier ${zipId} n'existe PAS dans le fileStorage`);
+    try {
+      fileStorage.storeFile(zipId, Buffer.from(zipBuffer), "application/zip");
+      console.log(`Fichier temporaire stocké: ${zipId}, taille: ${zipBuffer.byteLength} octets`);
+
+      // Vérifier que le fichier est bien stocké
+      if (!fileStorage.hasFile(zipId)) {
+        throw new Error("Le fichier ZIP n'a pas été correctement stocké");
+      }
+
+      // Renvoyer le chemin de téléchargement
+      return NextResponse.json({
+        success: true,
+        path: `/api/download?id=${zipId}`,
+        studentCount: successCount,
+        failedCount: failureCount,
+      });
+    } catch (storageError) {
+      console.error("Erreur lors du stockage du fichier ZIP:", storageError);
+
       return NextResponse.json(
         {
           success: false,
           error: "Erreur lors du stockage du fichier ZIP",
+          details: (storageError as Error).message,
         },
         { status: 500 }
       );
     }
-
-    // Afficher tous les fichiers disponibles
-    console.log(`Fichiers disponibles dans le store: ${fileStorage.getAllFileIds().join(", ")}`);
-
-    // Renvoyer un JSON avec le chemin vers l'API de téléchargement
-    return NextResponse.json({
-      success: true,
-      path: `/api/download?id=${zipId}`,
-      studentCount: successCount,
-    });
   } catch (error: any) {
     console.error("❌ Erreur générale lors de la génération des PDFs:", error);
     return NextResponse.json(
