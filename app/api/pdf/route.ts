@@ -15,8 +15,7 @@ export const config = {
   },
 };
 
-// Augmenter le délai d'attente à 5 minutes
-export const maxDuration = 300;
+export const maxDuration = 900;
 
 // Type definitions for the student data
 interface StudentData {
