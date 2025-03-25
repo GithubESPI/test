@@ -6,7 +6,17 @@ import { NextResponse } from "next/server";
 import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
-export const runtime = "nodejs";
+export const config = {
+  api: {
+    responseLimit: false,
+    bodyParser: {
+      sizeLimit: "50mb",
+    },
+  },
+};
+
+// Augmenter le délai d'attente à 5 minutes
+export const maxDuration = 300;
 
 // Type definitions for the student data
 interface StudentData {

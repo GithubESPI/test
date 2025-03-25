@@ -13,7 +13,14 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Configuration pour l'API
+  webpack: (config) => {
+    config.externals.push({
+      "pdf-lib": "pdf-lib",
+      jszip: "jszip",
+      canvas: "canvas",
+    });
+    return config;
+  },
   async rewrites() {
     return [
       {
@@ -25,5 +32,3 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
-
-module.exports = nextConfig;
