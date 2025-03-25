@@ -2,90 +2,87 @@
 import { del, head, list, put } from "@vercel/blob";
 
 export const fileStorage = {
-  // Stocker un fichier sur Vercel Blob
+  // Stocke un fichier dans Vercel Blob
   async storeFile(
     id: string,
     data: Buffer,
     contentType: string = "application/zip"
   ): Promise<void> {
     await put(`temp/${id}`, data, { contentType, access: "public" });
-    console.log(`Fichier stocké sur Vercel Blob: temp/${id}, taille: ${data.length} octets`);
+    console.log(`✅ Fichier stocké sur Vercel Blob: temp/${id}`);
   },
 
-  // Vérifier si un fichier existe
+  // Vérifie si le fichier existe
   async hasFile(id: string): Promise<boolean> {
     try {
-      await head(`temp/${id}`);
+      await head(`temp/${id}`, { token: process.env.BLOB_READ_WRITE_TOKEN });
       return true;
     } catch {
       return false;
     }
   },
 
-  // Lire un fichier
+  // Récupère les infos du fichier
   async getFile(id: string): Promise<{ url: string; contentType: string } | null> {
     try {
-      const file = await head(`temp/${id}`);
+      const file = await head(`temp/${id}`, { token: process.env.BLOB_READ_WRITE_TOKEN });
       return {
         url: file.url,
-        contentType: file.contentType || "application/zip",
+        contentType: file.contentType || "application/octet-stream",
       };
     } catch {
       return null;
     }
   },
 
-  // Supprimer un fichier
+  // Supprime un fichier
   async deleteFile(id: string): Promise<boolean> {
     try {
-      await del(`temp/${id}`);
+      await del(`temp/${id}`, { token: process.env.BLOB_READ_WRITE_TOKEN });
       return true;
     } catch (error) {
-      console.error(`Erreur lors de la suppression du fichier ${id}:`, error);
+      console.error("Erreur de suppression:", error);
       return false;
     }
   },
 
-  // Obtenir la liste des fichiers disponibles
+  // Liste tous les fichiers
   async getAllFileIds(): Promise<string[]> {
     try {
-      const blobs = await list({ prefix: "temp/" });
+      const blobs = await list({ prefix: "temp/", token: process.env.BLOB_READ_WRITE_TOKEN });
       return blobs.blobs.map((blob) => blob.pathname.replace("temp/", ""));
     } catch (error) {
-      console.error("Erreur lors de la récupération des fichiers:", error);
+      console.error("Erreur lors de la récupération de la liste:", error);
       return [];
     }
   },
 
-  // Nettoyer les fichiers anciens (plus vieux que x minutes)
+  // Supprime les fichiers trop anciens
   async cleanupOldFiles(maxAgeMinutes: number = 60): Promise<void> {
-    const files = await this.getAllFileIds();
     const now = Date.now();
+    const files = await this.getAllFileIds();
     let cleanedCount = 0;
 
-    for (const file of files) {
+    for (const id of files) {
       try {
-        const fileInfo = await head(`temp/${file}`);
-        const age = now - new Date(fileInfo.uploadedAt).getTime();
-
-        if (age > maxAgeMinutes * 60 * 1000) {
-          await this.deleteFile(file);
+        const meta = await head(`temp/${id}`, { token: process.env.BLOB_READ_WRITE_TOKEN });
+        const uploadedAt = new Date(meta.uploadedAt).getTime();
+        if (now - uploadedAt > maxAgeMinutes * 60 * 1000) {
+          await this.deleteFile(id);
           cleanedCount++;
         }
-      } catch (error) {
-        console.error(`Erreur lors du traitement de ${file}:`, error);
+      } catch (err) {
+        console.error(`Erreur lors du nettoyage du fichier ${id}:`, err);
       }
     }
 
     if (cleanedCount > 0) {
-      console.log(`${cleanedCount} fichiers temporaires nettoyés de Vercel Blob.`);
+      console.log(`${cleanedCount} fichiers nettoyés`);
     }
   },
 };
 
-// Nettoyage automatique (toutes les heures)
+// Nettoyage automatique toutes les heures
 setInterval(() => {
-  fileStorage
-    .cleanupOldFiles()
-    .catch((err) => console.error("Erreur lors du nettoyage des fichiers Blob:", err));
+  fileStorage.cleanupOldFiles().catch(console.error);
 }, 60 * 60 * 1000);
