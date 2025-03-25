@@ -7,13 +7,5 @@
       "maxDuration": 300,
       "memory": 3008
     }
-  },
-  "regions": ["cdg1"],
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
-    }
-  ]
+  }
 }
-
