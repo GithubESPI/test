@@ -13,15 +13,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  experimental: {
-    turbo: {
-      rules: {
-        // Configuration des externals pour Turbopack
-
-        external: ["pdf-lib", "jszip", "canvas"],
-      },
-    },
-  },
+  // Configuration pour l'API
   async rewrites() {
     return [
       {
@@ -33,3 +25,5 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
+module.exports = nextConfig;
