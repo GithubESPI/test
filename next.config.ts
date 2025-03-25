@@ -13,6 +13,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  experimental: {
+    serverComponentsExternalPackages: ["pdf-lib", "jszip", "canvas"],
+  },
   // Configuration pour l'API
   async rewrites() {
     return [
