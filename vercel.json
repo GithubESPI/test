@@ -1,11 +1,30 @@
 {
+  "env": {
+    "NODE_ENV": "production"
+  },
   "functions": {
-    "app/api/**/*": {
-      "maxDuration": 300
+    "api/route.ts": {
+      "memory": 3008,
+      "maxDuration": 60
     },
-    "app/api/pdf/route": {
-      "maxDuration": 300,
-      "memory": 3008
+    "api/download.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1",
+      "methods": ["GET", "POST"],
+      "headers": {
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      }
+    }
+  ],
+  "build": {
+    "env": {
+      "NODE_OPTIONS": "--max-old-space-size=4096"
     }
   }
 }
