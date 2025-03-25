@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { writeFile } from "fs/promises";
 import { NextResponse } from "next/server";
-import { join } from "path";
 
 interface FormattedData {
   timestamp: string;
@@ -39,6 +37,10 @@ async function executeQuery(query: string, token: string): Promise<any[]> {
     const requestBody = { sql: query };
     console.log("Corps de la requête:", JSON.stringify(requestBody, null, 2));
 
+    // Définir un délai d'attente pour fetch
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000); // Timeout après 25 secondes
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -47,7 +49,10 @@ async function executeQuery(query: string, token: string): Promise<any[]> {
         Accept: "application/json",
       },
       body: JSON.stringify(requestBody),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId); // Nettoyer le timeout si la requête réussit
 
     console.log("Statut de la réponse:", response.status);
     const responseText = await response.text();
@@ -66,22 +71,26 @@ async function executeQuery(query: string, token: string): Promise<any[]> {
       console.error("Erreur de parsing JSON:", parseError);
       throw new Error(`Erreur de parsing JSON: ${responseText}`);
     }
-  } catch (error) {
-    console.error("Erreur lors de la requête SQL:", error);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === "AbortError") {
+      console.error("La requête a dépassé le délai d'attente");
+      throw new Error("Délai d'attente dépassé pour la requête SQL");
+    }
     throw error;
   }
 }
 
-async function saveDataToJson(data: FormattedData) {
-  try {
-    const filePath = join(process.cwd(), "data.json");
-    await writeFile(filePath, JSON.stringify(data, null, 2));
-    console.log(`📁 Données sauvegardées dans ${filePath}`);
-  } catch (error) {
-    console.error("Erreur lors de la sauvegarde:", error);
-    throw error;
-  }
-}
+// Supprimez cette fonction qui ne fonctionnera pas sur Vercel
+// async function saveDataToJson(data: FormattedData) {
+//   try {
+//     const filePath = join(process.cwd(), "data.json");
+//     await writeFile(filePath, JSON.stringify(data, null, 2));
+//     console.log(`📁 Données sauvegardées dans ${filePath}`);
+//   } catch (error) {
+//     console.error("Erreur lors de la sauvegarde:", error);
+//     throw error;
+//   }
+// }
 
 export async function POST(request: Request) {
   try {
@@ -380,7 +389,8 @@ export async function POST(request: Request) {
       }
     }
 
-    await saveDataToJson(formattedData);
+    // Par une simple journalisation si nécessaire:
+    console.log("Données formatées:", JSON.stringify(formattedData).substring(0, 500) + "...");
 
     if (!hasSuccessfulQuery) {
       console.log("❌ Aucune donnée n'a été récupérée pour toutes les requêtes");
