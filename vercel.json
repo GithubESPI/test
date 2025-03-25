@@ -3,13 +3,12 @@
     "NODE_ENV": "production"
   },
   "functions": {
-    "api/route.ts": {
-      "memory": 3008,
-      "maxDuration": 60
+    "app/api/**/*": {
+      "maxDuration": 300
     },
-    "api/download.ts": {
-      "memory": 1024,
-      "maxDuration": 30
+    "app/api/pdf/route": {
+      "maxDuration": 300,
+      "memory": 3008
     }
   },
   "routes": [
