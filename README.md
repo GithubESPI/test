@@ -15,17 +15,17 @@ Développer une application web permettant de générer automatiquement des **bu
 
 ## 🔧 Technologies utilisées
 
-| Côté                      | Technologie                    | Rôle                                     |
-| ------------------------- | ------------------------------ | ---------------------------------------- |
-| Frontend                  | **Next.js**                    | Framework React (SSR + API routes)       |
-| UI                        | **TailwindCSS**                | Framework CSS utilitaire                 |
-| Authentification          | **NextAuth.js**                | Authentification OAuth sécurisée         |
-| Base de données           | **Prisma + PostgreSQL**        | ORM pour la gestion des données          |
-| Intégration données (API) | **Yparéo API + Requêteur SQL** | Récupération des données élèves et notes |
-| Backend                   | **API Routes Next.js**         | Traitement et génération serveur         |
-| Génération PDF            | **pdf-lib**                    | Création et modification d'un PDF        |
-| Déploiement               | **Vercel**                     | Hébergement frontend + backend           |
-| Stockage                  | MySQL / Azure                  | Hébergement temporaire des fichiers      |
+| Côté                      | Technologie                      | Rôle                                     |
+| ------------------------- | -------------------------------- | ---------------------------------------- |
+| Frontend                  | **Next.js**                      | Framework React (SSR + API routes)       |
+| UI                        | **TailwindCSS**                  | Framework CSS utilitaire                 |
+| Authentification          | **NextAuth.js**                  | Authentification OAuth sécurisée         |
+| Base de données           | **Prisma + PostgreSQL**          | ORM pour la gestion des données          |
+| Intégration données (API) | **Yparéo API + Requêteur SQL**   | Récupération des données élèves et notes |
+| Backend                   | **API Routes Next.js et Python** | Traitement et génération serveur         |
+| Génération PDF            | **pdf-lib**                      | Création et modification d'un PDF        |
+| Déploiement               | **Vercel**                       | Hébergement frontend + backend           |
+| Stockage                  | MySQL / Azure                    | Hébergement temporaire des fichiers      |
 
 ## ⚙️ Fonctionnalités principales
 
