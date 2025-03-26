@@ -170,6 +170,7 @@ function formatTime(minutes: number): string {
 function updateUECredits(subjects: any[]): any[] {
   // 1. Éliminer les doublons
   const uniqueSubjectsMap = new Map<string, any>();
+  const result: any[] = [];
 
   subjects.forEach((subject) => {
     const key = `${subject.CODE_APPRENANT}_${subject.CODE_MATIERE}`;
@@ -194,9 +195,6 @@ function updateUECredits(subjects: any[]): any[] {
     }
     studentSubjects.get(studentId)?.push({ ...subject });
   });
-
-  // 3. Traiter chaque étudiant selon les règles d'agrégation spécifiées
-  const result: any[] = [];
 
   studentSubjects.forEach((studentSubjectList, studentId) => {
     console.log(`\n🔍 Traitement des matières pour l'étudiant ${studentId}`);
@@ -266,6 +264,7 @@ function updateUECredits(subjects: any[]): any[] {
     }
 
     // Ajouter toutes les matières traitées de cet étudiant au résultat final
+
     result.push(...processedSubjects);
   });
 
@@ -1701,9 +1700,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const data = body.data;
-    const period = body.periodeEvaluation || "Période non spécifiée";
-    const groupName = body.groupName || "Groupe non spécifié";
+    const { data, periodeEvaluation, groupName } = body;
+
+    if (!data || !periodeEvaluation || !groupName) {
+      return NextResponse.json(
+        { error: "Certains paramètres sont manquants (data, periodeEvaluation ou groupName)" },
+        { status: 400 }
+      );
+    }
+
+    console.log("📥 Requête reçue pour génération PDF");
+    console.log("🧠 Groupe :", groupName);
+    console.log("📅 Période :", periodeEvaluation);
 
     // Check if we have student data
     // Examiner la structure des données
@@ -1789,7 +1797,7 @@ export async function POST(request: Request) {
           updatedSubjects,
           data.GROUPE || [],
           data.SITE || [],
-          period,
+          periodeEvaluation,
           data.ABSENCE || [],
           processAbsences(data.ABSENCE || []),
           data.PERSONNEL || [] // Add this line to pass the PERSONNEL data
@@ -1808,7 +1816,7 @@ export async function POST(request: Request) {
         }
 
         // Nettoyer la période d'évaluation
-        const periodClean = period.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+        const periodClean = periodeEvaluation.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
 
         // Générer le nom de fichier au format demandé
         const filename = `2024-2025_${nomFormation}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
@@ -1842,7 +1850,8 @@ export async function POST(request: Request) {
     console.log("ZIP généré avec succès");
 
     let groupNameForFilename = groupName; // Valeur par défaut
-    let periodNameForFilename = period; // Valeur par défaut
+    let periodNameForFilename = periodeEvaluation;
+    // Valeur par défaut
 
     // Essayer de récupérer NOM_PERIODE_EVALUATION depuis les données des notes
     if (data.MOYENNES_UE && data.MOYENNES_UE.length > 0) {
@@ -1903,18 +1912,13 @@ export async function POST(request: Request) {
 
     // Renvoyer un JSON avec le chemin vers l'API de téléchargement
     return NextResponse.json({
-      success: true,
       path: `/api/download?id=${zipId}`,
       studentCount: successCount,
     });
   } catch (error: any) {
-    console.error("❌ Erreur générale lors de la génération des PDFs:", error);
+    console.error("❌ Erreur génération PDF :", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Erreur lors de la génération des PDFs",
-        details: error.message,
-      },
+      { error: error.message || "Erreur inattendue lors de la génération des bulletins" },
       { status: 500 }
     );
   }
