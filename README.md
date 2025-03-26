@@ -50,8 +50,8 @@ Utilisation des endpoints et tokens suivants :
 ```env
 YPAERO_BASE_URL=https://groupe-espi.ymag.cloud/index.php
 YPAERO_API_TOKEN=<token secret>
-URL_requêteur=https://groupe-espi.ymag.cloud/index.php/r/v1/sql/requêteur
-TOKEN_requêteur=<token secret>
+URL_REQUETEUR=https://groupe-espi.ymag.cloud/index.php/r/v1/sql/requêteur
+TOKEN_REQUETEUR=<token secret>
 ```
 
 ## 🗂️ Structure du projet
