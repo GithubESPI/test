@@ -216,7 +216,7 @@ model Authenticator {
 ## 📌 Contraintes techniques
 
 - Le traitement des données doit se faire uniquement côté serveur (jamais côté client).
-- Les fichiers temporaires (Word, PDF, ZIP) ne doivent pas être conservés plus de 24h.
+- Les fichiers temporaires (PDF, ZIP) ne doivent pas être conservés plus de 24h.
 - L’application doit pouvoir gérer la génération de bulletins pour une classe entière (jusqu’à 100 étudiants) sans crash.
 - Respect du RGPD : les données personnelles (noms, notes, commentaires) doivent être sécurisées et inaccessibles aux personnes non autorisées.
 
