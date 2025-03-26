@@ -1909,7 +1909,7 @@ export async function POST(req: NextRequest) {
     console.log(`Fichiers disponibles dans le store: ${fileStorage.getAllFileIds().join(", ")}`);
 
     const result = {
-      path: "/api/download/bulletins.zip", // le lien de téléchargement
+      path: "/api/download?id=${zipId}", // le lien de téléchargement
       studentCount: body.data.APPRENANT?.length || 0,
     };
 

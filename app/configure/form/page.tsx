@@ -321,6 +321,7 @@ export default function Home() {
         }),
       });
       const data = await response.json();
+      window.open(data.path, "_blank");
 
       if (!response.ok) {
         throw new Error(data.error || "Erreur lors de la récupération des données");

@@ -31,14 +31,11 @@ export async function GET(request: NextRequest) {
     console.log(`Tentative de téléchargement du fichier avec ID: ${fileId}`);
 
     if (!fileId) {
-      console.log("❌ Erreur: Identifiant de fichier manquant");
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Identifiant de fichier manquant",
-        },
-        { status: 400 }
-      );
+      return new NextResponse("Paramètre 'id' manquant", { status: 400 });
+    }
+
+    if (!fileStorage.hasFile(fileId)) {
+      return new NextResponse("Fichier introuvable", { status: 404 });
     }
 
     // Afficher les identifiants disponibles dans le store
