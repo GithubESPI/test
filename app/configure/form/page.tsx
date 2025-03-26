@@ -105,7 +105,6 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState("");
   const [retrievedData, setRetrievedData] = useState<any>(null);
   const [pdfDownloadUrl, setPdfDownloadUrl] = useState<string>("");
-  const [pdfStudentCount, setPdfStudentCount] = useState<number>(0);
   const [selectedGroupName, setSelectedGroupName] = useState<string>("");
   // Déclarez une ref pour stocker les données entre les rendus
   const responseDataRef = useRef<any>(null);
@@ -380,16 +379,15 @@ export default function Home() {
         }),
       });
 
-      // Vérifier si la réponse est OK
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Erreur lors de la génération des PDFs");
+        const errorText = await response.text(); // <-- Important pour les erreurs texte non-JSON
+        throw new Error(`Erreur lors de la génération des PDFs: ${errorText}`);
       }
 
-      const data = await response.json();
-
-      setPdfDownloadUrl(data.path);
-      setPdfStudentCount(data.studentCount);
+      // ✅ Corrigé ici : récupérer un blob
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setPdfDownloadUrl(url);
       setShowPdfSuccessModal(true);
     } catch (error: any) {
       console.error("❌ Erreur lors de la génération des PDFs:", error);
@@ -600,7 +598,7 @@ export default function Home() {
               Bulletins générés avec succès
             </DialogTitle>
             <DialogDescription className="text-gray-600">
-              {pdfStudentCount} bulletins ont été générés et placés dans une archive ZIP.
+              bulletins ont été générés et placés dans une archive ZIP.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex flex-col sm:flex-row gap-3 sm:justify-center pt-4">
