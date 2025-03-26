@@ -617,6 +617,19 @@ export default function Home() {
                   setIsGeneratingPDF(true);
                   console.log("Début du téléchargement des bulletins PDF");
 
+                  // Nettoyer les données avant l'envoi pour éviter les problèmes JSON
+                  const dataToSend = responseDataRef.current || retrievedData;
+                  // Convertir en JSON puis re-parser pour éliminer les caractères problématiques
+                  const cleanData = JSON.parse(
+                    JSON.stringify(dataToSend, (key, value) => {
+                      // Si c'est une chaîne, supprimer les caractères non-ASCII
+                      if (typeof value === "string") {
+                        return value.replace(/[^\x20-\x7E]/g, "");
+                      }
+                      return value;
+                    })
+                  );
+
                   // Vérifier si nous avons déjà une URL de téléchargement valide
                   if (pdfDownloadUrl && !pdfDownloadUrl.startsWith("/api/")) {
                     console.log("Utilisation de l'URL du blob déjà créée:", pdfDownloadUrl);
@@ -629,14 +642,14 @@ export default function Home() {
                     a.click();
                     document.body.removeChild(a);
                   } else {
-                    // Générer et télécharger les PDFs
+                    // Générer et télécharger les PDFs avec les données nettoyées
                     const response = await fetch("/api/pdf", {
                       method: "POST",
                       headers: {
                         "Content-Type": "application/json",
                       },
                       body: JSON.stringify({
-                        data: responseDataRef.current || retrievedData,
+                        data: cleanData,
                         periodeEvaluation: form.getValues("periodeEvaluation") || "",
                         groupName: selectedGroupName,
                       }),

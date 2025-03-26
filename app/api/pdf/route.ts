@@ -425,6 +425,35 @@ function getSignatureFilename(codePersonnelGestionnaire: string): string | null 
   return signatureMap[codePersonnelGestionnaire] || null;
 }
 
+// Fonction pour nettoyer les objets et s'assurer qu'ils sont JSON-compatibles
+function sanitizeForJSON(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+
+  if (typeof obj === "object") {
+    // Si c'est un tableau, appliquer la fonction à chaque élément
+    if (Array.isArray(obj)) {
+      return obj.map((item) => sanitizeForJSON(item));
+    }
+
+    // Si c'est un objet, appliquer la fonction à chaque propriété
+    const result: Record<string, any> = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        // Convertir les valeurs en chaînes valides pour les propriétés problématiques
+        if (typeof obj[key] === "string") {
+          result[key] = obj[key].replace(/[^\x20-\x7E]/g, ""); // Garder uniquement les caractères ASCII imprimables
+        } else {
+          result[key] = sanitizeForJSON(obj[key]);
+        }
+      }
+    }
+    return result;
+  }
+
+  // Pour les valeurs simples (nombre, boolean, etc.)
+  return obj;
+}
+
 // Function to create a PDF for a student
 // Function to create a PDF for a student
 async function createStudentPDF(
@@ -1700,7 +1729,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const data = body.data;
+    const data = sanitizeForJSON(body.data);
     const period = body.periodeEvaluation || "Période non spécifiée";
     const groupName = body.groupName || "Groupe non spécifié";
 
