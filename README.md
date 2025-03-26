@@ -50,8 +50,8 @@ Utilisation des endpoints et tokens suivants :
 ```env
 YPAERO_BASE_URL=https://groupe-espi.ymag.cloud/index.php
 YPAERO_API_TOKEN=<token secret>
-URL_requêteur=https://groupe-espi.ymag.cloud/index.php/r/v1/sql/requêteur
-TOKEN_requêteur=<token secret>
+URL_REQUETEUR=https://groupe-espi.ymag.cloud/index.php/r/v1/sql/requêteur
+TOKEN_REQUETEUR=<token secret>
 ```
 
 ## 🗂️ Structure du projet
@@ -216,7 +216,7 @@ model Authenticator {
 ## 📌 Contraintes techniques
 
 - Le traitement des données doit se faire uniquement côté serveur (jamais côté client).
-- Les fichiers temporaires (Word, PDF, ZIP) ne doivent pas être conservés plus de 24h.
+- Les fichiers temporaires (PDF, ZIP) ne doivent pas être conservés plus de 24h.
 - L’application doit pouvoir gérer la génération de bulletins pour une classe entière (jusqu’à 100 étudiants) sans crash.
 - Respect du RGPD : les données personnelles (noms, notes, commentaires) doivent être sécurisées et inaccessibles aux personnes non autorisées.
 
