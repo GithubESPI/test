@@ -55,18 +55,22 @@ export async function GET(request: NextRequest) {
 
     // Get the file
     const fileInfo = await blobStorage.getFile(fileId);
-    if (!fileInfo) {
+    if (!fileInfo || !fileInfo.data) {
       console.log(`❌ Erreur: Impossible de lire le fichier pour l'ID: ${fileId}`);
+      console.log("fileInfo:", fileInfo); // Log détaillé de fileInfo
       return NextResponse.json(
         {
           success: false,
           error: "Erreur lors de la récupération du fichier",
+          details: "Le fichier existe mais le contenu est inaccessible",
         },
         { status: 500 }
       );
     }
 
-    console.log(`✅ Fichier trouvé, taille: ${fileInfo.data.length} octets`);
+    console.log(
+      `✅ Fichier trouvé, taille: ${fileInfo.data.length} octets, type: ${fileInfo.contentType}`
+    );
 
     // Return the file as a response
     const response = new NextResponse(fileInfo.data);
@@ -84,12 +88,17 @@ export async function GET(request: NextRequest) {
 
     return response;
   } catch (error) {
+    // Log détaillé de l'erreur
     console.error("❌ Erreur lors du téléchargement du fichier:", error);
+    console.error("Type d'erreur:", typeof error);
+    console.error("Stack trace:", (error as Error).stack);
+
     return NextResponse.json(
       {
         success: false,
         error: "Erreur lors du téléchargement du fichier",
         details: (error as Error).message,
+        stack: (error as Error).stack,
       },
       { status: 500 }
     );

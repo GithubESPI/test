@@ -614,16 +614,25 @@ export default function Home() {
             <Button
               onClick={async () => {
                 try {
-                  // Utiliser fetch pour télécharger le fichier plutôt que window.location
+                  console.log("Tentative de téléchargement via URL:", pdfDownloadUrl);
+
+                  // Approche simplifiée avec logs détaillés
                   const response = await fetch(pdfDownloadUrl);
 
                   // Vérifier si la requête a réussi
                   if (!response.ok) {
-                    throw new Error(`Erreur ${response.status}: ${response.statusText}`);
+                    console.error("Erreur de réponse:", response.status, response.statusText);
+                    throw new Error(`Erreur HTTP: ${response.status} - ${response.statusText}`);
                   }
+
+                  console.log(
+                    "Réponse reçue, headers:",
+                    Object.fromEntries(response.headers.entries())
+                  );
 
                   // Convertir la réponse en blob
                   const blob = await response.blob();
+                  console.log("Blob reçu:", blob.type, blob.size);
 
                   // Créer un URL pour le blob
                   const url = URL.createObjectURL(blob);
@@ -641,8 +650,8 @@ export default function Home() {
                   URL.revokeObjectURL(url);
                   document.body.removeChild(a);
                 } catch (error) {
-                  console.error("Erreur lors du téléchargement:", error);
-                  setErrorMessage("Erreur lors du téléchargement: " + (error as Error).message);
+                  console.error("Erreur détaillée lors du téléchargement:", error);
+                  setErrorMessage("Erreur détaillée: " + (error as Error).message);
                   setShowErrorModal(true);
                   setShowPdfSuccessModal(false);
                 }
