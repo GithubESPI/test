@@ -1,40 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+// Utiliser fileStorage au lieu de tempFileStorage
+import { fileStorage } from "@/lib/fileStorage";
 import fontkit from "@pdf-lib/fontkit";
+import fs from "fs";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
+import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-// Pour le développement uniquement, utilisez import dynamique pour fs et path
-import * as fs from "fs";
-import * as path from "path";
-
-// Fonction pour charger des ressources (polices, images, signatures)
-// Fonction pour charger des ressources (polices, images, signatures)
-async function loadResource(resourceType: string, filename: string): Promise<Buffer> {
-  try {
-    // En production, les ressources sont stockées dans Vercel Blob
-    if (process.env.NODE_ENV === "production") {
-      const resourcePath = `resources/${resourceType}/${filename}`;
-      const resourceData = await fetch(`${process.env.BLOB_URL || ""}/${resourcePath}`);
-
-      if (!resourceData.ok) {
-        throw new Error(`Ressource non trouvée: ${resourcePath}`);
-      }
-
-      return Buffer.from(await resourceData.arrayBuffer());
-    } else {
-      // En développement, utiliser le système de fichiers local
-      // Utiliser les imports déclarés en haut du fichier, pas require()
-      const resourcePath = path.join(process.cwd(), "public", resourceType, filename);
-      return fs.readFileSync(resourcePath);
-    }
-  } catch (error) {
-    console.error(
-      `❌ Erreur lors du chargement de la ressource ${resourceType}/${filename}:`,
-      error
-    );
-    throw error;
-  }
-}
 
 // Type definitions for the student data
 interface StudentData {
@@ -425,35 +397,6 @@ function getSignatureFilename(codePersonnelGestionnaire: string): string | null 
   return signatureMap[codePersonnelGestionnaire] || null;
 }
 
-// Fonction pour nettoyer les objets et s'assurer qu'ils sont JSON-compatibles
-function sanitizeForJSON(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
-
-  if (typeof obj === "object") {
-    // Si c'est un tableau, appliquer la fonction à chaque élément
-    if (Array.isArray(obj)) {
-      return obj.map((item) => sanitizeForJSON(item));
-    }
-
-    // Si c'est un objet, appliquer la fonction à chaque propriété
-    const result: Record<string, any> = {};
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        // Convertir les valeurs en chaînes valides pour les propriétés problématiques
-        if (typeof obj[key] === "string") {
-          result[key] = obj[key].replace(/[^\x20-\x7E]/g, ""); // Garder uniquement les caractères ASCII imprimables
-        } else {
-          result[key] = sanitizeForJSON(obj[key]);
-        }
-      }
-    }
-    return result;
-  }
-
-  // Pour les valeurs simples (nombre, boolean, etc.)
-  return obj;
-}
-
 // Function to create a PDF for a student
 // Function to create a PDF for a student
 async function createStudentPDF(
@@ -472,35 +415,36 @@ async function createStudentPDF(
   try {
     // Create a new PDF document
     const pdfDoc = await PDFDocument.create();
-    pdfDoc.registerFontkit(fontkit); // Ajoutez cette ligne
-
     let page = pdfDoc.addPage([595.28, 841.89]); // Format A4
 
-    // Avant la boucle des étudiants, préchargez toutes les ressources
-    // Avant la boucle des étudiants, préchargez toutes les ressources
-    let mainFont, boldFont;
-    try {
-      // Essayer de charger les polices personnalisées
-      const poppinsRegularPath = await loadResource("fonts", "Poppins-Regular.ttf");
-      const poppinsBoldPath = await loadResource("fonts", "Poppins-Bold.ttf");
+    // Charger les polices Poppins (s'ils sont disponibles)
+    let poppinsRegular;
+    let poppinsBold;
 
-      // Vérifier si les fichiers existent avant de les lire
-      if (fs.existsSync(poppinsRegularPath) && fs.existsSync(poppinsBoldPath)) {
-        const poppinsRegular = await pdfDoc.embedFont(fs.readFileSync(poppinsRegularPath));
-        const poppinsBold = await pdfDoc.embedFont(fs.readFileSync(poppinsBoldPath));
-        mainFont = poppinsRegular;
-        boldFont = poppinsBold;
-      } else {
-        // Fallback sur des polices standard si les fichiers n'existent pas
-        mainFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-        boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-      }
+    try {
+      // Chemins vers les fichiers de police (ajustez selon l'emplacement de vos fichiers)
+      const poppinsRegularPath = path.join(process.cwd(), "public", "fonts", "Poppins-Regular.ttf");
+      const poppinsBoldPath = path.join(process.cwd(), "public", "fonts", "Poppins-Bold.ttf");
+
+      // Lire les fichiers de police
+      const poppinsRegularBytes = fs.readFileSync(poppinsRegularPath);
+      const poppinsBoldBytes = fs.readFileSync(poppinsBoldPath);
+
+      pdfDoc.registerFontkit(fontkit);
+
+      // Incorporer les polices dans le document PDF
+      poppinsRegular = await pdfDoc.embedFont(poppinsRegularBytes);
+      poppinsBold = await pdfDoc.embedFont(poppinsBoldBytes);
+
+      console.log("✅ Polices Poppins chargées avec succès");
     } catch (error) {
-      console.error("Erreur lors du chargement des polices:", error);
-      // Fallback sur des polices standard en cas d'erreur
-      mainFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      console.error("❌ Erreur lors du chargement des polices Poppins:", error);
+      console.log("Utilisation des polices standard comme fallback");
     }
+
+    // Définir les polices à utiliser (avec fallback sur des polices standard si Poppins n'est pas disponible)
+    const mainFont = poppinsRegular || (await pdfDoc.embedFont(StandardFonts.Helvetica));
+    const boldFont = poppinsBold || (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
 
     // Définir une taille de police plus petite par défaut
     const fontSize = 8;
@@ -714,7 +658,8 @@ async function createStudentPDF(
     // ESPI Logo and header section
     // Logo ESPI (text en lieu de logo)
     try {
-      const logoBytes = await loadResource("logo", "espi.jpg");
+      const logoPath = path.join(process.cwd(), "public", "logo", "espi.jpg");
+      const logoBytes = fs.readFileSync(logoPath);
       const logoImage = await pdfDoc.embedJpg(logoBytes);
 
       // Obtenir les dimensions de l'image
@@ -1498,6 +1443,7 @@ async function createStudentPDF(
 
     currentY -= 25; // Espace additionnel
 
+    // Vérifier s'il reste assez d'espace pour la signature
     const MIN_SPACE_FOR_SIGNATURE = 100;
     if (currentY < margin + MIN_SPACE_FOR_SIGNATURE) {
       // Pas assez d'espace, créer une nouvelle page
@@ -1525,21 +1471,39 @@ async function createStudentPDF(
     let prenomPersonnel = "";
     let nomFonctionPersonnel = "";
 
+    // Vérifier si les données PERSONNEL sont disponibles
+    console.log("PERSONNEL data:", personnelData);
+    console.log("groupInfo:", groupInfo);
+
     // Vérifier d'abord si les données sont disponibles directement dans groupInfo
-    // Chercher d'abord dans groupInfo
-    if (groupInfo && groupInfo.length > 0) {
+    if (groupInfo.length > 0) {
       codePersonnelGestionnaire = groupInfo[0].CODE_PERSONNEL_GESTIONNAIRE || "";
       nomPersonnel = groupInfo[0].NOM_PERSONNEL || "";
       prenomPersonnel = groupInfo[0].PRENOM_PERSONNEL || "";
       nomFonctionPersonnel = groupInfo[0].NOM_FONCTION_PERSONNEL || "";
+
+      console.log("From groupInfo:", {
+        code: codePersonnelGestionnaire,
+        nom: nomPersonnel,
+        prenom: prenomPersonnel,
+        fonction: nomFonctionPersonnel,
+      });
     }
 
+    // Si aucune donnée n'est disponible dans groupInfo, vérifier si PERSONNEL est disponible
     if ((!nomPersonnel || !prenomPersonnel) && personnelData && personnelData.length > 0) {
       const personnel = personnelData[0];
       codePersonnelGestionnaire = personnel.CODE_PERSONNEL_GESTIONNAIRE || "";
       nomPersonnel = personnel.NOM_PERSONNEL || "";
       prenomPersonnel = personnel.PRENOM_PERSONNEL || "";
       nomFonctionPersonnel = personnel.NOM_FONCTION_PERSONNEL || "";
+
+      console.log("From PERSONNEL data:", {
+        code: codePersonnelGestionnaire,
+        nom: nomPersonnel,
+        prenom: prenomPersonnel,
+        fonction: nomFonctionPersonnel,
+      });
     }
 
     // Fallback si toujours aucune donnée
@@ -1568,19 +1532,15 @@ async function createStudentPDF(
     // Si un fichier de signature est disponible pour ce code personnel
     if (signatureFilename) {
       try {
-        const signaturePath = await loadResource("signatures", signatureFilename);
-
-        // Vérifier si le fichier existe avant de le lire
-        if (!fs.existsSync(signaturePath)) {
-          throw new Error(`Fichier de signature non trouvé: ${signaturePath}`);
-        }
-
-        const signatureBytes = fs.readFileSync(signaturePath);
-
-        // Déterminer le type de fichier
+        // Déterminer l'extension du fichier pour choisir la méthode d'intégration appropriée
         const isJpg =
           signatureFilename.toLowerCase().endsWith(".jpg") ||
           signatureFilename.toLowerCase().endsWith(".jpeg");
+
+        // Chemin vers l'image de signature
+        const signaturePath = path.join(process.cwd(), "public", "signatures", signatureFilename);
+        console.log(`Looking for signature at: ${signaturePath}`);
+        const signatureBytes = fs.readFileSync(signaturePath);
 
         // Intégrer l'image selon son format
         let signatureImage;
@@ -1590,7 +1550,27 @@ async function createStudentPDF(
           signatureImage = await pdfDoc.embedPng(signatureBytes);
         }
 
-        // Ajouter textes et signature
+        // Obtenir les dimensions de l'image et la redimensionner si nécessaire
+        const originalWidth = signatureImage.width;
+        let scale = 0.2; // Échelle par défaut
+
+        // Ajuster l'échelle en fonction de la largeur de l'image
+        if (originalWidth > 400) scale = 0.15;
+        else if (originalWidth < 200) scale = 0.35;
+
+        // Ajouter une limite de taille maximale pour la signature
+        const MAX_WIDTH = 120; // Limite la signature à 120 points de large
+        const scaleByWidth = signatureImage.scale(scale);
+        let finalScale = scale;
+
+        // Si même avec notre échelle la signature est trop large, réduire davantage
+        if (scaleByWidth.width > MAX_WIDTH) {
+          finalScale = scale * (MAX_WIDTH / scaleByWidth.width);
+        }
+
+        const signatureDims = signatureImage.scale(finalScale);
+
+        // D'abord dessiner l'image de signature
         page.drawText(`Signature du ${nomFonctionPersonnel}`, {
           x: pageWidth - margin - 200,
           y: signatureY - 15,
@@ -1598,30 +1578,16 @@ async function createStudentPDF(
           font: mainFont,
         });
 
+        // Afficher le prénom et nom inversés en gras après le texte fonction, mais avant l'image
         page.drawText(`${prenomPersonnel} ${nomPersonnel}`, {
+          // Inverser nom et prénom
           x: pageWidth - margin - 200,
           y: signatureY - 27,
           size: fontSize,
           font: boldFont,
         });
 
-        // Redimensionner et dessiner l'image de signature
-        const originalWidth = signatureImage.width;
-        let scale = 0.2;
-
-        if (originalWidth > 400) scale = 0.15;
-        else if (originalWidth < 200) scale = 0.35;
-
-        const MAX_WIDTH = 120;
-        const scaleByWidth = signatureImage.scale(scale);
-        let finalScale = scale;
-
-        if (scaleByWidth.width > MAX_WIDTH) {
-          finalScale = scale * (MAX_WIDTH / scaleByWidth.width);
-        }
-
-        const signatureDims = signatureImage.scale(finalScale);
-
+        // Puis dessiner l'image de signature sous les textes
         page.drawImage(signatureImage, {
           x: pageWidth - margin - 200,
           y: signatureY - 40 - signatureDims.height,
@@ -1629,13 +1595,12 @@ async function createStudentPDF(
           height: signatureDims.height,
         });
       } catch (error) {
-        if (error instanceof Error) {
-          console.error(`Erreur signature: ${error.message}`);
-        } else {
-          console.error("Erreur signature: une erreur inconnue est survenue");
-        }
-        // Fallback en cas d'erreur avec la signature
-        // Pour les codes personnels sans signature, afficher uniquement le texte
+        console.error(
+          `Erreur lors du chargement de l'image de signature ${signatureFilename}:`,
+          error
+        );
+
+        // En cas d'erreur, revenir à la signature textuelle
         page.drawText(`Signature du: ${nomFonctionPersonnel}`, {
           x: pageWidth - margin - 200,
           y: signatureY - 10,
@@ -1650,9 +1615,16 @@ async function createStudentPDF(
           size: fontSize,
           font: boldFont,
         });
+
+        // Afficher le code personnel
+        page.drawText(`Code personnel: ${codePersonnelGestionnaire}`, {
+          x: pageWidth - margin - 200,
+          y: signatureY - 34,
+          size: fontSize,
+          font: mainFont,
+        });
       }
     } else {
-      // Pas de signature disponible, utiliser le texte
       // Pour les codes personnels sans signature, afficher uniquement le texte
       page.drawText(`Signature du: ${nomFonctionPersonnel}`, {
         x: pageWidth - margin - 200,
@@ -1729,9 +1701,42 @@ export async function POST(request: Request) {
       );
     }
 
-    const data = sanitizeForJSON(body.data);
+    const data = body.data;
     const period = body.periodeEvaluation || "Période non spécifiée";
     const groupName = body.groupName || "Groupe non spécifié";
+
+    // Check if we have student data
+    // Examiner la structure des données
+    if (data.APPRENANT && data.APPRENANT.length > 0) {
+      console.log("Structure détaillée du premier étudiant:");
+      console.log(JSON.stringify(data.APPRENANT[0], null, 2));
+    }
+
+    if (data.MOYENNES_UE && data.MOYENNES_UE.length > 0) {
+      console.log("Structure détaillée de la première moyenne UE:");
+      console.log(JSON.stringify(data.MOYENNES_UE[0], null, 2));
+      console.log("Type de MOYENNE:", typeof data.MOYENNES_UE[0].MOYENNE);
+      console.log("Valeur de MOYENNE:", data.MOYENNES_UE[0].MOYENNE);
+    }
+
+    if (data.MOYENNE_GENERALE && data.MOYENNE_GENERALE.length > 0) {
+      console.log("Structure détaillée de la première moyenne générale:");
+      console.log(JSON.stringify(data.MOYENNE_GENERALE[0], null, 2));
+      console.log("Type de MOYENNE_GENERALE:", typeof data.MOYENNE_GENERALE[0].MOYENNE_GENERALE);
+      console.log("Valeur de MOYENNE_GENERALE:", data.MOYENNE_GENERALE[0].MOYENNE_GENERALE);
+    }
+
+    if (data.ECTS_PAR_MATIERE && data.ECTS_PAR_MATIERE.length > 0) {
+      const uniqueCount = new Set(
+        data.ECTS_PAR_MATIERE.map((item: any) => `${item.CODE_APPRENANT}_${item.CODE_MATIERE}`)
+      ).size;
+      console.log(
+        `📊 ECTS_PAR_MATIERE: ${data.ECTS_PAR_MATIERE.length} éléments, ${uniqueCount} uniques`
+      );
+      console.log(
+        `📌 Ratio de duplication: ${(data.ECTS_PAR_MATIERE.length / uniqueCount).toFixed(2)}x`
+      );
+    }
 
     // Initialize ZIP archive in memory
     const zip = new JSZip();
@@ -1787,11 +1792,12 @@ export async function POST(request: Request) {
           period,
           data.ABSENCE || [],
           processAbsences(data.ABSENCE || []),
-          data.PERSONNEL || []
+          data.PERSONNEL || [] // Add this line to pass the PERSONNEL data
         );
 
         console.log("📌 Matières brutes reçues :", data.ECTS_PAR_MATIERE);
 
+        // Par le code suivant:
         // Récupérer le nom de la formation à partir des données du groupe
         let nomFormation = "FORMATION";
         if (data.GROUPE && data.GROUPE.length > 0 && data.GROUPE[0].NOM_FORMATION) {
@@ -1830,24 +1836,38 @@ export async function POST(request: Request) {
       );
     }
 
-    // Générer le nom du fichier ZIP
+    // Generate ZIP in memory
+    console.log(`Génération du ZIP pour ${successCount} PDFs`);
+    const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
+    console.log("ZIP généré avec succès");
+
     let groupNameForFilename = groupName; // Valeur par défaut
     let periodNameForFilename = period; // Valeur par défaut
 
     // Essayer de récupérer NOM_PERIODE_EVALUATION depuis les données des notes
     if (data.MOYENNES_UE && data.MOYENNES_UE.length > 0) {
+      // Vérifier si le champ existe dans les données
       const sampleGrade = data.MOYENNES_UE[0];
+      console.log("Exemple de données MOYENNES_UE:", sampleGrade);
+
       if (sampleGrade.NOM_PERIODE_EVALUATION) {
         periodNameForFilename = sampleGrade.NOM_PERIODE_EVALUATION;
+        console.log(`NOM_PERIODE_EVALUATION trouvé: "${periodNameForFilename}"`);
+      } else {
+        console.log("NOM_PERIODE_EVALUATION non trouvé dans les données MOYENNES_UE");
+        // Lister toutes les clés disponibles pour aider au débogage
+        console.log("Clés disponibles:", Object.keys(sampleGrade));
       }
     }
 
-    // Récupérer le nom du groupe depuis les données
+    // 2. Récupérer le nom du groupe depuis les données
     if (data.GROUPE && data.GROUPE.length > 0) {
       groupNameForFilename = data.GROUPE[0].NOM_GROUPE || groupName;
+      console.log(`NOM_GROUPE trouvé: "${groupNameForFilename}"`);
     }
 
-    // Nettoyer et formater les valeurs pour le nom du fichier
+    // Nettoyer et formater les variables du nom de groupe et de période
+    // 3. Nettoyer et formater les valeurs pour le nom du fichier
     const sanitizedGroupName = groupNameForFilename
       .replace(/\s+/g, "_")
       .replace(/[^a-zA-Z0-9_-]/g, "");
@@ -1855,33 +1875,38 @@ export async function POST(request: Request) {
       .replace(/\s+/g, "_")
       .replace(/[^a-zA-Z0-9_-]/g, "");
 
-    // Nom du fichier ZIP
-    const filename = `bulletins_${sanitizedGroupName}_${sanitizedPeriod}.zip`;
-    console.log(`Génération du ZIP: ${filename} pour ${successCount} PDFs`);
+    // Créer le nom du fichier ZIP avec le format demandé: bulletins_NOM_GROUPE_NOM_PERIODE_EVALUATION.zip
+    const zipId = `bulletins_${sanitizedGroupName}_${sanitizedPeriod}.zip`;
 
-    // Générer le fichier ZIP en mémoire
-    const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
-    console.log(`ZIP généré avec succès, taille: ${zipBuffer.byteLength} octets`);
+    console.log(`ID du fichier ZIP généré: ${zipId}`);
 
-    // SOLUTION 1: Retourner directement le fichier ZIP sans passer par le stockage blob
-    const response = new NextResponse(Buffer.from(zipBuffer));
+    // Stocker le contenu dans notre système de stockage sur disque
+    fileStorage.storeFile(zipId, Buffer.from(zipBuffer), "application/zip");
+    console.log(`Fichier temporaire stocké: ${zipId}, taille: ${zipBuffer.byteLength} octets`);
 
-    // Configurer les en-têtes pour le téléchargement
-    response.headers.set("Content-Type", "application/zip");
-    response.headers.set("Content-Disposition", `attachment; filename="${filename}"`);
-    response.headers.set("Content-Length", zipBuffer.byteLength.toString());
+    // Vérifier que le fichier est bien dans le store
+    if (fileStorage.hasFile(zipId)) {
+      console.log(`✅ Confirmation: le fichier ${zipId} existe dans le fileStorage`);
+    } else {
+      console.log(`❌ Erreur: le fichier ${zipId} n'existe PAS dans le fileStorage`);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Erreur lors du stockage du fichier ZIP",
+        },
+        { status: 500 }
+      );
+    }
 
-    // Empêcher la mise en cache du fichier
-    response.headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
-    response.headers.set("Pragma", "no-cache");
-    response.headers.set("Expires", "0");
+    // Afficher tous les fichiers disponibles
+    console.log(`Fichiers disponibles dans le store: ${fileStorage.getAllFileIds().join(", ")}`);
 
-    console.log(
-      "En-têtes configurés pour la réponse directe:",
-      Object.fromEntries(response.headers.entries())
-    );
-
-    return response;
+    // Renvoyer un JSON avec le chemin vers l'API de téléchargement
+    return NextResponse.json({
+      success: true,
+      path: `/api/download?id=${zipId}`,
+      studentCount: successCount,
+    });
   } catch (error: any) {
     console.error("❌ Erreur générale lors de la génération des PDFs:", error);
     return NextResponse.json(

@@ -105,6 +105,7 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState("");
   const [retrievedData, setRetrievedData] = useState<any>(null);
   const [pdfDownloadUrl, setPdfDownloadUrl] = useState<string>("");
+  const [pdfStudentCount, setPdfStudentCount] = useState<number>(0);
   const [selectedGroupName, setSelectedGroupName] = useState<string>("");
   // Déclarez une ref pour stocker les données entre les rendus
   const responseDataRef = useRef<any>(null);
@@ -379,15 +380,16 @@ export default function Home() {
         }),
       });
 
+      // Vérifier si la réponse est OK
       if (!response.ok) {
-        const errorText = await response.text(); // <-- Important pour les erreurs texte non-JSON
-        throw new Error(`Erreur lors de la génération des PDFs: ${errorText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Erreur lors de la génération des PDFs");
       }
 
-      // ✅ Corrigé ici : récupérer un blob
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      setPdfDownloadUrl(url);
+      const data = await response.json();
+
+      setPdfDownloadUrl(data.path);
+      setPdfStudentCount(data.studentCount);
       setShowPdfSuccessModal(true);
     } catch (error: any) {
       console.error("❌ Erreur lors de la génération des PDFs:", error);
@@ -558,7 +560,7 @@ export default function Home() {
 
       {/* Modale de succès */}
       <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
               <CheckCircle2 className="w-6 h-6" />
@@ -579,9 +581,9 @@ export default function Home() {
               className="w-full sm:w-auto bg-wtm-button-linear hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2"
             >
               {isGeneratingPDF ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
-                <FileText className="w-4 h-4" />
+                <FileText className="w-5 h-5" />
               )}
               {isGeneratingPDF ? "Génération en cours..." : "Générer les bulletins PDF"}
             </Button>
@@ -591,14 +593,14 @@ export default function Home() {
 
       {/* Modale de succès pour la génération des PDFs */}
       <Dialog open={showPdfSuccessModal} onOpenChange={setShowPdfSuccessModal}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="w-5 h-5" />
+              <CheckCircle2 className="w-6 h-6" />
               Bulletins générés avec succès
             </DialogTitle>
             <DialogDescription className="text-gray-600">
-              bulletins ont été générés et placés dans une archive ZIP.
+              {pdfStudentCount} bulletins ont été générés et placés dans une archive ZIP.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex flex-col sm:flex-row gap-3 sm:justify-center pt-4">
@@ -612,92 +614,43 @@ export default function Home() {
             <Button
               onClick={async () => {
                 try {
-                  setIsGeneratingPDF(true);
-                  console.log("Début du téléchargement des bulletins PDF");
+                  // Utiliser fetch pour télécharger le fichier plutôt que window.location
+                  const response = await fetch(pdfDownloadUrl);
 
-                  // Nettoyer les données avant l'envoi pour éviter les problèmes JSON
-                  const dataToSend = responseDataRef.current || retrievedData;
-                  // Convertir en JSON puis re-parser pour éliminer les caractères problématiques
-                  const cleanData = JSON.parse(
-                    JSON.stringify(dataToSend, (key, value) => {
-                      // Si c'est une chaîne, supprimer les caractères non-ASCII
-                      if (typeof value === "string") {
-                        return value.replace(/[^\x20-\x7E]/g, "");
-                      }
-                      return value;
-                    })
-                  );
-
-                  // Vérifier si nous avons déjà une URL de téléchargement valide
-                  if (pdfDownloadUrl && !pdfDownloadUrl.startsWith("/api/")) {
-                    console.log("Utilisation de l'URL du blob déjà créée:", pdfDownloadUrl);
-
-                    // Télécharger directement à partir de l'URL existante
-                    const a = document.createElement("a");
-                    a.href = pdfDownloadUrl;
-                    a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                  } else {
-                    // Générer et télécharger les PDFs avec les données nettoyées
-                    const response = await fetch("/api/pdf", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        data: cleanData,
-                        periodeEvaluation: form.getValues("periodeEvaluation") || "",
-                        groupName: selectedGroupName,
-                      }),
-                    });
-
-                    if (!response.ok) {
-                      throw new Error(`Erreur HTTP: ${response.status} - ${response.statusText}`);
-                    }
-
-                    // Récupérer le blob directement de la réponse
-                    const blob = await response.blob();
-
-                    // Créer un URL pour le blob et le stocker
-                    const url = URL.createObjectURL(blob);
-                    setPdfDownloadUrl(url);
-
-                    // Télécharger le fichier
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
+                  // Vérifier si la requête a réussi
+                  if (!response.ok) {
+                    throw new Error(`Erreur ${response.status}: ${response.statusText}`);
                   }
 
-                  setShowPdfSuccessModal(false); // Fermer la modale
+                  // Convertir la réponse en blob
+                  const blob = await response.blob();
+
+                  // Créer un URL pour le blob
+                  const url = URL.createObjectURL(blob);
+
+                  // Créer un élément <a> pour télécharger le fichier
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
+                  document.body.appendChild(a);
+
+                  // Déclencher le téléchargement
+                  a.click();
+
+                  // Nettoyer
+                  URL.revokeObjectURL(url);
+                  document.body.removeChild(a);
                 } catch (error) {
                   console.error("Erreur lors du téléchargement:", error);
-                  setErrorMessage("Erreur de téléchargement: " + (error as Error).message);
+                  setErrorMessage("Erreur lors du téléchargement: " + (error as Error).message);
                   setShowErrorModal(true);
                   setShowPdfSuccessModal(false);
-
-                  // Réinitialiser l'URL en cas d'erreur
-                  if (pdfDownloadUrl && !pdfDownloadUrl.startsWith("/api/")) {
-                    URL.revokeObjectURL(pdfDownloadUrl);
-                    setPdfDownloadUrl("");
-                  }
-                } finally {
-                  setIsGeneratingPDF(false);
                 }
               }}
               className="w-full sm:w-auto bg-wtm-button-linear hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2"
-              disabled={isGeneratingPDF}
             >
-              {isGeneratingPDF ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <FileDown className="w-5 h-5" />
-              )}
-              {isGeneratingPDF ? "Téléchargement..." : "Télécharger les bulletins"}
+              <FileDown className="w-5 h-5" />
+              Télécharger les bulletins
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -705,10 +658,10 @@ export default function Home() {
 
       {/* Modale d'erreur */}
       <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
-              <XCircle className="w-5 h-5" />
+              <XCircle className="w-6 h-6" />
               Erreur
             </DialogTitle>
             <DialogDescription className="text-gray-600">{errorMessage}</DialogDescription>
