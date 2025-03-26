@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { blobStorage } from "@/lib/blobStorage";
+import { blobStorage, uploadZipToBlob } from "@/lib/blobStorage";
 import fontkit from "@pdf-lib/fontkit";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
@@ -1803,6 +1803,7 @@ export async function POST(request: Request) {
     }
 
     // Generate ZIP in memory
+    // Generate ZIP in memory - utilisez directement le zip que vous avez créé plus haut
     console.log(`Génération du ZIP pour ${successCount} PDFs`);
     const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
     console.log("ZIP généré avec succès");
@@ -1866,12 +1867,13 @@ export async function POST(request: Request) {
     // Afficher tous les fichiers disponibles
     const availableFiles = await blobStorage.getAllFileIds();
     console.log(`Fichiers disponibles dans le store: ${availableFiles.join(", ")}`);
+    const url = await uploadZipToBlob(Buffer.from(zipBuffer), zipId);
 
     // Renvoyer un JSON avec le chemin vers l'API de téléchargement
     return NextResponse.json({
       success: true,
-      path: `/api/download?id=${zipId}`,
-      studentCount: successCount,
+      path: url, // 👈 front l'utilise via setPdfDownloadUrl
+      studentCount: body.data?.APPRENANT?.length || 0,
     });
   } catch (error: any) {
     console.error("❌ Erreur générale lors de la génération des PDFs:", error);

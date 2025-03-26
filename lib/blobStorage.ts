@@ -206,4 +206,13 @@ class Storage {
   }
 }
 
+export async function uploadZipToBlob(fileBuffer: Buffer, filename: string): Promise<string> {
+  const blob = await put(`files/${filename}`, fileBuffer, {
+    access: "public", // le fichier sera téléchargeable depuis le front
+    contentType: "application/zip",
+  });
+
+  return blob.url; // tu pourras l'utiliser côté front directement
+}
+
 export const blobStorage = new Storage();
