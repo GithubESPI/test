@@ -121,7 +121,7 @@ export default function HeroVideoDialog({
               </motion.button>
               <div className="relative isolate z-[1] size-full overflow-hidden rounded-2xl border-2 border-white">
                 <iframe
-                  src={`${videoSrc}&mute=1`}
+                  src={`${videoSrc}`}
                   className="size-full rounded-2xl"
                   allowFullScreen
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
