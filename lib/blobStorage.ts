@@ -36,6 +36,8 @@ class Storage {
     if (this.isProduction) {
       // En production: utiliser Vercel Blob
       try {
+        // Assurez-vous que ce code fonctionne correctement
+        console.log(`Tentative de stockage du fichier ${id}, taille: ${data.length} octets`);
         const blob = await put(`files/${id}`, data, {
           contentType,
           access: "public",
@@ -55,10 +57,10 @@ class Storage {
         const filePath = path.join(this.tempDir, id);
         fs.writeFileSync(filePath, data);
 
-        console.log(`✅ Fichier stocké localement: ${filePath}`);
+        console.log(`Fichier ${id} stocké avec succès`);
         return `/api/download?id=${id}`;
       } catch (error) {
-        console.error(`❌ Erreur lors du stockage local: ${error}`);
+        console.error(`Erreur lors du stockage du fichier ${id}:`, error);
         throw error;
       }
     }

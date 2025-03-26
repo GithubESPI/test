@@ -621,7 +621,6 @@ export default function Home() {
 
                   // Vérifier si la requête a réussi
                   if (!response.ok) {
-                    console.error("Erreur de réponse:", response.status, response.statusText);
                     throw new Error(`Erreur HTTP: ${response.status} - ${response.statusText}`);
                   }
 
@@ -630,23 +629,13 @@ export default function Home() {
                     Object.fromEntries(response.headers.entries())
                   );
 
-                  // Convertir la réponse en blob
                   const blob = await response.blob();
-                  console.log("Blob reçu:", blob.type, blob.size);
-
-                  // Créer un URL pour le blob
                   const url = URL.createObjectURL(blob);
-
-                  // Créer un élément <a> pour télécharger le fichier
                   const a = document.createElement("a");
                   a.href = url;
                   a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
                   document.body.appendChild(a);
-
-                  // Déclencher le téléchargement
                   a.click();
-
-                  // Nettoyer
                   URL.revokeObjectURL(url);
                   document.body.removeChild(a);
                 } catch (error) {
