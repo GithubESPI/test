@@ -4,9 +4,9 @@ import { ArrowUp } from "lucide-react";
 import Link from "next/link";
 import { Button } from "./ui/button";
 
-export default function Support() {
+export default function Support({ className = "" }: { className?: string }) {
   return (
-    <section className="py-24 bg-slate-50 grainy-light" id="faq">
+    <section className={`py-24 bg-slate-50 grainy-light ${className}`} id="faq">
       <div className="container mx-auto px-4">
         <div className="text-center mb-10">
           <h2 className="text-sm font-medium tracking-wider text-primary-50 uppercase mb-3">

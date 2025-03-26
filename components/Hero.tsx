@@ -1,12 +1,10 @@
 import CallToAction from "./CallToAction";
 import HeroVideoDialog from "./magicui/hero-video-dialog";
 
-const Hero = () => {
+const Hero = ({ className = "" }: { className?: string }) => {
   return (
-    <>
+    <div className={className}>
       <div className="text-center mb-10">
-        {/* Announcement Badge */}
-
         {/* Main Heading */}
         <h1 className="text-5xl font-bold tracking-tight text-gray-900 mb-6 lg:text-6xl">
           Générer vos bulletins
@@ -36,7 +34,7 @@ const Hero = () => {
           thumbnailAlt="Démonstration de l'application"
         />
       </div>
-    </>
+    </div>
   );
 };
 

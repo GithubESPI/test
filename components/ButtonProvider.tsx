@@ -32,7 +32,7 @@ const ButtonsProvider = () => {
           ) : (
             <VscAzure className="h-4 w-4 mr-2" />
           )}
-          <p className="text-white">Se connecter avec mon compte ESPI</p>
+          <span className="ml-2">Se connecter avec mon compte ESPI</span>
         </Button>
       </div>
     </>

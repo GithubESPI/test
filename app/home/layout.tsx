@@ -1,8 +1,10 @@
-import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
-import Providers from "@/components/Providers";
 import { Toaster } from "@/components/ui/toaster";
+import dynamic from "next/dynamic";
 import { ReactNode } from "react";
+
+const Footer = dynamic(() => import("@/components/Footer"), { ssr: false });
+const Providers = dynamic(() => import("@/components/Providers"), { ssr: false });
 
 const HomeLayout = ({ children }: { children: ReactNode }) => {
   return (

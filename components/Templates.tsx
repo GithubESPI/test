@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { FileDown, FileText, School } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -27,7 +26,7 @@ const steps = [
 
 const videos = ["/videos/video-2.mp4", "/videos/video-3.mp4", "/videos/video-4.mp4"];
 
-export default function HowItWorks() {
+export default function HowItWorks({ className = "" }: { className?: string }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
 
@@ -54,7 +53,7 @@ export default function HowItWorks() {
   };
 
   return (
-    <section className="py-24 bg-primary-50 dark:bg-neutral-900" id="templates">
+    <section className={`py-24 bg-primary-50 dark:bg-neutral-900 ${className}`} id="templates">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
           <h2 className="text-sm font-medium tracking-wider text-white/80 uppercase mb-3">
@@ -68,14 +67,12 @@ export default function HowItWorks() {
         <div className="grid md:grid-cols-2 gap-12 items-start">
           <div className="space-y-12">
             {steps.map((step, index) => (
-              <motion.div
+              <div
                 key={index}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.2 }}
-                viewport={{ once: true }}
-                className="flex gap-6 group cursor-pointer"
                 onClick={() => handleStepClick(index)}
+                className={`flex gap-6 group cursor-pointer opacity-0 translate-y-5 animate-fadeInUp delay-${
+                  index * 200
+                }`}
               >
                 <div className="shrink-0">
                   <div
@@ -107,7 +104,7 @@ export default function HowItWorks() {
                   <h4 className="text-xl font-semibold mb-2 text-white">{step.title}</h4>
                   <p className="text-white/80 leading-relaxed">{step.description}</p>
                 </div>
-              </motion.div>
+              </div>
             ))}
           </div>
 

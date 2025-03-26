@@ -8,25 +8,17 @@ import { useEffect, useState } from "react";
 export default function Page() {
   const [isMobile, setIsMobile] = useState(false);
 
-  // Détecter si l'appareil est mobile
   useEffect(() => {
     const checkIfMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
-
-    // Vérifier au chargement
     checkIfMobile();
-
-    // Ajouter un écouteur pour redimensionnement
     window.addEventListener("resize", checkIfMobile);
-
-    // Nettoyer l'écouteur
     return () => window.removeEventListener("resize", checkIfMobile);
   }, []);
 
   return (
     <main className="relative min-h-screen w-full bg-white">
-      {/* Split background - montré uniquement sur desktop */}
       {!isMobile && (
         <div className="absolute inset-0 flex md:flex">
           <div className="w-1/2 bg-white"></div>
@@ -39,7 +31,6 @@ export default function Page() {
               priority
               quality={100}
             />
-            {/* Superposition colorée pour améliorer la lisibilité du texte */}
             <div className="absolute inset-0 bg-blue-800/40"></div>
           </div>
         </div>
@@ -50,7 +41,7 @@ export default function Page() {
         <div className="w-full md:w-1/2 flex items-center justify-center py-8 px-4 z-10">
           <div className="w-full max-w-md">
             {/* Logo */}
-            <div className="flex justify-center mb-10">
+            <div className="flex justify-center mb-10 opacity-0 translate-y-5 animate-fadeInUp delay-0">
               <Image
                 src="/images/logo.png"
                 alt="ESPI logo"
@@ -61,15 +52,17 @@ export default function Page() {
             </div>
 
             {/* Titre */}
-            <h1 className="text-2xl font-medium text-center mb-8">
+            <h1 className="text-2xl font-medium text-center mb-8 opacity-0 translate-y-5 animate-fadeInUp delay-200">
               Connectez-vous à l&apos;application des bulletins
             </h1>
 
             {/* Bouton Authentification */}
-            <ButtonsProvider />
+            <div className="opacity-0 translate-y-5 animate-fadeInUp delay-400">
+              <ButtonsProvider />
+            </div>
 
             {/* Texte légal */}
-            <p className="text-xs text-center text-gray-500 mt-6">
+            <p className="text-xs text-center text-gray-500 mt-6 opacity-0 translate-y-5 animate-fadeInUp delay-600">
               En continuant, vous acceptez nos{" "}
               <Link href="#" className="text-gray-700 hover:underline">
                 Conditions d&apos;utilisation
@@ -83,7 +76,7 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Zone d'illustration (visible uniquement sur desktop) */}
+        {/* Zone d'illustration */}
         <div className="hidden md:flex w-1/2 bg-white relative">
           <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
             <Image

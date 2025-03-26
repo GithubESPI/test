@@ -1,8 +1,10 @@
-import Providers from "@/components/Providers";
-import SessionWrapper from "@/lib/SessionWrapper";
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import { Poppins } from "next/font/google";
 import "./globals.css";
+
+const Providers = dynamic(() => import("@/components/Providers"), { ssr: false });
+const SessionWrapper = dynamic(() => import("@/lib/SessionWrapper"), { ssr: false });
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -21,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="fr">
       <body className={poppins.className}>
         <SessionWrapper>
           <main className="flex flex-col min-h-[calc(100vh-3.5rem-1px)]">
