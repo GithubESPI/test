@@ -1,22 +1,23 @@
 // lib/fileStorage.ts
 import fs from "fs";
+import os from "os";
 import path from "path";
 
 // Créer un dossier temporaire s'il n'existe pas
-const tempDir = path.join(process.cwd(), "temp");
-if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir, { recursive: true });
+const dir = path.join(os.tmpdir(), "temp");
+if (!fs.existsSync(dir)) {
+  fs.mkdirSync(dir, { recursive: true });
 }
 
 export const fileStorage = {
   // Stocker un fichier sur le disque
   storeFile(id: string, data: Buffer, contentType: string = "application/zip"): void {
     // Stocker le fichier
-    const filePath = path.join(tempDir, id);
+    const filePath = path.join(dir, id);
     fs.writeFileSync(filePath, data);
 
     // Stocker les métadonnées (comme le type de contenu)
-    const metaFilePath = path.join(tempDir, `${id}.meta.json`);
+    const metaFilePath = path.join(dir, `${id}.meta.json`);
     fs.writeFileSync(
       metaFilePath,
       JSON.stringify({
@@ -30,14 +31,14 @@ export const fileStorage = {
 
   // Vérifier si un fichier existe
   hasFile(id: string): boolean {
-    const filePath = path.join(tempDir, id);
+    const filePath = path.join(dir, id);
     return fs.existsSync(filePath);
   },
 
   // Lire un fichier
   getFile(id: string): { data: Buffer; contentType: string } | null {
-    const filePath = path.join(tempDir, id);
-    const metaFilePath = path.join(tempDir, `${id}.meta.json`);
+    const filePath = path.join(dir, id);
+    const metaFilePath = path.join(dir, `${id}.meta.json`);
 
     if (fs.existsSync(filePath) && fs.existsSync(metaFilePath)) {
       const data = fs.readFileSync(filePath);
@@ -52,8 +53,8 @@ export const fileStorage = {
 
   // Supprimer un fichier
   deleteFile(id: string): boolean {
-    const filePath = path.join(tempDir, id);
-    const metaFilePath = path.join(tempDir, `${id}.meta.json`);
+    const filePath = path.join(dir, id);
+    const metaFilePath = path.join(dir, `${id}.meta.json`);
 
     let success = true;
 
@@ -80,12 +81,12 @@ export const fileStorage = {
 
   // Obtenir la liste des fichiers disponibles
   getAllFileIds(): string[] {
-    if (!fs.existsSync(tempDir)) return [];
+    if (!fs.existsSync(dir)) return [];
 
     return fs
-      .readdirSync(tempDir)
+      .readdirSync(dir)
       .filter((file) => !file.endsWith(".meta.json"))
-      .filter((file) => fs.statSync(path.join(tempDir, file)).isFile());
+      .filter((file) => fs.statSync(path.join(dir, file)).isFile());
   },
 
   // Nettoyer les fichiers anciens (plus vieux que x minutes)
@@ -95,7 +96,7 @@ export const fileStorage = {
     let cleanedCount = 0;
 
     for (const file of files) {
-      const metaFilePath = path.join(tempDir, `${file}.meta.json`);
+      const metaFilePath = path.join(dir, `${file}.meta.json`);
 
       if (fs.existsSync(metaFilePath)) {
         try {
