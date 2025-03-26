@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { blobStorage } from "@/lib/blobStorage";
 import fontkit from "@pdf-lib/fontkit";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
@@ -1802,35 +1801,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // Generate ZIP in memory
-    // Generate ZIP in memory - utilisez directement le zip que vous avez créé plus haut
-    console.log(`Génération du ZIP pour ${successCount} PDFs`);
-    const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
-    console.log("ZIP généré avec succès");
-
+    // Générer le nom du fichier ZIP
     let groupNameForFilename = groupName; // Valeur par défaut
     let periodNameForFilename = period; // Valeur par défaut
 
     // Essayer de récupérer NOM_PERIODE_EVALUATION depuis les données des notes
     if (data.MOYENNES_UE && data.MOYENNES_UE.length > 0) {
-      // Vérifier si le champ existe dans les données
       const sampleGrade = data.MOYENNES_UE[0];
-      console.log("Exemple de données MOYENNES_UE:", sampleGrade);
-
       if (sampleGrade.NOM_PERIODE_EVALUATION) {
         periodNameForFilename = sampleGrade.NOM_PERIODE_EVALUATION;
-        console.log(`NOM_PERIODE_EVALUATION trouvé: "${periodNameForFilename}"`);
-      } else {
-        console.log("NOM_PERIODE_EVALUATION non trouvé dans les données MOYENNES_UE");
-        // Lister toutes les clés disponibles pour aider au débogage
-        console.log("Clés disponibles:", Object.keys(sampleGrade));
       }
     }
 
     // Récupérer le nom du groupe depuis les données
     if (data.GROUPE && data.GROUPE.length > 0) {
       groupNameForFilename = data.GROUPE[0].NOM_GROUPE || groupName;
-      console.log(`NOM_GROUPE trouvé: "${groupNameForFilename}"`);
     }
 
     // Nettoyer et formater les valeurs pour le nom du fichier
@@ -1841,40 +1826,33 @@ export async function POST(request: Request) {
       .replace(/\s+/g, "_")
       .replace(/[^a-zA-Z0-9_-]/g, "");
 
-    // Créer le nom du fichier ZIP avec le format demandé: bulletins_NOM_GROUPE_NOM_PERIODE_EVALUATION.zip
-    const zipId = `bulletins_${sanitizedGroupName}_${sanitizedPeriod}.zip`;
+    // Nom du fichier ZIP
+    const filename = `bulletins_${sanitizedGroupName}_${sanitizedPeriod}.zip`;
+    console.log(`Génération du ZIP: ${filename} pour ${successCount} PDFs`);
 
-    console.log(`ID du fichier ZIP généré: ${zipId}`);
+    // Générer le fichier ZIP en mémoire
+    const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
+    console.log(`ZIP généré avec succès, taille: ${zipBuffer.byteLength} octets`);
 
-    // Stocker le contenu dans notre système de stockage avec Vercel Blob
-    await blobStorage.storeFile(zipId, Buffer.from(zipBuffer), "application/zip");
-    console.log(`Fichier temporaire stocké: ${zipId}, taille: ${zipBuffer.byteLength} octets`);
+    // SOLUTION 1: Retourner directement le fichier ZIP sans passer par le stockage blob
+    const response = new NextResponse(Buffer.from(zipBuffer));
 
-    // Vérifier que le fichier est bien dans le store
-    if (await blobStorage.hasFile(zipId)) {
-      console.log(`✅ Confirmation: le fichier ${zipId} existe dans le blobStorage`);
-    } else {
-      console.log(`❌ Erreur: le fichier ${zipId} n'existe PAS dans le blobStorage`);
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Erreur lors du stockage du fichier ZIP",
-        },
-        { status: 500 }
-      );
-    }
+    // Configurer les en-têtes pour le téléchargement
+    response.headers.set("Content-Type", "application/zip");
+    response.headers.set("Content-Disposition", `attachment; filename="${filename}"`);
+    response.headers.set("Content-Length", zipBuffer.byteLength.toString());
 
-    // Afficher tous les fichiers disponibles
-    const availableFiles = await blobStorage.getAllFileIds();
-    console.log(`Fichiers disponibles dans le store: ${availableFiles.join(", ")}`);
-    const url = `/api/download?id=${zipId}`;
+    // Empêcher la mise en cache du fichier
+    response.headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    response.headers.set("Pragma", "no-cache");
+    response.headers.set("Expires", "0");
 
-    // Renvoyer un JSON avec le chemin vers l'API de téléchargement
-    return NextResponse.json({
-      success: true,
-      path: url, // 👈 front l'utilise via setPdfDownloadUrl
-      studentCount: body.data?.APPRENANT?.length || 0,
-    });
+    console.log(
+      "En-têtes configurés pour la réponse directe:",
+      Object.fromEntries(response.headers.entries())
+    );
+
+    return response;
   } catch (error: any) {
     console.error("❌ Erreur générale lors de la génération des PDFs:", error);
     return NextResponse.json(

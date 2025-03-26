@@ -614,41 +614,79 @@ export default function Home() {
             <Button
               onClick={async () => {
                 try {
-                  console.log("Tentative de téléchargement via URL:", pdfDownloadUrl);
+                  setIsGeneratingPDF(true);
+                  console.log("Début du téléchargement des bulletins PDF");
 
-                  // Approche simplifiée avec logs détaillés
-                  const response = await fetch(pdfDownloadUrl);
+                  // Vérifier si nous avons déjà une URL de téléchargement valide
+                  if (pdfDownloadUrl && !pdfDownloadUrl.startsWith("/api/")) {
+                    console.log("Utilisation de l'URL du blob déjà créée:", pdfDownloadUrl);
 
-                  // Vérifier si la requête a réussi
-                  if (!response.ok) {
-                    throw new Error(`Erreur HTTP: ${response.status} - ${response.statusText}`);
+                    // Télécharger directement à partir de l'URL existante
+                    const a = document.createElement("a");
+                    a.href = pdfDownloadUrl;
+                    a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  } else {
+                    // Générer et télécharger les PDFs
+                    const response = await fetch("/api/pdf", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        data: responseDataRef.current || retrievedData,
+                        periodeEvaluation: form.getValues("periodeEvaluation") || "",
+                        groupName: selectedGroupName,
+                      }),
+                    });
+
+                    if (!response.ok) {
+                      throw new Error(`Erreur HTTP: ${response.status} - ${response.statusText}`);
+                    }
+
+                    // Récupérer le blob directement de la réponse
+                    const blob = await response.blob();
+
+                    // Créer un URL pour le blob et le stocker
+                    const url = URL.createObjectURL(blob);
+                    setPdfDownloadUrl(url);
+
+                    // Télécharger le fichier
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
                   }
 
-                  console.log(
-                    "Réponse reçue, headers:",
-                    Object.fromEntries(response.headers.entries())
-                  );
-
-                  const blob = await response.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
-                  document.body.appendChild(a);
-                  a.click();
-                  URL.revokeObjectURL(url);
-                  document.body.removeChild(a);
+                  setShowPdfSuccessModal(false); // Fermer la modale
                 } catch (error) {
-                  console.error("Erreur détaillée lors du téléchargement:", error);
-                  setErrorMessage("Erreur détaillée: " + (error as Error).message);
+                  console.error("Erreur lors du téléchargement:", error);
+                  setErrorMessage("Erreur de téléchargement: " + (error as Error).message);
                   setShowErrorModal(true);
                   setShowPdfSuccessModal(false);
+
+                  // Réinitialiser l'URL en cas d'erreur
+                  if (pdfDownloadUrl && !pdfDownloadUrl.startsWith("/api/")) {
+                    URL.revokeObjectURL(pdfDownloadUrl);
+                    setPdfDownloadUrl("");
+                  }
+                } finally {
+                  setIsGeneratingPDF(false);
                 }
               }}
               className="w-full sm:w-auto bg-wtm-button-linear hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2"
+              disabled={isGeneratingPDF}
             >
-              <FileDown className="w-5 h-5" />
-              Télécharger les bulletins
+              {isGeneratingPDF ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <FileDown className="w-5 h-5" />
+              )}
+              {isGeneratingPDF ? "Téléchargement..." : "Télécharger les bulletins"}
             </Button>
           </DialogFooter>
         </DialogContent>
