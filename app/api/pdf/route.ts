@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { blobStorage, uploadZipToBlob } from "@/lib/blobStorage";
+import { blobStorage } from "@/lib/blobStorage";
 import fontkit from "@pdf-lib/fontkit";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
@@ -1867,7 +1867,7 @@ export async function POST(request: Request) {
     // Afficher tous les fichiers disponibles
     const availableFiles = await blobStorage.getAllFileIds();
     console.log(`Fichiers disponibles dans le store: ${availableFiles.join(", ")}`);
-    const url = await uploadZipToBlob(Buffer.from(zipBuffer), zipId);
+    const url = `/api/download?id=${zipId}`;
 
     // Renvoyer un JSON avec le chemin vers l'API de téléchargement
     return NextResponse.json({
