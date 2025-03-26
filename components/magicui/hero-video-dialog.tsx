@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import { Play, XIcon } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -79,10 +79,7 @@ export default function HeroVideoDialog({
 
   return (
     <div className={cn("relative", className)}>
-      <div
-        className="group relative cursor-pointer"
-        onClick={() => setIsVideoOpen(true)}
-      >
+      <div className="group relative cursor-pointer" onClick={() => setIsVideoOpen(true)}>
         <img
           src={thumbnailSrc}
           alt={thumbnailAlt}
@@ -98,8 +95,7 @@ export default function HeroVideoDialog({
               <Play
                 className="size-8 scale-100 fill-white text-white transition-transform duration-200 ease-out group-hover:scale-105"
                 style={{
-                  filter:
-                    "drop-shadow(0 4px 3px rgb(0 0 / 0.07)) 2px 0.06))",
+                  filter: "drop-shadow(0 4px 3px rgb(0 0 / 0.07)) 2px 0.06))",
                 }}
               />
             </div>
@@ -125,7 +121,7 @@ export default function HeroVideoDialog({
               </motion.button>
               <div className="relative isolate z-[1] size-full overflow-hidden rounded-2xl border-2 border-white">
                 <iframe
-                  src={videoSrc}
+                  src={`${videoSrc}&mute=1`}
                   className="size-full rounded-2xl"
                   allowFullScreen
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
