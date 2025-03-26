@@ -31,7 +31,7 @@ const Hero = () => {
         <HeroVideoDialog
           className="block rounded-xl border-8 border-white shadow-2xl overflow-hidden"
           animationStyle="from-center"
-          videoSrc="/videos/video-1.mp4"
+          videoSrc="/videos/video-hero.mp4"
           thumbnailSrc="/images/form.png"
           thumbnailAlt="Démonstration de l'application"
         />
