@@ -4,7 +4,7 @@ import { fileStorage } from "@/lib/fileStorage";
 import fontkit from "@pdf-lib/fontkit";
 import fs from "fs";
 import JSZip from "jszip";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
@@ -1661,10 +1661,10 @@ async function createStudentPDF(
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
     // Parse the request body
-    const body = await request.json();
+    const body = await req.json();
     console.log("Génération de PDF - Corps de la requête reçue:", body);
 
     if (body.data) {
@@ -1690,12 +1690,10 @@ export async function POST(request: Request) {
     }
 
     // Extract data from the request
-    if (!body.data) {
+    // Vérifie si les données sont bien présentes
+    if (!body?.data || !body?.periodeEvaluation || !body?.groupName) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Aucune donnée fournie",
-        },
+        { error: "Données manquantes pour la génération PDF" },
         { status: 400 }
       );
     }
@@ -1910,11 +1908,12 @@ export async function POST(request: Request) {
     // Afficher tous les fichiers disponibles
     console.log(`Fichiers disponibles dans le store: ${fileStorage.getAllFileIds().join(", ")}`);
 
-    // Renvoyer un JSON avec le chemin vers l'API de téléchargement
-    return NextResponse.json({
-      path: `/api/download?id=${zipId}`,
-      studentCount: successCount,
-    });
+    const result = {
+      path: "/api/download/bulletins.zip", // le lien de téléchargement
+      studentCount: body.data.APPRENANT?.length || 0,
+    };
+
+    return NextResponse.json(result);
   } catch (error: any) {
     console.error("❌ Erreur génération PDF :", error);
     return NextResponse.json(
