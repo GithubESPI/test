@@ -21,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr">
+    <html lang="en">
       <body className={poppins.className}>
         <SessionWrapper>
           <main className="flex flex-col min-h-[calc(100vh-3.5rem-1px)]">
