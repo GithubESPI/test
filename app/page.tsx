@@ -32,7 +32,7 @@ export default function Page() {
           <div className="w-1/2 bg-white"></div>
           <div className="w-1/2 relative overflow-hidden">
             <Image
-              src="/images/background.png"
+              src="/images/background-img.png"
               alt="background"
               fill
               className="object-cover"
