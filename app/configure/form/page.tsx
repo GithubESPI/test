@@ -107,6 +107,8 @@ export default function Home() {
   const [pdfDownloadUrl, setPdfDownloadUrl] = useState<string>("");
   const [pdfStudentCount, setPdfStudentCount] = useState<number>(0);
   const [selectedGroupName, setSelectedGroupName] = useState<string>("");
+  const [progress, setProgress] = useState(0);
+
   // Déclarez une ref pour stocker les données entre les rendus
   const responseDataRef = useRef<any>(null);
 
@@ -272,6 +274,22 @@ export default function Home() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (isLoading) {
+      setProgress(0);
+      interval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 95) return prev;
+          return prev + 5;
+        });
+      }, 200);
+    }
+
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
   const updateGroups = (campusId: string) => {
     const selectedCampus = campuses.find((campus) => campus.id === campusId);
     if (!selectedCampus) return;
@@ -406,9 +424,16 @@ export default function Home() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-2 bg-slate-50 grainy-light">
-        <Loader2 className="h-6 w-6 animate-spin text-[#0a5d81]" />
-        <p className="font-sm text-gray-600">Chargement des données...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-50 grainy-light px-4">
+        <div className="w-full max-w-md">
+          <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#0a5d81] to-[#003349] transition-all duration-200"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="text-sm text-center text-gray-600 mt-4">{`Chargement des données... ${progress}%`}</p>
+        </div>
       </div>
     );
   }

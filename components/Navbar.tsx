@@ -42,7 +42,7 @@ const Navbar = () => {
                     variant: "ghost",
                   })}
                 >
-                  Questions / Réponses
+                  Support
                 </Link>
 
                 <div className="h-8 w-px bg-zinc-200 hidden sm:block" />
