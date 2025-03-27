@@ -35,17 +35,16 @@ export default function Page() {
               src="/images/background-img.png"
               alt="background"
               fill
-              className="object-cover"
+              className="object-cover object-[10%_center]"
             />
-            {/* Superposition colorée pour améliorer la lisibilité du texte */}
             <div className="absolute inset-0 bg-blue-800/40"></div>
           </div>
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row h-full min-h-screen">
+      <div className="flex flex-col md:flex-row h-full min-h-screen relative z-10">
         {/* Zone du formulaire */}
-        <div className="w-full md:w-1/2 flex items-center justify-center py-8 px-4 z-10">
+        <div className="w-full md:w-1/2 flex items-center justify-center py-8 px-4">
           <div className="w-full max-w-md">
             {/* Logo */}
             <div className="flex justify-center mb-10">
@@ -65,15 +64,16 @@ export default function Page() {
 
             {/* Bouton Authentification */}
             <ButtonsProvider />
-
-            {/* Texte légal */}
-            <p className="text-xs text-center text-gray-500 mt-6">
-              En continuant, vous acceptez nos{" "}
-              <Link href="#" className="text-gray-700 hover:underline">
-                Conditions d&apos;utilisation
-              </Link>{" "}
-              et notre{" "}
-              <Link href="#" className="text-gray-700 hover:underline">
+          </div>
+          {/* Footer en bas de la page */}
+          <div className="absolute bottom-4 w-full flex justify-center px-4 z-10">
+            <p className="text-xs text-gray-500 max-w-md">
+              En continuant, vous acceptez notre{" "}
+              <Link
+                href="https://groupe-espi.fr/politique-de-confidentialite/"
+                target="_blank"
+                className="text-gray-700 hover:underline"
+              >
                 Politique de confidentialité
               </Link>
               .
@@ -81,7 +81,7 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Zone d'illustration (visible uniquement sur desktop) */}
+        {/* Zone d'illustration (desktop uniquement) */}
         <div className="hidden md:flex w-1/2 bg-white relative">
           <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
             <Image
