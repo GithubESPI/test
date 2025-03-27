@@ -281,10 +281,10 @@ export default function Home() {
       setProgress(0);
       interval = setInterval(() => {
         setProgress((prev) => {
-          if (prev >= 95) return prev;
-          return prev + 5;
+          if (prev >= 98) return prev;
+          return prev + 1; // Plus petit incrément
         });
-      }, 200);
+      }, 50); // Plus fréquent
     }
 
     return () => clearInterval(interval);
@@ -428,7 +428,7 @@ export default function Home() {
         <div className="w-full max-w-md">
           <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-hidden">
             <div
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#0a5d81] to-[#003349] transition-all duration-200"
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#0a5d81] to-[#003349] transition-all duration-300 ease-out"
               style={{ width: `${progress}%` }}
             />
           </div>
