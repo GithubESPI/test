@@ -36,8 +36,6 @@ export default function Page() {
               alt="background"
               fill
               className="object-cover"
-              priority
-              quality={100}
             />
             {/* Superposition colorée pour améliorer la lisibilité du texte */}
             <div className="absolute inset-0 bg-blue-800/40"></div>
@@ -87,11 +85,12 @@ export default function Page() {
         <div className="hidden md:flex w-1/2 bg-white relative">
           <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
             <Image
-              src="/images/background.png"
+              src="/images/background-img.png"
               alt="background"
               fill
-              className="size-full object-cover"
+              className="object-cover object-[10%_center]"
               priority
+              quality={100}
             />
           </div>
         </div>
