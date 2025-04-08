@@ -409,7 +409,8 @@ async function createStudentPDF(
   period: string,
   absence: Absence[],
   processedABS: ProcessedAbsence[],
-  personnelData?: any[]
+  personnelData?: any[],
+  notes?: any[]
 ): Promise<Uint8Array> {
   try {
     // Create a new PDF document
@@ -459,6 +460,9 @@ async function createStudentPDF(
 
     // Associer les matières à leurs UE respectives
     const studentGrades = grades.filter((g) => g.CODE_APPRENANT === student.CODE_APPRENANT);
+    console.log(
+      `Nombre de notes pour l'étudiant ${student.CODE_APPRENANT}: ${studentGrades.length}`
+    );
     const ueMap = associerMatieresAuxUE(studentGrades);
 
     // Calculer pour chaque matière si elle est en rattrapage (R) en fonction de sa moyenne
@@ -655,7 +659,8 @@ async function createStudentPDF(
     }
 
     // ESPI Logo and header section
-    // Logo ESPI (text en lieu de logo)
+    const logoOffsetLeft = 20; // Vous pouvez ajuster cette valeur selon le décalage souhaité
+
     try {
       const logoPath = path.join(process.cwd(), "public", "logo", "espi.jpg");
       const logoBytes = fs.readFileSync(logoPath);
@@ -668,7 +673,7 @@ async function createStudentPDF(
       currentY = pageHeight - margin / 2; // Ajuster pour positionner plus haut
 
       page.drawImage(logoImage, {
-        x: margin,
+        x: margin - logoOffsetLeft, // Décaler vers la gauche par rapport à la marge standard
         y: currentY - logoDims.height,
         width: logoDims.width,
         height: logoDims.height,
@@ -680,7 +685,7 @@ async function createStudentPDF(
       console.error("Erreur lors du chargement du logo ESPI:", error);
       // Fallback au texte si l'image ne peut pas être chargée
       page.drawText("ESPI", {
-        x: margin,
+        x: margin - logoOffsetLeft, // Appliquer le même décalage au texte de secours
         y: currentY,
         size: 24,
         font: mainFont,
@@ -904,130 +909,178 @@ async function createStudentPDF(
     currentY -= rowHeight;
 
     // Lignes pour chaque matière
-    for (const grade of grades.filter((g) => g.CODE_APPRENANT === student.CODE_APPRENANT)) {
-      // Find corresponding ECTS credits
-      const subjectECTS = subjects.find(
-        (ects) =>
-          ects.CODE_APPRENANT === student.CODE_APPRENANT && ects.CODE_MATIERE === grade.CODE_MATIERE
-      );
-      const ectsValue = subjectECTS ? subjectECTS.CREDIT_ECTS : 0;
-      console.log(`Matière: ${grade.NOM_MATIERE}, ECTS: ${ectsValue}`);
+    // ✅ Construction complète des matières à afficher (avec ou sans note)
+    const allSubjects: Array<{
+      CODE_MATIERE: string;
+      NOM_MATIERE: string;
+      MOYENNE?: number;
+      CREDIT_ECTS: number;
+      NUM_ORDRE: string;
+    }> = subjects
+      .filter((subject) => subject.CODE_APPRENANT === student.CODE_APPRENANT)
+      .map((subject) => {
+        const note = grades.find(
+          (g) =>
+            g.CODE_APPRENANT === student.CODE_APPRENANT && g.CODE_MATIERE === subject.CODE_MATIERE
+        );
 
-      const borderColor = rgb(0.925, 0.925, 0.925);
+        return {
+          CODE_MATIERE: subject.CODE_MATIERE,
+          NOM_MATIERE: subject.NOM_MATIERE,
+          MOYENNE: note ? note.MOYENNE : undefined,
+          CREDIT_ECTS: subject.CREDIT_ECTS || 0,
+          NUM_ORDRE: subject.NUM_ORDRE || "999",
+        };
+      })
+      .sort((a, b) => parseInt(a.NUM_ORDRE, 10) - parseInt(b.NUM_ORDRE, 10));
 
-      // Vérifier si le NOM_MATIERE commence par "UE"
-      const isUE = grade.NOM_MATIERE.startsWith("UE");
+    for (const subject of allSubjects) {
+      const isUE = subject.NOM_MATIERE.startsWith("UE");
 
-      // Couleur de fond de la ligne (gris clair si UE, sinon transparent)
-      const backgroundColor = isUE ? rgb(0.925, 0.925, 0.925) : undefined;
+      // Définir la couleur de fond
+      const backgroundColor = isUE ? espiGray : undefined;
 
-      // Dessiner le rectangle de la ligne
+      // Nouvelle ligne (avec ou sans fond)
       page.drawRectangle({
         x: col1X,
         y: currentY - rowHeight,
         width: tableWidth,
         height: rowHeight,
-        borderColor,
+        borderColor: espiGray,
         borderWidth: 1,
-        color: backgroundColor, // Appliquer la nouvelle couleur
+        color: backgroundColor, // 👉 Applique le fond si c'est une UE
       });
 
-      // Séparations des colonnes
+      // Lignes verticales
       page.drawLine({
         start: { x: col2X, y: currentY },
         end: { x: col2X, y: currentY - rowHeight },
         thickness: 1,
-        color: borderColor,
+        color: espiGray,
       });
       page.drawLine({
         start: { x: col3X, y: currentY },
         end: { x: col3X, y: currentY - rowHeight },
         thickness: 1,
-        color: borderColor,
+        color: espiGray,
       });
       page.drawLine({
         start: { x: col4X, y: currentY },
         end: { x: col4X, y: currentY - rowHeight },
         thickness: 1,
-        color: borderColor,
+        color: espiGray,
       });
 
-      // Définir la police : en gras si UE, sinon normale
-      const textFont = isUE ? boldFont : mainFont;
-
-      // Nom de la matière (gras si UE)
-      page.drawText(grade.NOM_MATIERE, {
+      // Texte matière
+      page.drawText(subject.NOM_MATIERE, {
         x: col1X + 5,
         y: currentY - 15,
         size: fontSize,
-        font: textFont, // Appliquer la bonne police
-        color: rgb(0, 0, 0), // Texte noir
+        font: isUE ? boldFont : mainFont, // 👉 Texte en gras si UE
+        color: rgb(0, 0, 0),
       });
 
-      // Moyenne
+      // Moyenne (ou "-" si vide)
+      let moyenne;
+      if (subject.MOYENNE !== undefined && subject.MOYENNE !== null) {
+        moyenne = parseFloat(subject.MOYENNE.toString().replace(",", "."))
+          .toFixed(2)
+          .replace(".", ",");
+      } else {
+        // Par défaut, afficher "-"
+        moyenne = "-";
 
-      let moyenne = "N/A";
+        // Chercher dans les notes si CODE_EVALUATION_NOTE est disponible
+        let note = notes?.find(
+          (n) =>
+            n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === subject.CODE_MATIERE
+        );
 
-      try {
-        const moyenneRaw = grade.MOYENNE as any;
-        const moyenneValue =
-          typeof moyenneRaw === "string" ? parseFloat(moyenneRaw.replace(",", ".")) : moyenneRaw;
-
-        if (moyenneValue !== null && !isNaN(moyenneValue)) {
-          moyenne =
-            typeof moyenneValue.toFixed === "function"
-              ? moyenneValue.toFixed(2)
-              : moyenneValue.toString();
+        // Si aucune note trouvée par CODE_MATIERE, essayer par NOM_MATIERE
+        if (!note) {
+          note = notes?.find(
+            (n) =>
+              n.CODE_APPRENANT === student.CODE_APPRENANT && n.NOM_MATIERE === subject.NOM_MATIERE
+          );
         }
-      } catch (error) {
-        console.log(`Erreur lors du formatage de la moyenne pour ${grade.NOM_MATIERE}:`, error);
+
+        // Si une note est trouvée avec CODE_EVALUATION_NOTE, utiliser sa valeur
+        if (note) {
+          if (note.CODE_EVALUATION_NOTE == 1) {
+            moyenne = "VA";
+          } else if (note.CODE_EVALUATION_NOTE == 2) {
+            moyenne = "NV";
+          }
+        }
       }
 
-      const moyenneFont = isUE ? boldFont : mainFont;
-      const moyenneTextWidth = moyenneFont.widthOfTextAtSize(moyenne, fontSize);
-      const moyenneCenterX = col2X + col2Width / 2 - moyenneTextWidth / 2;
-
+      const moyenneWidth = mainFont.widthOfTextAtSize(moyenne, fontSize);
       page.drawText(moyenne, {
-        x: moyenneCenterX,
+        x: col2X + col2Width / 2 - moyenneWidth / 2,
         y: currentY - 15,
         size: fontSize,
-        font: moyenneFont,
-        color: rgb(0, 0, 0), // Texte noir
+        font: isUE ? boldFont : mainFont,
+        color: rgb(0, 0, 0),
       });
 
       // ECTS
-      let ectsText = "0";
-      try {
-        ectsText = ectsValue !== null && ectsValue !== undefined ? ectsValue.toString() : "0";
-      } catch (error) {
-        console.log(`Erreur lors du formatage des ECTS pour ${grade.NOM_MATIERE}:`, error);
-      }
-
-      // ECTS (gras pour "UE")**
-      const ectsFont = isUE ? boldFont : mainFont;
-      const ectsTextWidth = ectsFont.widthOfTextAtSize(ectsText, fontSize);
-      const ectsCenterX = col3X + col3Width / 2 - ectsTextWidth / 2;
-
-      page.drawText(ectsText, {
-        x: ectsCenterX,
+      const ects = subject.CREDIT_ECTS.toString();
+      const ectsWidth = mainFont.widthOfTextAtSize(ects, fontSize);
+      page.drawText(ects, {
+        x: col3X + col3Width / 2 - ectsWidth / 2,
         y: currentY - 15,
         size: fontSize,
-        font: ectsFont,
-        color: rgb(0, 0, 0), // Texte noir
+        font: isUE ? boldFont : mainFont,
+        color: rgb(0, 0, 0),
       });
 
-      // État (validé ou non)
-      // Déterminer l'état
-      let etat: string;
-      if (isUE) {
-        // Pour les UE, utiliser l'état pré-calculé selon les nouvelles règles
-        etat = ueEtats.get(grade.CODE_MATIERE) || "NV";
+      // État
+      let etat = "-";
+      // Si c'est une UE, utiliser l'état calculé précédemment
+      if (subject.NOM_MATIERE.startsWith("UE")) {
+        etat = ueEtats.get(subject.CODE_MATIERE) || "-";
       } else {
-        // Pour les matières normales, utiliser l'état pré-calculé
-        etat = matiereEtats.get(grade.CODE_MATIERE) || "NV";
+        // Pour les matières individuelles, vérifier d'abord si un état a déjà été calculé
+        const calculatedEtat = matiereEtats.get(subject.CODE_MATIERE);
+
+        if (calculatedEtat) {
+          etat = calculatedEtat;
+        } else {
+          // Si aucun état n'a été calculé, chercher dans les notes
+          // D'abord essayer par CODE_MATIERE
+          let note = notes?.find(
+            (n) =>
+              n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === subject.CODE_MATIERE
+          );
+
+          // Si aucune note trouvée par CODE_MATIERE, essayer par NOM_MATIERE
+          if (!note) {
+            note = notes?.find(
+              (n) =>
+                n.CODE_APPRENANT === student.CODE_APPRENANT && n.NOM_MATIERE === subject.NOM_MATIERE
+            );
+          }
+
+          if (note) {
+            if (note.CODE_EVALUATION_NOTE == 1) {
+              etat = "VA";
+            } else if (note.CODE_EVALUATION_NOTE == 2) {
+              etat = "NV";
+            }
+          } else {
+            // NOUVEAU: Si aucune note n'est trouvée, vérifier si une moyenne existe
+            // Si la moyenne est >= 10, marquer comme VA, sinon NV
+            if (subject.MOYENNE !== undefined && subject.MOYENNE !== null) {
+              const moyenneValue = parseFloat(subject.MOYENNE.toString().replace(",", "."));
+              if (!isNaN(moyenneValue)) {
+                etat = moyenneValue >= 10 ? "VA" : "NV";
+              }
+            }
+          }
+        }
       }
 
-      // Sélectionner la police et la couleur en fonction de l'état
+      // Sélectionner la police en fonction de l'état
       const etatFont = isUE ? boldFont : etat === "R" || etat === "C" ? boldFont : mainFont;
 
       // Déterminer la couleur selon l'état
@@ -1040,21 +1093,19 @@ async function createStudentPDF(
         etatColor = rgb(0, 0, 0); // Noir pour les autres états
       }
 
-      const etatWidth = etatFont.widthOfTextAtSize(etat, fontSize);
-      const etatCenterX = col4X + col4Width / 2 - etatWidth / 2;
-
+      const etatWidth = mainFont.widthOfTextAtSize(etat, fontSize);
       page.drawText(etat, {
-        x: etatCenterX,
+        x: col4X + col4Width / 2 - etatWidth / 2,
         y: currentY - 15,
         size: fontSize,
-        font: etatFont,
-        color: etatColor, // Utiliser la couleur déterminée
+        font: etatFont, // Utiliser etatFont au lieu de mainFont
+        color: etatColor, // Utiliser etatColor au lieu de rgb(0, 0, 0)
       });
 
       currentY -= rowHeight;
 
-      // Vérifier si une nouvelle page est nécessaire
-      if (currentY < margin + 100) {
+      // Saut de page si nécessaire
+      if (currentY < margin + rowHeight) {
         page = pdfDoc.addPage([595.28, 841.89]);
         currentY = pageHeight - margin;
       }
@@ -1188,7 +1239,7 @@ async function createStudentPDF(
     ): string => {
       // Récupérer toutes les matières de type UE pour cet étudiant
       const ueSubjects = subjects.filter(
-        (subject) => subject.CODE_APPRENANT === studentId && subject.NOM_MATIERE.startsWith("UE")
+        (subject) => subject.CODE_APPRENANT === student.CODE_APPRENANT
       );
 
       // Vérifier si au moins une UE existe
@@ -1261,17 +1312,24 @@ async function createStudentPDF(
 
     // Si on trouve des absences, on les affiche
     if (studentAbsence) {
-      // Titre "Absences justifiées" dans la première colonne
-      page.drawText("Absences justifiées", {
-        x: margin + boxWidthABS / 6 - 40, // Centré dans la colonne
+      const absJustText = "Absences justifiées";
+      const absJustWidth = mainFont.widthOfTextAtSize(absJustText, fontSize);
+      const colWidth = boxWidthABS / 3;
+
+      page.drawText(absJustText, {
+        x: margin + colWidth / 2 - absJustWidth / 2, // Centré dans la colonne
         y: currentY - 15,
         size: fontSize,
         font: mainFont,
         color: espiBlue,
       });
 
-      page.drawText(studentAbsence.ABSENCES_JUSTIFIEES, {
-        x: margin + boxWidthABS / 6 - 10, // Centré dans la colonne
+      // Valeur Absences justifiées
+      const absJustValue = studentAbsence.ABSENCES_JUSTIFIEES;
+      const absJustValueWidth = mainFont.widthOfTextAtSize(absJustValue, fontSize);
+
+      page.drawText(absJustValue, {
+        x: margin + colWidth / 2 - absJustValueWidth / 2, // Centré dans la colonne
         y: currentY - 30,
         size: fontSize,
         font: mainFont,
@@ -1279,32 +1337,47 @@ async function createStudentPDF(
       });
 
       // Titre "Absences injustifiées" dans la deuxième colonne
-      page.drawText("Absences injustifiées", {
-        x: margin + boxWidthABS / 2 - 45, // Centré dans la colonne
+      const absInjText = "Absences injustifiées";
+      const absInjWidth = mainFont.widthOfTextAtSize(absInjText, fontSize);
+
+      page.drawText(absInjText, {
+        x: margin + colWidth + colWidth / 2 - absInjWidth / 2, // Centré dans la colonne
         y: currentY - 15,
         size: fontSize,
         font: mainFont,
         color: espiBlue,
       });
 
-      page.drawText(studentAbsence.ABSENCES_INJUSTIFIEES, {
-        x: margin + boxWidthABS / 2 - 10, // Centré dans la colonne
+      // Valeur Absences injustifiées
+      const absInjValue = studentAbsence.ABSENCES_INJUSTIFIEES;
+      const absInjValueWidth = mainFont.widthOfTextAtSize(absInjValue, fontSize);
+
+      page.drawText(absInjValue, {
+        x: margin + colWidth + colWidth / 2 - absInjValueWidth / 2, // Centré dans la colonne
         y: currentY - 30,
         size: fontSize,
         font: mainFont,
         color: espiBlue,
       });
 
-      page.drawText("Retards", {
-        x: margin + (5 * boxWidthABS) / 6 - 20, // Centré dans la colonne
+      // Titre "Retards" dans la troisième colonne
+      const retardsText = "Retards";
+      const retardsWidth = mainFont.widthOfTextAtSize(retardsText, fontSize);
+
+      page.drawText(retardsText, {
+        x: margin + 2 * colWidth + colWidth / 2 - retardsWidth / 2, // Centré dans la colonne
         y: currentY - 15,
         size: fontSize,
         font: mainFont,
         color: espiBlue,
       });
 
-      page.drawText(studentAbsence.RETARDS, {
-        x: margin + (5 * boxWidthABS) / 6 - 10, // Centré dans la colonne
+      // Valeur Retards
+      const retardsValue = studentAbsence.RETARDS;
+      const retardsValueWidth = mainFont.widthOfTextAtSize(retardsValue, fontSize);
+
+      page.drawText(retardsValue, {
+        x: margin + 2 * colWidth + colWidth / 2 - retardsValueWidth / 2, // Centré dans la colonne
         y: currentY - 30,
         size: fontSize,
         font: mainFont,
@@ -1313,16 +1386,24 @@ async function createStudentPDF(
     } else {
       // SI AUCUNE ABSENCE N'EST TROUVÉE, AFFICHER LES VALEURS PAR DÉFAUT
       // Titre "Absences justifiées" dans la première colonne
-      page.drawText("Absences justifiées", {
-        x: margin + boxWidthABS / 6 - 40, // Centré dans la colonne
+      const absJustText = "Absences justifiées";
+      const absJustWidth = mainFont.widthOfTextAtSize(absJustText, fontSize);
+      const colWidth = boxWidthABS / 3;
+
+      page.drawText(absJustText, {
+        x: margin + colWidth / 2 - absJustWidth / 2, // Centré dans la colonne
         y: currentY - 15,
         size: fontSize,
         font: mainFont,
         color: espiBlue,
       });
 
-      page.drawText("00h00", {
-        x: margin + boxWidthABS / 6 - 10, // Centré dans la colonne
+      // Valeur par défaut
+      const defaultValue = "00h00";
+      const defaultValueWidth = mainFont.widthOfTextAtSize(defaultValue, fontSize);
+
+      page.drawText(defaultValue, {
+        x: margin + colWidth / 2 - defaultValueWidth / 2, // Centré dans la colonne
         y: currentY - 30,
         size: fontSize,
         font: mainFont,
@@ -1330,32 +1411,41 @@ async function createStudentPDF(
       });
 
       // Titre "Absences injustifiées" dans la deuxième colonne
-      page.drawText("Absences injustifiées", {
-        x: margin + boxWidthABS / 2 - 45, // Centré dans la colonne
+      const absInjText = "Absences injustifiées";
+      const absInjWidth = mainFont.widthOfTextAtSize(absInjText, fontSize);
+
+      page.drawText(absInjText, {
+        x: margin + colWidth + colWidth / 2 - absInjWidth / 2, // Centré dans la colonne
         y: currentY - 15,
         size: fontSize,
         font: mainFont,
         color: espiBlue,
       });
 
-      page.drawText("00h00", {
-        x: margin + boxWidthABS / 2 - 10, // Centré dans la colonne
+      // Valeur par défaut
+      page.drawText(defaultValue, {
+        x: margin + colWidth + colWidth / 2 - defaultValueWidth / 2, // Centré dans la colonne
         y: currentY - 30,
         size: fontSize,
         font: mainFont,
         color: espiBlue,
       });
 
-      page.drawText("Retards", {
-        x: margin + (5 * boxWidthABS) / 6 - 20, // Centré dans la colonne
+      // Titre "Retards" dans la troisième colonne
+      const retardsText = "Retards";
+      const retardsWidth = mainFont.widthOfTextAtSize(retardsText, fontSize);
+
+      page.drawText(retardsText, {
+        x: margin + 2 * colWidth + colWidth / 2 - retardsWidth / 2, // Centré dans la colonne
         y: currentY - 15,
         size: fontSize,
         font: mainFont,
         color: espiBlue,
       });
 
-      page.drawText("00h00", {
-        x: margin + (5 * boxWidthABS) / 6 - 10, // Centré dans la colonne
+      // Valeur par défaut
+      page.drawText(defaultValue, {
+        x: margin + 2 * colWidth + colWidth / 2 - defaultValueWidth / 2, // Centré dans la colonne
         y: currentY - 30,
         size: fontSize,
         font: mainFont,
@@ -1363,7 +1453,7 @@ async function createStudentPDF(
       });
     }
 
-    currentY -= boxHeightABS + 20;
+    currentY -= boxHeightABS + 15;
 
     // Observations
     const studentObservation = observations.find(
@@ -1440,10 +1530,10 @@ async function createStudentPDF(
       }
     }
 
-    currentY -= 25; // Espace additionnel
+    currentY -= 15; // Espace additionnel
 
     // Vérifier s'il reste assez d'espace pour la signature
-    const MIN_SPACE_FOR_SIGNATURE = 100;
+    const MIN_SPACE_FOR_SIGNATURE = 70;
     if (currentY < margin + MIN_SPACE_FOR_SIGNATURE) {
       // Pas assez d'espace, créer une nouvelle page
       page = pdfDoc.addPage([595.28, 841.89]);
@@ -1451,7 +1541,7 @@ async function createStudentPDF(
     }
 
     // Placer la signature à la position courante
-    const signatureY = currentY;
+    const signatureY = currentY - 5;
 
     // Texte du lieu et de la date
     page.drawText(
@@ -1739,6 +1829,7 @@ export async function POST(req: NextRequest) {
       console.log(
         `📊 ECTS_PAR_MATIERE: ${data.ECTS_PAR_MATIERE.length} éléments, ${uniqueCount} uniques`
       );
+      console.log(`Nombre de matières avant traitement: ${data.ECTS_PAR_MATIERE.length}`);
       console.log(
         `📌 Ratio de duplication: ${(data.ECTS_PAR_MATIERE.length / uniqueCount).toFixed(2)}x`
       );
@@ -1786,19 +1877,21 @@ export async function POST(req: NextRequest) {
         console.log(`Création du PDF pour ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`);
 
         const updatedSubjects = updateUECredits(data.ECTS_PAR_MATIERE || []);
+        console.log(`Nombre de matières après traitement: ${updatedSubjects.length}`);
 
         const pdfBytes = await createStudentPDF(
           student,
           data.MOYENNES_UE || [],
           data.MOYENNE_GENERALE || [],
           data.OBSERVATIONS || [],
-          updatedSubjects,
+          updatedSubjects, // Utilisez tous les subjects mis à jour, sans filtrage par ECTS
           data.GROUPE || [],
           data.SITE || [],
           periodeEvaluation,
           data.ABSENCE || [],
           processAbsences(data.ABSENCE || []),
-          data.PERSONNEL || [] // Add this line to pass the PERSONNEL data
+          data.PERSONNEL || [],
+          data.NOTES || [] // Ajout des données NOTES
         );
 
         console.log("📌 Matières brutes reçues :", data.ECTS_PAR_MATIERE);

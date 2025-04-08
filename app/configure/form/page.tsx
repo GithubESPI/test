@@ -152,62 +152,14 @@ export default function Home() {
       try {
         setIsLoading(true);
 
-        const studentsResponse = await fetch("/api/students");
-        if (!studentsResponse.ok) throw new Error("Erreur lors de la récupération des étudiants");
-        const studentsData = await studentsResponse.json();
-
-        const groupsResponse = await fetch("/api/groups");
-        if (!groupsResponse.ok) throw new Error("Erreur lors de la récupération des groupes");
-        const groupsData = await groupsResponse.json();
-
-        const studentsArray = Object.values(studentsData) as YpareoStudent[];
-        const groupsArray = Object.values(groupsData) as YpareoGroup[];
-
-        setAllGroups(groupsArray);
-
-        const uniqueCampusMap = new Map<number, string>();
-        studentsArray.forEach((student) => {
-          student.inscriptions.forEach((inscription) => {
-            if (!uniqueCampusMap.has(inscription.site.codeSite)) {
-              uniqueCampusMap.set(inscription.site.codeSite, inscription.site.nomSite);
-            }
-          });
-        });
-
-        const uniqueCampuses: Campus[] = Array.from(uniqueCampusMap).map(
-          ([codeSite, nomSite], index) => ({
-            id: `campus-${codeSite}-${index}`,
-            codeSite: codeSite,
-            label: nomSite,
-          })
-        );
-
-        setCampuses(uniqueCampuses);
-      } catch (error) {
-        console.error("Erreur:", error);
-        setErrorMessage("Erreur lors du chargement des données initiales");
-        setShowErrorModal(true);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-
         // Récupération des périodes d'évaluation
         const periodsResponse = await fetch("/api/periods");
         if (!periodsResponse.ok) {
           throw new Error("Erreur lors de la récupération des périodes d'évaluation");
         }
-
         const periodsData = await periodsResponse.json();
 
+        // Filtrage des périodes
         if (periodsData.success && Array.isArray(periodsData.data)) {
           const startDate = new Date("2024-08-26 00:00:00");
           const endDate = new Date("2025-07-31 00:00:00");
@@ -230,10 +182,12 @@ export default function Home() {
           setPeriods([]);
         }
 
+        // Récupération des étudiants (une seule fois)
         const studentsResponse = await fetch("/api/students");
         if (!studentsResponse.ok) throw new Error("Erreur lors de la récupération des étudiants");
         const studentsData = await studentsResponse.json();
 
+        // Récupération des groupes (une seule fois)
         const groupsResponse = await fetch("/api/groups");
         if (!groupsResponse.ok) throw new Error("Erreur lors de la récupération des groupes");
         const groupsData = await groupsResponse.json();
@@ -243,6 +197,7 @@ export default function Home() {
 
         setAllGroups(groupsArray);
 
+        // Création de la liste des campus (une seule fois)
         const uniqueCampusMap = new Map<number, string>();
         studentsArray.forEach((student) => {
           student.inscriptions.forEach((inscription) => {
@@ -364,15 +319,20 @@ export default function Home() {
     // Utilisez la ref ou l'état, selon ce qui est disponible
     const dataToUse = responseDataRef.current || retrievedData;
 
-    if (!dataToUse) {
-      console.error("Aucune donnée disponible pour générer les PDFs");
-      setErrorMessage("Aucune donnée disponible pour générer les PDFs");
+    // Validation plus stricte des données
+    if (!dataToUse || !dataToUse.APPRENANT || dataToUse.APPRENANT.length === 0) {
+      console.error("Données insuffisantes pour générer les PDFs", dataToUse);
+      setErrorMessage(
+        "Données insuffisantes pour générer les PDFs. Assurez-vous d'avoir des apprenants dans le groupe sélectionné."
+      );
       setShowErrorModal(true);
       return;
     }
 
     try {
       setIsGeneratingPDF(true);
+      // Vérification supplémentaire
+
       console.log("Données pour génération PDF:", dataToUse);
       console.log("APPRENANT:", dataToUse.APPRENANT?.length || 0);
       console.log("MOYENNES_UE:", dataToUse.MOYENNES_UE?.length || 0);
@@ -382,7 +342,27 @@ export default function Home() {
       console.log("GROUPE:", dataToUse.GROUPE?.length || 0);
       console.log("SITE:", dataToUse.SITE?.length || 0);
 
+      if (!dataToUse.MOYENNES_UE || dataToUse.MOYENNES_UE.length === 0) {
+        console.warn("Attention: Aucune moyenne trouvée pour les UE");
+      }
+
+      // Assurez-vous que les données critiques sont bien définies
       const selectedPeriod = form.getValues("periodeEvaluation") || "";
+      if (!selectedPeriod) {
+        throw new Error("Période d'évaluation non définie");
+      }
+
+      if (!selectedGroupName) {
+        throw new Error("Nom du groupe non défini");
+      }
+
+      // Log des données pour le débogage
+      console.log("Envoi des données pour génération PDF:", {
+        apprenantCount: dataToUse.APPRENANT?.length || 0,
+        moyennesUECount: dataToUse.MOYENNES_UE?.length || 0,
+        period: selectedPeriod,
+        groupName: selectedGroupName,
+      });
       console.log("Période sélectionnée:", selectedPeriod);
       console.log("Nom du groupe:", selectedGroupName);
 

@@ -5,6 +5,7 @@ const token =
 const url = "https://groupe-espi.ymag.cloud/index.php/r/v1/sql/requeteur";
 
 // Fonction auxiliaire avec retry et timeout
+// Amélioration de la fonction fetchWithRetry
 async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3) {
   let lastError;
 
@@ -26,16 +27,24 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3)
 
       // Pour traiter la réponse de manière plus robuste
       const responseText = await response.text();
+
+      // Vérifier si la réponse est vide ou invalide
+      if (!responseText || responseText.trim() === "") {
+        //return [];
+        throw new Error("La réponse de l'API est vide");
+      }
+
       try {
         return JSON.parse(responseText);
       } catch (parseError) {
         console.error("Erreur de parsing JSON:", parseError);
         console.error("Réponse brute:", responseText);
-        throw new Error(`Erreur de parsing JSON: ${responseText.substring(0, 200)}...`);
+        throw new Error(`Erreur de parsing JSON: ${responseText}`);
       }
     } catch (error) {
       console.error(`Tentative ${i + 1}/${maxRetries} échouée:`, error);
       lastError = error;
+
       // Attendre avant de réessayer (backoff exponentiel)
       if (i < maxRetries - 1) {
         await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, i)));
