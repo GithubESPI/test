@@ -749,7 +749,7 @@ async function createStudentPDF(
     });
 
     // Informations étudiant côté gauche
-    page.drawText(`Apprenant: ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`, {
+    page.drawText(`Apprenant : ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`, {
       x: margin + 5,
       y: currentY - 15,
       size: fontSizeBold,
@@ -759,7 +759,7 @@ async function createStudentPDF(
 
     if (student.DATE_NAISSANCE) {
       page.drawText(
-        `Date de naissance: ${new Date(student.DATE_NAISSANCE).toLocaleDateString("fr-FR")}`,
+        `Date de naissance : ${new Date(student.DATE_NAISSANCE).toLocaleDateString("fr-FR")}`,
         {
           x: margin + 5,
           y: currentY - 30,
@@ -773,7 +773,7 @@ async function createStudentPDF(
     // Groupe et campus côté droit
     const campus = campusInfo.length > 0 ? campusInfo[0] : null;
 
-    page.drawText(`Groupe: ${group ? group.NOM_GROUPE : "Non spécifié"}`, {
+    page.drawText(`Groupe : ${group ? group.NOM_GROUPE : "Non spécifié"}`, {
       x: margin + boxWidth / 2 + 5,
       y: currentY - 15,
       size: fontSize,
@@ -781,7 +781,7 @@ async function createStudentPDF(
       color: espiBlue,
     });
 
-    page.drawText(`Campus: ${campus ? campus.NOM_SITE : "Non spécifié"}`, {
+    page.drawText(`Campus : ${campus ? campus.NOM_SITE : "Non spécifié"}`, {
       x: margin + boxWidth / 2 + 5,
       y: currentY - 30,
       size: fontSize,
@@ -1680,7 +1680,7 @@ async function createStudentPDF(
         );
 
         // En cas d'erreur, revenir à la signature textuelle
-        page.drawText(`Signature du: ${nomFonctionPersonnel}`, {
+        page.drawText(`Signature du : ${nomFonctionPersonnel}`, {
           x: pageWidth - margin - 200,
           y: signatureY - 10,
           size: 7,
@@ -1705,7 +1705,7 @@ async function createStudentPDF(
       }
     } else {
       // Pour les codes personnels sans signature, afficher uniquement le texte
-      page.drawText(`Signature du: ${nomFonctionPersonnel}`, {
+      page.drawText(`Signature du : ${nomFonctionPersonnel}`, {
         x: pageWidth - margin - 200,
         y: signatureY - 10,
         size: fontSize,
