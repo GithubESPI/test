@@ -75,10 +75,9 @@ interface Absence {
   CODE_APPRENANT: string;
   NOM_APPRENANT: string;
   PRENOM_APPRENANT: string;
-  MINUTE_DEB: string;
-  MINUTE_FIN: string;
   IS_JUSTIFIE: string;
   IS_RETARD: string;
+  DUREE: string;
 }
 
 interface ProcessedAbsence {
@@ -94,20 +93,11 @@ function processAbsences(absences: Absence[]): ProcessedAbsence[] {
   const groupedAbsences: Record<string, ProcessedAbsence> = {};
 
   absences.forEach((absence) => {
-    const {
-      CODE_APPRENANT,
-      NOM_APPRENANT,
-      PRENOM_APPRENANT,
-      MINUTE_DEB,
-      MINUTE_FIN,
-      IS_JUSTIFIE,
-      IS_RETARD,
-    } = absence;
+    const { CODE_APPRENANT, NOM_APPRENANT, PRENOM_APPRENANT, IS_JUSTIFIE, IS_RETARD, DUREE } =
+      absence;
 
     // Convertir les minutes (strings) en nombres
-    const minutesDeb = parseInt(MINUTE_DEB, 10) || 0;
-    const minutesFin = parseInt(MINUTE_FIN, 10) || 0;
-    const totalMinutes = minutesFin - minutesDeb; // Calcul correct du total
+    const dureeMinutes = parseInt(DUREE, 10) || 0;
 
     if (!groupedAbsences[CODE_APPRENANT]) {
       groupedAbsences[CODE_APPRENANT] = {
@@ -120,14 +110,14 @@ function processAbsences(absences: Absence[]): ProcessedAbsence[] {
       };
     }
 
-    if (totalMinutes > 0) {
+    if (dureeMinutes > 0) {
       if (IS_JUSTIFIE === "0" && IS_RETARD === "0") {
         // Absences injustifiées
         const previousMinutes = parseTimeToMinutes(
           groupedAbsences[CODE_APPRENANT].ABSENCES_INJUSTIFIEES
         );
         groupedAbsences[CODE_APPRENANT].ABSENCES_INJUSTIFIEES = formatTime(
-          previousMinutes + totalMinutes
+          previousMinutes + dureeMinutes
         );
       } else if (IS_JUSTIFIE === "1" && IS_RETARD === "0") {
         // Absences justifiées
@@ -135,7 +125,7 @@ function processAbsences(absences: Absence[]): ProcessedAbsence[] {
           groupedAbsences[CODE_APPRENANT].ABSENCES_JUSTIFIEES
         );
         groupedAbsences[CODE_APPRENANT].ABSENCES_JUSTIFIEES = formatTime(
-          previousMinutes + totalMinutes
+          previousMinutes + dureeMinutes
         );
       } else if (
         (IS_JUSTIFIE === "0" && IS_RETARD === "1") ||
@@ -143,7 +133,7 @@ function processAbsences(absences: Absence[]): ProcessedAbsence[] {
       ) {
         // Retards
         const previousMinutes = parseTimeToMinutes(groupedAbsences[CODE_APPRENANT].RETARDS);
-        groupedAbsences[CODE_APPRENANT].RETARDS = formatTime(previousMinutes + totalMinutes);
+        groupedAbsences[CODE_APPRENANT].RETARDS = formatTime(previousMinutes + dureeMinutes);
       }
     }
   });
@@ -734,7 +724,7 @@ async function createStudentPDF(
       color: espiBlue,
     });
 
-    currentY -= 30;
+    currentY -= 20;
 
     // Cadre d'informations étudiant et groupe
     const boxWidth = pageWidth - 2 * margin;
@@ -799,7 +789,7 @@ async function createStudentPDF(
       color: espiBlue,
     });
 
-    currentY -= boxHeight + 20;
+    currentY -= boxHeight + 10;
 
     // Tableau des notes
     // En-têtes
@@ -1274,7 +1264,7 @@ async function createStudentPDF(
       color: rgb(1, 1, 1),
     });
 
-    currentY -= rowHeight + 20;
+    currentY -= rowHeight + 10;
 
     // Section absences et observations
     const boxWidthABS = pageWidth - 2 * margin;
@@ -1663,7 +1653,7 @@ async function createStudentPDF(
         page.drawText(`Signature du ${nomFonctionPersonnel}`, {
           x: pageWidth - margin - 200,
           y: signatureY - 15,
-          size: fontSize,
+          size: 7,
           font: mainFont,
         });
 
@@ -1672,7 +1662,7 @@ async function createStudentPDF(
           // Inverser nom et prénom
           x: pageWidth - margin - 200,
           y: signatureY - 27,
-          size: fontSize,
+          size: 7,
           font: boldFont,
         });
 
@@ -1693,7 +1683,7 @@ async function createStudentPDF(
         page.drawText(`Signature du: ${nomFonctionPersonnel}`, {
           x: pageWidth - margin - 200,
           y: signatureY - 10,
-          size: fontSize,
+          size: 7,
           font: mainFont,
         });
 
@@ -1701,7 +1691,7 @@ async function createStudentPDF(
           // Inverser nom et prénom
           x: pageWidth - margin - 200,
           y: signatureY - 22,
-          size: fontSize,
+          size: 7,
           font: boldFont,
         });
 
@@ -1709,7 +1699,7 @@ async function createStudentPDF(
         page.drawText(`Code personnel: ${codePersonnelGestionnaire}`, {
           x: pageWidth - margin - 200,
           y: signatureY - 34,
-          size: fontSize,
+          size: 7,
           font: mainFont,
         });
       }
