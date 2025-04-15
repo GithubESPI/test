@@ -210,14 +210,13 @@ export async function POST(request: Request) {
           abs.CODE_ABSENCE, 
           abs.MINUTE_DEB, 
           abs.MINUTE_FIN, 
-          abs.IS_RETARD, 
-          abs.DATE_DEB, 
-          abs.DATE_FIN, 
+          abs.IS_RETARD,  
           ma.IS_JUSTIFIE, 
           ad.DUREE,
           COUNT(abs.CODE_ABSENCE) AS NOMBRE_ABSENCES, 
-          SUM(abs.MINUTE_FIN - abs.MINUTE_DEB) AS TOTAL_MINUTES_ABSENCE, 
-          s.CODE_SESSION 
+          s.CODE_SESSION,
+          s.DATE_DEB,
+          s.DATE_FIN
       FROM 
           GROUPE g 
           INNER JOIN FREQUENTE f ON g.CODE_GROUPE = f.CODE_GROUPE 
@@ -230,6 +229,7 @@ export async function POST(request: Request) {
           INNER JOIN SESSION s ON c.CODE_SESSION = s.CODE_SESSION          
       WHERE 
           g.CODE_GROUPE = ${group} 
+          AND s.CODE_SESSION = 4
       GROUP BY 
           a.CODE_APPRENANT, 
           a.NOM_APPRENANT, 
@@ -239,23 +239,24 @@ export async function POST(request: Request) {
           abs.MINUTE_DEB, 
           abs.MINUTE_FIN, 
           abs.IS_RETARD, 
-          abs.DATE_DEB, 
-          abs.DATE_FIN, 
           ma.IS_JUSTIFIE, 
           ad.DUREE,
-          s.CODE_SESSION 
+          s.CODE_SESSION,
+          s.DATE_DEB, 
+          s.DATE_FIN
       ORDER BY 
           a.NOM_APPRENANT
       `,
 
       MATIERE: `
         SELECT g.CODE_GROUPE, m.CODE_MATIERE, r.CODE_PERIODE_EVALUATION, pe.NOM_PERIODE_EVALUATION, r.CODE_REFERENTIEL, 
-          m.NOM_MATIERE, m.CODE_TYPE_MATIERE, rd.NUM_ORDRE, g.CODE_SITE, r.CODE_PERIODE_EVALUATION, rd.NUM_ORDRE, r.CODE_ANNEE 
+          m.NOM_MATIERE, m.CODE_TYPE_MATIERE, rd.NUM_ORDRE, g.CODE_SITE, r.CODE_PERIODE_EVALUATION, rd.NUM_ORDRE, r.CODE_ANNEE, a.NOM_ANNEE 
         FROM GROUPE g 
         INNER JOIN REFERENTIEL r ON g.CODE_FORMATION = r.CODE_FORMATION 
         INNER JOIN REFERENTIEL_DETAIL rd on r.CODE_REFERENTIEL = rd.CODE_REFERENTIEL 
         INNER JOIN MATIERE m ON rd.CODE_MATIERE = m.CODE_MATIERE 
         INNER JOIN PERIODE_EVALUATION pe ON r.CODE_PERIODE_EVALUATION = pe.CODE_PERIODE_EVALUATION
+        INNER JOIN ANNEE a ON r.CODE_ANNEE = a.CODE_ANNEE
         WHERE g.CODE_GROUPE = ${group} 
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode} 
           AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}' 
