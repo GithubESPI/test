@@ -272,11 +272,13 @@ function formatTime(minutes: number): string {
 }
 
 function updateUECredits(subjects: any[]): any[] {
-  // 1. Éliminer les doublons
-  const uniqueSubjectsMap = new Map<string, any>();
-  const result: any[] = [];
+  // 1. Cloner les sujets pour ne pas modifier les originaux
+  const result = subjects.map((subject) => ({ ...subject }));
 
-  subjects.forEach((subject) => {
+  // 2. Éliminer les doublons
+  const uniqueSubjectsMap = new Map<string, any>();
+
+  result.forEach((subject) => {
     const key = `${subject.CODE_APPRENANT}_${subject.CODE_MATIERE}`;
     // Conversion des crédits ECTS en nombre pour assurer des calculs corrects
     if (subject.CREDIT_ECTS !== undefined) {
@@ -289,7 +291,7 @@ function updateUECredits(subjects: any[]): any[] {
     }
   });
 
-  // 2. Regrouper par étudiant pour traitement individuel
+  // 3. Regrouper par étudiant pour traitement individuel
   const studentSubjects = new Map<string, any[]>();
 
   [...uniqueSubjectsMap.values()].forEach((subject) => {
@@ -299,6 +301,9 @@ function updateUECredits(subjects: any[]): any[] {
     }
     studentSubjects.get(studentId)?.push({ ...subject });
   });
+
+  // 4. Traiter les matières par étudiant
+  const finalResult: any[] = [];
 
   studentSubjects.forEach((studentSubjectList, studentId) => {
     console.log(`\n🔍 Traitement des matières pour l'étudiant ${studentId}`);
@@ -310,69 +315,19 @@ function updateUECredits(subjects: any[]): any[] {
       return orderA - orderB;
     });
 
-    // Vérifier que la première matière est bien une UE
-    if (sortedSubjects.length > 0 && sortedSubjects[0].CODE_TYPE_MATIERE !== "2") {
-      console.log(
-        `⚠️ Attention: La première matière n'est pas une UE pour l'étudiant ${studentId}`
-      );
-    }
-
-    // Variables pour suivre l'UE courante et accumuler les crédits
-    let currentUE: any = null;
-    let accumulatedCredits = 0;
-    const processedSubjects: any[] = [];
-
-    // Parcourir les matières triées
-    for (let i = 0; i < sortedSubjects.length; i++) {
-      const subject = sortedSubjects[i];
-
-      if (subject.CODE_TYPE_MATIERE === "2") {
-        // Si on trouve une UE
-
-        // Si on avait déjà une UE en cours, on lui affecte les crédits accumulés
-        if (currentUE) {
-          currentUE.CREDIT_ECTS = accumulatedCredits;
-          processedSubjects.push(currentUE);
-          console.log(`✅ UE "${currentUE.NOM_MATIERE}": ${accumulatedCredits} ECTS`);
-        }
-
-        // Commencer une nouvelle UE
-        currentUE = { ...subject };
-        accumulatedCredits = 0;
-        console.log(`🆕 Nouvelle UE: "${subject.NOM_MATIERE}"`);
-      } else if (subject.CODE_TYPE_MATIERE === "3") {
-        // Si c'est une matière classique, on accumule ses crédits
-        // et on l'ajoute aux résultats
-        processedSubjects.push(subject);
-
-        if (currentUE) {
-          const credits = Number(subject.CREDIT_ECTS) || 0;
-          accumulatedCredits += credits;
-          console.log(
-            `➕ Ajout de ${credits} ECTS de "${subject.NOM_MATIERE}" à l'UE "${currentUE.NOM_MATIERE}"`
-          );
-        } else {
-          console.log(`⚠️ Matière "${subject.NOM_MATIERE}" sans UE parente`);
-        }
-      } else {
-        // Autres types de matières, on les ajoute simplement
-        processedSubjects.push(subject);
+    // Ne pas recalculer les ECTS des UEs, mais les préserver
+    sortedSubjects.forEach((subject) => {
+      if (subject.NOM_MATIERE && subject.NOM_MATIERE.startsWith("UE")) {
+        console.log(`UE trouvée: ${subject.NOM_MATIERE} avec ${subject.CREDIT_ECTS} ECTS`);
+        // Conserver les ECTS déjà assignés
       }
-    }
+    });
 
-    // Ne pas oublier la dernière UE
-    if (currentUE) {
-      currentUE.CREDIT_ECTS = accumulatedCredits;
-      processedSubjects.push(currentUE);
-      console.log(`✅ Dernière UE "${currentUE.NOM_MATIERE}": ${accumulatedCredits} ECTS`);
-    }
-
-    // Ajouter toutes les matières traitées de cet étudiant au résultat final
-
-    result.push(...processedSubjects);
+    // Ajouter toutes les matières de cet étudiant au résultat final
+    finalResult.push(...sortedSubjects);
   });
 
-  return result;
+  return finalResult;
 }
 
 function logUEWithSubjects(subjects: any[]) {
@@ -451,27 +406,44 @@ function logUEWithSubjects(subjects: any[]) {
 function associerMatieresAuxUE(
   grades: StudentGrade[]
 ): Map<string, { ue: StudentGrade; matieres: StudentGrade[] }> {
-  // Créer une structure pour associer chaque matière à son UE
   const ueMap = new Map<string, { ue: StudentGrade; matieres: StudentGrade[] }>();
 
-  // Trier par NUM_ORDRE si disponible
-  const sortedGrades = [...grades].sort((a, b) => {
-    const orderA = a.NUM_ORDRE ? parseInt(a.NUM_ORDRE.toString(), 10) : 0;
-    const orderB = b.NUM_ORDRE ? parseInt(b.NUM_ORDRE.toString(), 10) : 0;
-    return orderA - orderB;
-  });
+  // 1. D'abord, identifier toutes les UE
+  const ues = grades.filter((g) => g.NOM_MATIERE.startsWith("UE"));
 
-  let currentUE: StudentGrade | null = null;
+  // 2. Créer les entrées pour chaque UE
+  for (const ue of ues) {
+    ueMap.set(ue.CODE_MATIERE, { ue, matieres: [] });
+  }
 
-  // Parcourir les grades pour identifier les UE et leurs matières associées
-  for (const grade of sortedGrades) {
-    if (grade.NOM_MATIERE.startsWith("UE")) {
-      // Nouvelle UE trouvée
-      currentUE = grade;
-      ueMap.set(grade.CODE_MATIERE, { ue: grade, matieres: [] });
-    } else if (currentUE) {
-      // Ajouter cette matière à l'UE courante
-      ueMap.get(currentUE.CODE_MATIERE)?.matieres.push(grade);
+  // 3. Associer les matières à leur UE en utilisant le NUM_ORDRE ou CODE_UE_PARENT si disponible
+  for (const grade of grades) {
+    if (!grade.NOM_MATIERE.startsWith("UE")) {
+      // Si un CODE_UE_PARENT existe, l'utiliser
+      if (grade.CODE_UE_PARENT && ueMap.has(grade.CODE_UE_PARENT)) {
+        ueMap.get(grade.CODE_UE_PARENT)?.matieres.push(grade);
+      }
+      // Sinon, essayer de trouver l'UE la plus proche basée sur NUM_ORDRE
+      else {
+        const gradeOrder = parseInt(grade.NUM_ORDRE || "999", 10);
+        let bestMatchUE = null;
+        let smallestDiff = Infinity;
+
+        for (const ue of ues) {
+          const ueOrder = parseInt(ue.NUM_ORDRE || "0", 10);
+          const diff = gradeOrder - ueOrder;
+
+          // Ne considérer que les UE qui précèdent cette matière
+          if (diff > 0 && diff < smallestDiff) {
+            smallestDiff = diff;
+            bestMatchUE = ue;
+          }
+        }
+
+        if (bestMatchUE) {
+          ueMap.get(bestMatchUE.CODE_MATIERE)?.matieres.push(grade);
+        }
+      }
     }
   }
 
@@ -520,6 +492,9 @@ async function createStudentPDF(
     // Create a new PDF document
     const pdfDoc = await PDFDocument.create();
     let page = pdfDoc.addPage([595.28, 841.89]); // Format A4
+
+    // Initialize ueEtats Map at the beginning of the function
+    const ueEtats = new Map<string, string>();
 
     // Charger les polices Poppins (s'ils sont disponibles)
     let poppinsRegular;
@@ -574,70 +549,107 @@ async function createStudentPDF(
     // Initialiser la map pour contenir les états de UE qui ont des matières en rattrapage
 
     // 1. D'abord, calculer les états initiaux pour les matières avec moyenne < 8 ou >= 10
+    // 1. D'abord, calculer les états initiaux pour les matières
     for (const grade of studentGrades) {
+      // Pour les moyennes textuelles
+      const moyenneStr = String(grade.MOYENNE).toUpperCase();
+      if (moyenneStr === "VA") {
+        matiereEtats.set(grade.CODE_MATIERE, "VA");
+        continue;
+      } else if (moyenneStr === "NV") {
+        matiereEtats.set(grade.CODE_MATIERE, "NV");
+        continue;
+      }
+
+      // Pour les moyennes numériques
       const moyenneValue = parseFloat(grade.MOYENNE.toString().replace(",", "."));
-      if (!grade.NOM_MATIERE.startsWith("UE")) {
-        if (moyenneValue >= 10) {
-          matiereEtats.set(grade.CODE_MATIERE, "VA");
-        } else if (moyenneValue < 8) {
-          matiereEtats.set(grade.CODE_MATIERE, "R");
+      if (!isNaN(moyenneValue)) {
+        if (!grade.NOM_MATIERE.startsWith("UE")) {
+          if (moyenneValue >= 10) {
+            matiereEtats.set(grade.CODE_MATIERE, "VA");
+          } else if (moyenneValue < 8) {
+            matiereEtats.set(grade.CODE_MATIERE, "R");
+          } else {
+            matiereEtats.set(grade.CODE_MATIERE, "TEMP_8_10");
+          }
         }
       }
     }
 
-    // 2. Déterminer si les UE contiennent des matières en rattrapage
-    for (const grade of studentGrades) {
-      const moyenneValue = parseFloat(grade.MOYENNE.toString().replace(",", "."));
-      if (!grade.NOM_MATIERE.startsWith("UE") && moyenneValue >= 8 && moyenneValue < 10) {
-        matiereEtats.set(grade.CODE_MATIERE, "TEMP_8_10");
+    // 👇 Ce bloc garantit que chaque matière a un état, même si l'apprenant est absent toute l'année
+    // S'assurer que toutes les matières ont un état, sinon mettre NV
+    for (const { matieres } of ueMap.values()) {
+      for (const matiere of matieres) {
+        if (!matiereEtats.has(matiere.CODE_MATIERE)) {
+          const moyenneBrute = grades
+            .find(
+              (g) =>
+                g.CODE_APPRENANT === student.CODE_APPRENANT &&
+                g.CODE_MATIERE === matiere.CODE_MATIERE
+            )
+            ?.MOYENNE?.toString()
+            .toUpperCase();
+
+          if (moyenneBrute === "VA" || moyenneBrute === "NV") {
+            matiereEtats.set(matiere.CODE_MATIERE, moyenneBrute);
+            console.log(
+              `⚠️ Rattrapage in-extremis via moyenne brute : ${matiere.NOM_MATIERE} → ${moyenneBrute}`
+            );
+          } else {
+            matiereEtats.set(matiere.CODE_MATIERE, "NV");
+            console.log(`⚠️ Matière sans note ni état, forcée à NV : ${matiere.NOM_MATIERE}`);
+          }
+        }
       }
     }
 
-    // 3. Finaliser les états des matières avec 8 <= moyenne < 10
     for (const [ueCode, { matieres }] of ueMap) {
-      // Compter les matières par catégorie
-      let countR = 0; // Nombre de matières en rattrapage (< 8)
-      let count8_10 = 0; // Nombre de matières entre 8 et 10
-      let countVA = 0; // Nombre de matières validées (≥ 10)
+      // Étape 1 : Compter les états des matières
+      let countR = 0; // Rattrapage
+      let count8_10 = 0; // TEMP_8_10 (entre 8 et 10)
+      let countVA = 0; // Validées
+      let countC = 0; // Compensées
 
+      // 1. Compter les matières par état (avant modifications)
       for (const matiere of matieres) {
         const etat = matiereEtats.get(matiere.CODE_MATIERE);
         if (etat === "R") countR++;
         else if (etat === "TEMP_8_10") count8_10++;
         else if (etat === "VA") countVA++;
+        else if (etat === "C") countC++;
       }
 
       console.log(
-        `UE ${ueCode}: Matières(total=${matieres.length}, VA=${countVA}, 8-10=${count8_10}, R=${countR})`
+        `UE ${ueCode}: Matières (total=${matieres.length}, VA=${countVA}, C=${countC}, 8-10=${count8_10}, R=${countR})`
       );
 
-      // Cas où il y a des matières entre 8 et 10
+      // Étape 2 : Gérer les cas de compensation pour les matières TEMP_8_10
       if (count8_10 > 0) {
         if (countR > 0) {
-          // Si l'UE contient au moins une matière en rattrapage,
-          // toutes les matières entre 8 et 10 passent en rattrapage
           for (const matiere of matieres) {
             if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
               matiereEtats.set(matiere.CODE_MATIERE, "R");
-              console.log(`Matière ${matiere.NOM_MATIERE}: mise en R car UE contient des R`);
+              console.log(
+                `Matière ${matiere.NOM_MATIERE}: mise en R car UE contient des matières en R`
+              );
             }
           }
         } else if (matieres.length === 1 && count8_10 === 1) {
-          // Cas d'une UE avec une seule matière entre 8 et 10 : pas de compensation possible
           const matiere = matieres[0];
           matiereEtats.set(matiere.CODE_MATIERE, "R");
-          console.log(`Matière ${matiere.NOM_MATIERE}: mise en R car UE n'a qu'une seule matière`);
+          console.log(
+            `Matière ${matiere.NOM_MATIERE}: mise en R car UE n'a qu'une seule matière entre 8 et 10`
+          );
         } else if (countVA >= 1 && count8_10 === 1) {
-          // Cas d'une UE avec plusieurs matières dont une seule entre 8 et 10
-          // et au moins une validée : compensation possible
           for (const matiere of matieres) {
             if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
               matiereEtats.set(matiere.CODE_MATIERE, "C");
-              console.log(`Matière ${matiere.NOM_MATIERE}: mise en C car UE contient des VA`);
+              console.log(
+                `Matière ${matiere.NOM_MATIERE}: mise en C car UE contient des matières en VA`
+              );
             }
           }
         } else {
-          // Autres cas : par défaut, mettre en rattrapage
           for (const matiere of matieres) {
             if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
               matiereEtats.set(matiere.CODE_MATIERE, "R");
@@ -646,10 +658,45 @@ async function createStudentPDF(
           }
         }
       }
+
+      let ueFinalEtat = "VA";
+      for (const matiere of matieres) {
+        const etat = matiereEtats.get(matiere.CODE_MATIERE);
+        console.log(`Vérification matière ${matiere.NOM_MATIERE}: état=${etat}`);
+        if (etat === "R" || etat === "NV") {
+          console.log(`  → Matière en état NV/R trouvée: ${matiere.NOM_MATIERE}`);
+          ueFinalEtat = "NV";
+          break;
+        }
+      }
+      ueEtats.set(ueCode, ueFinalEtat);
+
+      console.log(
+        `UE ${ueCode} = ${ueFinalEtat} (états des matières : ${matieres
+          .map((m) => `${m.NOM_MATIERE}=${matiereEtats.get(m.CODE_MATIERE)}`)
+          .join(", ")})`
+      );
     }
 
     // 4. Créer une map pour associer les matières à leurs UE (par code)
     const matiereToUeMap = new Map<string, string>();
+    for (const [ueCode, { matieres }] of ueMap) {
+      for (const matiere of matieres) {
+        matiereToUeMap.set(matiere.CODE_MATIERE, ueCode);
+      }
+    }
+
+    for (const subject of subjects) {
+      if (subject.CODE_APPRENANT === student.CODE_APPRENANT) {
+        const etat = matiereEtats.get(subject.CODE_MATIERE);
+        // Si la matière est en rattrapage et n'est pas une UE, mettre son ECTS à 0
+        if (etat === "R" && !subject.NOM_MATIERE.startsWith("UE")) {
+          console.log(`Mise à jour ECTS à 0 pour matière en rattrapage: ${subject.NOM_MATIERE}`);
+          subject.CREDIT_ECTS = 0;
+        }
+      }
+    }
+
     for (const [ueCode, { matieres }] of ueMap) {
       for (const matiere of matieres) {
         matiereToUeMap.set(matiere.CODE_MATIERE, ueCode);
@@ -666,100 +713,6 @@ async function createStudentPDF(
           subject.CREDIT_ECTS = 0;
         }
       }
-    }
-
-    // 6. NOUVEAU: Recalculer les ECTS des UE en faisant la somme des ECTS de leurs matières
-    const ueEctsMap = new Map<string, number>();
-
-    // Initialiser le total des ECTS pour chaque UE à 0
-    for (const [ueCode] of ueMap) {
-      ueEctsMap.set(ueCode, 0);
-    }
-
-    // Calculer la somme des ECTS pour chaque UE
-    for (const subject of subjects) {
-      if (subject.CODE_APPRENANT === student.CODE_APPRENANT) {
-        // Si c'est une matière (pas une UE) et qu'elle est associée à une UE
-        if (!subject.NOM_MATIERE.startsWith("UE") && matiereToUeMap.has(subject.CODE_MATIERE)) {
-          const ueCode = matiereToUeMap.get(subject.CODE_MATIERE);
-          // Vérifier que ueCode n'est pas undefined avant de l'utiliser
-          if (ueCode !== undefined) {
-            const ects = Number(subject.CREDIT_ECTS) || 0;
-
-            // Ajouter les ECTS de cette matière au total de l'UE
-            const currentTotal = ueEctsMap.get(ueCode) || 0;
-            ueEctsMap.set(ueCode, currentTotal + ects);
-
-            console.log(
-              `Ajout de ${ects} ECTS de ${subject.NOM_MATIERE} au total de l'UE ${ueCode}`
-            );
-          }
-        }
-      }
-    }
-
-    // Mettre à jour les ECTS des UE dans la liste des subjects
-    for (const subject of subjects) {
-      if (
-        subject.CODE_APPRENANT === student.CODE_APPRENANT &&
-        subject.NOM_MATIERE.startsWith("UE")
-      ) {
-        // Trouver le code UE correspondant
-        let foundUeCode: string | undefined;
-
-        // Parcourir tous les codes UE
-        for (const [ueCode, value] of ueMap.entries()) {
-          // Vérifier si le code matière correspond ou si le nom de matière correspond
-          if (subject.CODE_MATIERE === ueCode || subject.NOM_MATIERE === value.ue.NOM_MATIERE) {
-            foundUeCode = ueCode;
-            break;
-          }
-        }
-
-        // Si on a trouvé un code UE et qu'il a des ECTS calculés
-        if (foundUeCode && ueEctsMap.has(foundUeCode)) {
-          const newEcts = ueEctsMap.get(foundUeCode) || 0;
-          console.log(
-            `Mise à jour des ECTS pour ${subject.NOM_MATIERE}: ancien=${subject.CREDIT_ECTS}, nouveau=${newEcts}`
-          );
-          subject.CREDIT_ECTS = newEcts;
-        }
-      }
-    }
-
-    // 7. Calculer les états des UE avec le code existant
-    const ueEtats = new Map<string, string>();
-    for (const [ueCode, { ue, matieres }] of ueMap) {
-      const moyenneUE = parseFloat(ue.MOYENNE.toString().replace(",", "."));
-      const moyenneValide = !isNaN(moyenneUE) && moyenneUE >= 10;
-
-      // Compter les matières par état
-      let countR = 0;
-      let countC = 0;
-      let countVA = 0;
-
-      for (const matiere of matieres) {
-        const etat = matiereEtats.get(matiere.CODE_MATIERE);
-        if (etat === "R") countR++;
-        else if (etat === "C") countC++;
-        else if (etat === "VA") countVA++;
-      }
-
-      // Règle 1: UE validée si sa moyenne ≥ 10 et aucune matière en rattrapage
-      const regle1 = moyenneValide && countR === 0;
-
-      // Règle 2: UE validée si elle a plusieurs matières, dont une en compensation et les autres validées
-      const regle2 = matieres.length > 1 && countC === 1 && countR === 0 && countVA >= 1;
-
-      // Appliquer les règles
-      const estValidee = regle1 || regle2;
-      ueEtats.set(ueCode, estValidee ? "VA" : "NV");
-
-      // Log pour le débogage
-      console.log(
-        `UE ${ue.NOM_MATIERE}: Moyenne=${moyenneUE}, MatièresC=${countC}, MatièresR=${countR}, ` +
-          `MatièresVA=${countVA}, Règle1=${regle1}, Règle2=${regle2}, Etat=${ueEtats.get(ueCode)}`
-      );
     }
 
     // ESPI Logo and header section
@@ -1038,6 +991,58 @@ async function createStudentPDF(
       })
       .sort((a, b) => parseInt(a.NUM_ORDRE, 10) - parseInt(b.NUM_ORDRE, 10));
 
+    // Puis utilisez allSubjects pour mettre à jour les ECTS
+    for (const subject of allSubjects) {
+      // Mettre à 0 les ECTS des matières sans note/état
+      if (
+        !subject.NOM_MATIERE.startsWith("UE") &&
+        subject.MOYENNE === undefined &&
+        !matiereEtats.has(subject.CODE_MATIERE)
+      ) {
+        subject.CREDIT_ECTS = 0;
+        console.log(`Mise à jour ECTS à 0 pour matière sans note/état: ${subject.NOM_MATIERE}`);
+      }
+    }
+
+    // Recalculer les ECTS des UEs en fonction des matières
+    const ueEctsMap = new Map<string, number>();
+
+    // Initialiser les totaux à 0
+    for (const [ueCode] of ueMap) {
+      ueEctsMap.set(ueCode, 0);
+    }
+
+    // Calculer la somme des ECTS pour chaque UE
+    for (const subject of allSubjects) {
+      if (!subject.NOM_MATIERE.startsWith("UE") && matiereToUeMap.has(subject.CODE_MATIERE)) {
+        const ueCode = matiereToUeMap.get(subject.CODE_MATIERE);
+        if (ueCode !== undefined) {
+          const ects = Number(subject.CREDIT_ECTS) || 0;
+          const currentTotal = ueEctsMap.get(ueCode) || 0;
+          ueEctsMap.set(ueCode, currentTotal + ects);
+          console.log(
+            `Recalcul ECTS : Ajout de ${ects} ECTS de ${subject.NOM_MATIERE} au total de l'UE ${ueCode}`
+          );
+        }
+      }
+    }
+
+    // Mettre à jour les ECTS des UEs
+    for (const subject of allSubjects) {
+      if (subject.NOM_MATIERE.startsWith("UE")) {
+        for (const [ueCode] of ueMap) {
+          if (subject.CODE_MATIERE === ueCode) {
+            const newEcts = ueEctsMap.get(ueCode) || 0;
+            console.log(
+              `Mise à jour des ECTS pour UE ${subject.NOM_MATIERE}: ancien=${subject.CREDIT_ECTS}, nouveau=${newEcts}`
+            );
+            subject.CREDIT_ECTS = newEcts;
+            break;
+          }
+        }
+      }
+    }
+
     for (const subject of allSubjects) {
       const isUE = subject.NOM_MATIERE.startsWith("UE");
 
@@ -1085,35 +1090,54 @@ async function createStudentPDF(
       });
 
       // Moyenne (ou "-" si vide)
+      // Moyenne (ou "-" si vide)
+      // Moyenne (ou "-" si vide)
       let moyenne;
       if (subject.MOYENNE !== undefined && subject.MOYENNE !== null) {
-        moyenne = parseFloat(subject.MOYENNE.toString().replace(",", "."))
-          .toFixed(2)
-          .replace(".", ",");
+        const moyenneStr = String(subject.MOYENNE);
+        if (moyenneStr === "VA" || moyenneStr === "NV") {
+          moyenne = moyenneStr;
+          if (!matiereEtats.has(subject.CODE_MATIERE)) {
+            matiereEtats.set(subject.CODE_MATIERE, moyenneStr);
+          }
+        } else if (moyenneStr === "-") {
+          moyenne = "-";
+          if (!matiereEtats.has(subject.CODE_MATIERE)) {
+            matiereEtats.set(subject.CODE_MATIERE, "NV");
+          }
+        } else {
+          try {
+            moyenne = parseFloat(moyenneStr.replace(",", ".")).toFixed(2).replace(".", ",");
+          } catch {
+            moyenne = "-";
+            if (!matiereEtats.has(subject.CODE_MATIERE)) {
+              matiereEtats.set(subject.CODE_MATIERE, "NV");
+            }
+          }
+        }
       } else {
-        // Par défaut, afficher "-"
         moyenne = "-";
-
-        // Chercher dans les notes si CODE_EVALUATION_NOTE est disponible
         let note = notes?.find(
           (n) =>
             n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === subject.CODE_MATIERE
         );
-
-        // Si aucune note trouvée par CODE_MATIERE, essayer par NOM_MATIERE
         if (!note) {
           note = notes?.find(
             (n) =>
               n.CODE_APPRENANT === student.CODE_APPRENANT && n.NOM_MATIERE === subject.NOM_MATIERE
           );
         }
-
-        // Si une note est trouvée avec CODE_EVALUATION_NOTE, utiliser sa valeur
         if (note) {
-          if (note.CODE_EVALUATION_NOTE == 1) {
+          if (Number(note.CODE_EVALUATION_NOTE) === 1) {
             moyenne = "VA";
-          } else if (note.CODE_EVALUATION_NOTE == 2) {
+            matiereEtats.set(subject.CODE_MATIERE, "VA");
+          } else if (Number(note.CODE_EVALUATION_NOTE) === 2) {
             moyenne = "NV";
+            matiereEtats.set(subject.CODE_MATIERE, "NV");
+          }
+        } else {
+          if (!matiereEtats.has(subject.CODE_MATIERE)) {
+            matiereEtats.set(subject.CODE_MATIERE, "NV");
           }
         }
       }
@@ -1127,7 +1151,99 @@ async function createStudentPDF(
         color: rgb(0, 0, 0),
       });
 
-      // ECTS
+      // État
+      let etat = "-";
+
+      // Si c'est une UE, on utilise l'état calculé depuis ueEtats
+      if (subject.NOM_MATIERE.startsWith("UE")) {
+        etat = ueEtats.get(subject.CODE_MATIERE) || "NV";
+      } else {
+        const etatCalculé = matiereEtats.get(subject.CODE_MATIERE);
+
+        if (etatCalculé !== undefined) {
+          etat = etatCalculé;
+        } else {
+          // Convertir la moyenne en chaîne pour faciliter les comparaisons
+          const moyenneStr =
+            subject.MOYENNE !== undefined && subject.MOYENNE !== null
+              ? String(subject.MOYENNE)
+              : "-";
+
+          // Si aucun état n'a été calculé, vérifier d'abord si la moyenne est "VA" ou "NV" directement
+          if (moyenneStr === "VA") {
+            etat = "VA";
+          } else if (moyenneStr === "NV") {
+            etat = "NV";
+
+            // AJOUT: Forcer l'UE parente à NV
+            if (!subject.NOM_MATIERE.startsWith("UE")) {
+              // Utilisez subject au lieu de matiere
+              const ueCode = matiereToUeMap.get(subject.CODE_MATIERE); // Utilisez subject au lieu de matiere
+              if (ueCode) {
+                ueEtats.set(ueCode, "NV");
+                console.log(
+                  `UE ${ueCode} forcée à NV car matière ${subject.NOM_MATIERE} a moyenne NV` // Utilisez subject au lieu de matiere
+                );
+              }
+            }
+          } else if (moyenneStr === "-") {
+            etat = "NV"; // Si la moyenne est "-", l'état est "NV"
+          } else {
+            // Ensuite chercher dans les notes
+            let note = notes?.find(
+              (n) =>
+                n.CODE_APPRENANT === student.CODE_APPRENANT &&
+                n.CODE_MATIERE === subject.CODE_MATIERE
+            );
+
+            // Si aucune note trouvée par CODE_MATIERE, essayer par NOM_MATIERE
+            if (!note) {
+              note = notes?.find(
+                (n) =>
+                  n.CODE_APPRENANT === student.CODE_APPRENANT &&
+                  n.NOM_MATIERE === subject.NOM_MATIERE
+              );
+            }
+
+            if (note) {
+              if (Number(note.CODE_EVALUATION_NOTE) === 1) {
+                etat = "VA";
+              } else if (Number(note.CODE_EVALUATION_NOTE) === 2) {
+                etat = "NV";
+              }
+            } else {
+              // Si aucune note n'est trouvée, vérifier si une moyenne existe et est numérique
+              try {
+                const moyenneValue = parseFloat(moyenneStr.replace(",", "."));
+                if (!isNaN(moyenneValue)) {
+                  etat = moyenneValue >= 10 ? "VA" : "NV";
+                } else {
+                  etat = "NV"; // Si la moyenne existe mais n'est pas numérique
+                }
+              } catch (error) {
+                etat = "NV"; // En cas d'erreur de conversion
+                console.log(
+                  `Erreur lors de la conversion de la moyenne pour ${subject.NOM_MATIERE}:`,
+                  error
+                );
+              }
+            }
+          }
+
+          // Ajout d'un log de sécurité
+          console.warn(
+            `⚠️ Aucun état trouvé pour ${subject.NOM_MATIERE} (${subject.CODE_MATIERE}), valeur par défaut: ${etat}.`
+          );
+        }
+      }
+
+      // Mettre à jour les ECTS à 0 si état est "NV" ou "R" et ce n'est pas une UE
+      if ((etat === "NV" || etat === "R") && !subject.NOM_MATIERE.startsWith("UE")) {
+        subject.CREDIT_ECTS = 0;
+        console.log(`Mise à jour ECTS à 0 pour matière avec état ${etat}: ${subject.NOM_MATIERE}`);
+      }
+
+      // ECTS - Utilisez directement subject.CREDIT_ECTS qui peut avoir été mis à jour
       const ects = subject.CREDIT_ECTS.toString();
       const ectsWidth = mainFont.widthOfTextAtSize(ects, fontSize);
       page.drawText(ects, {
@@ -1137,52 +1253,6 @@ async function createStudentPDF(
         font: isUE ? boldFont : mainFont,
         color: rgb(0, 0, 0),
       });
-
-      // État
-      let etat = "-";
-      // Si c'est une UE, utiliser l'état calculé précédemment
-      if (subject.NOM_MATIERE.startsWith("UE")) {
-        etat = ueEtats.get(subject.CODE_MATIERE) || "-";
-      } else {
-        // Pour les matières individuelles, vérifier d'abord si un état a déjà été calculé
-        const calculatedEtat = matiereEtats.get(subject.CODE_MATIERE);
-
-        if (calculatedEtat) {
-          etat = calculatedEtat;
-        } else {
-          // Si aucun état n'a été calculé, chercher dans les notes
-          // D'abord essayer par CODE_MATIERE
-          let note = notes?.find(
-            (n) =>
-              n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === subject.CODE_MATIERE
-          );
-
-          // Si aucune note trouvée par CODE_MATIERE, essayer par NOM_MATIERE
-          if (!note) {
-            note = notes?.find(
-              (n) =>
-                n.CODE_APPRENANT === student.CODE_APPRENANT && n.NOM_MATIERE === subject.NOM_MATIERE
-            );
-          }
-
-          if (note) {
-            if (note.CODE_EVALUATION_NOTE == 1) {
-              etat = "VA";
-            } else if (note.CODE_EVALUATION_NOTE == 2) {
-              etat = "NV";
-            }
-          } else {
-            // NOUVEAU: Si aucune note n'est trouvée, vérifier si une moyenne existe
-            // Si la moyenne est >= 10, marquer comme VA, sinon NV
-            if (subject.MOYENNE !== undefined && subject.MOYENNE !== null) {
-              const moyenneValue = parseFloat(subject.MOYENNE.toString().replace(",", "."));
-              if (!isNaN(moyenneValue)) {
-                etat = moyenneValue >= 10 ? "VA" : "NV";
-              }
-            }
-          }
-        }
-      }
 
       // Sélectionner la police en fonction de l'état
       const etatFont = isUE ? boldFont : etat === "R" || etat === "C" ? boldFont : mainFont;
@@ -1205,7 +1275,6 @@ async function createStudentPDF(
         font: etatFont, // Utiliser etatFont au lieu de mainFont
         color: etatColor, // Utiliser etatColor au lieu de rgb(0, 0, 0)
       });
-
       currentY -= rowHeight;
 
       // Saut de page si nécessaire
@@ -1293,21 +1362,11 @@ async function createStudentPDF(
     });
 
     // ✅ Correction : Calcul du total des ECTS basé uniquement sur les UE
-    const getTotalECTS = (subjects: SubjectECTS[], studentId: string): number => {
-      // Filtrer d'abord les matières appartenant à l'étudiant
-      const studentSubjects = subjects.filter((subject) => subject.CODE_APPRENANT === studentId);
-
-      // Filtrer uniquement les UE (en se basant sur le nom commençant par "UE")
-      const ueSubjects = studentSubjects.filter(
-        (subject) => subject.NOM_MATIERE && subject.NOM_MATIERE.startsWith("UE")
-      );
-
-      // Sommer les ECTS des UE uniquement
-      return ueSubjects.reduce((total, subject) => total + (Number(subject.CREDIT_ECTS) || 0), 0);
-    };
 
     // ✅ Vérification et correction du calcul du total des ECTS
-    const totalECTS = getTotalECTS(subjects, student.CODE_APPRENANT);
+    const totalECTS = allSubjects
+      .filter((subject) => subject.NOM_MATIERE.startsWith("UE"))
+      .reduce((acc, subject) => acc + (subject.CREDIT_ECTS || 0), 0);
     console.log("Total ECTS (UE uniquement) :", totalECTS);
 
     // Log détaillé pour le débogage
@@ -1323,7 +1382,7 @@ async function createStudentPDF(
         console.log(`${ue.NOM_MATIERE}: ${ue.CREDIT_ECTS} ECTS`);
       });
 
-    const totalECTSText = String(totalECTS); // Assurer une conversion propre en string
+    const totalECTSText = String(Number(totalECTS) || 0);
     const totalECTSWidth = mainFont.widthOfTextAtSize(totalECTSText, fontSize);
     const totalECTSCenterX = col3X + col3Width / 2 - totalECTSWidth / 2;
 
@@ -1341,28 +1400,24 @@ async function createStudentPDF(
       studentId: string,
       ueEtats: Map<string, string>
     ): string => {
-      // Récupérer toutes les matières de type UE pour cet étudiant
       const ueSubjects = subjects.filter(
-        (subject) => subject.CODE_APPRENANT === student.CODE_APPRENANT
+        (subject) =>
+          subject.CODE_APPRENANT === studentId &&
+          subject.NOM_MATIERE &&
+          subject.NOM_MATIERE.startsWith("UE")
       );
 
-      // Vérifier si au moins une UE existe
-      if (ueSubjects.length === 0) {
-        return "NV"; // Par défaut si aucune UE n'est trouvée
-      }
+      if (ueSubjects.length === 0) return "NV";
 
-      // Vérifier si toutes les UE sont validées
-      let allUEValidated = true;
-
+      // Si au moins une UE est en NV → état général = NV
       for (const ue of ueSubjects) {
         const etatUE = ueEtats.get(ue.CODE_MATIERE);
         if (etatUE !== "VA") {
-          allUEValidated = false;
-          break;
+          return "NV";
         }
       }
 
-      return allUEValidated ? "VA" : "NV";
+      return ueSubjects.every((ue) => ueEtats.get(ue.CODE_MATIERE) === "VA") ? "VA" : "NV";
     };
 
     // État général (Validé ou Non Validé)
