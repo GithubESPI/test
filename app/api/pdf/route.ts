@@ -8,6 +8,16 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
+function getEtatUE(etatsMatieres: string[]): string {
+  if (etatsMatieres.includes("NV") || etatsMatieres.includes("R")) {
+    return "NV";
+  } else if (etatsMatieres.includes("C")) {
+    return "C";
+  } else {
+    return "VA";
+  }
+}
+
 // Type definitions for the student data
 interface StudentData {
   CODE_APPRENANT: string;
@@ -672,16 +682,8 @@ async function createStudentPDF(
         }
       }
 
-      let ueFinalEtat = "VA";
-      for (const matiere of matieres) {
-        const etat = matiereEtats.get(matiere.CODE_MATIERE);
-        console.log(`Vérification matière ${matiere.NOM_MATIERE}: état=${etat}`);
-        if (etat === "R" || etat === "NV") {
-          console.log(`  → Matière en état NV/R trouvée: ${matiere.NOM_MATIERE}`);
-          ueFinalEtat = "NV";
-          break;
-        }
-      }
+      const etatsMatieres = matieres.map((m) => matiereEtats.get(m.CODE_MATIERE) || "NV");
+      const ueFinalEtat = getEtatUE(etatsMatieres);
       ueEtats.set(ueCode, ueFinalEtat);
 
       console.log(
