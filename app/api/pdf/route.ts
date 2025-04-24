@@ -548,23 +548,26 @@ async function createStudentPDF(
     const matiereEtats = new Map<string, string>();
     // Initialiser la map pour contenir les états de UE qui ont des matières en rattrapage
 
-    // 1. D'abord, calculer les états initiaux pour les matières avec moyenne < 8 ou >= 10
-    // 1. D'abord, calculer les états initiaux pour les matières
+    // 1. Amélioration du traitement initial des moyennes et états
     for (const grade of studentGrades) {
-      // Pour les moyennes textuelles
-      const moyenneStr = String(grade.MOYENNE).toUpperCase();
+      // Traitement des moyennes textuelles ou vides
+      const moyenneStr = String(grade.MOYENNE || "")
+        .toUpperCase()
+        .trim();
+
       if (moyenneStr === "VA") {
         matiereEtats.set(grade.CODE_MATIERE, "VA");
         continue;
-      } else if (moyenneStr === "NV") {
+      } else if (moyenneStr === "NV" || moyenneStr === "" || moyenneStr === "-") {
         matiereEtats.set(grade.CODE_MATIERE, "NV");
+        console.log(`État défini à NV pour ${grade.NOM_MATIERE} (moyenne: "${moyenneStr}")`);
         continue;
       }
 
       // Pour les moyennes numériques
-      const moyenneValue = parseFloat(grade.MOYENNE.toString().replace(",", "."));
-      if (!isNaN(moyenneValue)) {
-        if (!grade.NOM_MATIERE.startsWith("UE")) {
+      try {
+        const moyenneValue = parseFloat(moyenneStr.replace(",", "."));
+        if (!isNaN(moyenneValue)) {
           if (moyenneValue >= 10) {
             matiereEtats.set(grade.CODE_MATIERE, "VA");
           } else if (moyenneValue < 8) {
@@ -572,7 +575,17 @@ async function createStudentPDF(
           } else {
             matiereEtats.set(grade.CODE_MATIERE, "TEMP_8_10");
           }
+        } else {
+          // Si la conversion échoue, on met NV par défaut
+          matiereEtats.set(grade.CODE_MATIERE, "NV");
+          console.log(
+            `État défini à NV pour ${grade.NOM_MATIERE} (moyenne non numérique: "${moyenneStr}")`
+          );
         }
+      } catch (error) {
+        // En cas d'erreur, on met NV par défaut
+        matiereEtats.set(grade.CODE_MATIERE, "NV");
+        console.log(`Erreur pour ${grade.NOM_MATIERE}, état défini à NV:`, error);
       }
     }
 
@@ -686,20 +699,50 @@ async function createStudentPDF(
       }
     }
 
-    for (const subject of subjects) {
-      if (subject.CODE_APPRENANT === student.CODE_APPRENANT) {
-        const etat = matiereEtats.get(subject.CODE_MATIERE);
-        // Si la matière est en rattrapage et n'est pas une UE, mettre son ECTS à 0
-        if (etat === "R" && !subject.NOM_MATIERE.startsWith("UE")) {
-          console.log(`Mise à jour ECTS à 0 pour matière en rattrapage: ${subject.NOM_MATIERE}`);
-          subject.CREDIT_ECTS = 0;
+    for (const subject of subjects.filter((s) => s.CODE_APPRENANT === student.CODE_APPRENANT)) {
+      if (!subject.NOM_MATIERE.startsWith("UE") && !matiereEtats.has(subject.CODE_MATIERE)) {
+        // Vérifier si une note existe dans la table des notes
+        const note = notes?.find(
+          (n) =>
+            n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === subject.CODE_MATIERE
+        );
+
+        if (note && note.CODE_EVALUATION_NOTE === "1") {
+          matiereEtats.set(subject.CODE_MATIERE, "VA");
+        } else {
+          matiereEtats.set(subject.CODE_MATIERE, "NV");
+          console.log(`Matière sans état ni moyenne définie à NV: ${subject.NOM_MATIERE}`);
         }
       }
     }
 
-    for (const [ueCode, { matieres }] of ueMap) {
+    for (const [ueCode, { ue, matieres }] of ueMap.entries()) {
+      // Initialiser par défaut à "VA"
+      let ueFinalEtat = "VA";
+
+      // Loguer l'état de toutes les matières de cette UE pour débogage
+      console.log(`Vérification de l'UE ${ue.NOM_MATIERE}:`);
+
+      // Vérifier chaque matière de l'UE
       for (const matiere of matieres) {
-        matiereToUeMap.set(matiere.CODE_MATIERE, ueCode);
+        const etat = matiereEtats.get(matiere.CODE_MATIERE);
+        console.log(`  - ${matiere.NOM_MATIERE}: état = ${etat}`);
+
+        // Si une seule matière est en état R ou NV, l'UE entière devient NV
+        if (etat === "R" || etat === "NV") {
+          ueFinalEtat = "NV";
+          console.log(`    → L'UE sera NV car cette matière est en état ${etat}`);
+        }
+      }
+
+      // Assignation finale de l'état de l'UE
+      ueEtats.set(ueCode, ueFinalEtat);
+      console.log(`État final de l'UE ${ue.NOM_MATIERE}: ${ueFinalEtat}`);
+
+      // Vérification de sécurité: si aucune matière n'est associée, l'UE est NV par défaut
+      if (matieres.length === 0) {
+        ueEtats.set(ueCode, "NV");
+        console.log(`L'UE ${ue.NOM_MATIERE} n'a aucune matière associée, état forcé à NV`);
       }
     }
 
