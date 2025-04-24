@@ -719,33 +719,10 @@ async function createStudentPDF(
     }
 
     for (const [ueCode, { ue, matieres }] of ueMap.entries()) {
-      // Initialiser par défaut à "VA"
-      let ueFinalEtat = "VA";
-
-      // Loguer l'état de toutes les matières de cette UE pour débogage
-      console.log(`Vérification de l'UE ${ue.NOM_MATIERE}:`);
-
-      // Vérifier chaque matière de l'UE
-      for (const matiere of matieres) {
-        const etat = matiereEtats.get(matiere.CODE_MATIERE);
-        console.log(`  - ${matiere.NOM_MATIERE}: état = ${etat}`);
-
-        // Si une seule matière est en état R ou NV, l'UE entière devient NV
-        if (etat === "R" || etat === "NV") {
-          ueFinalEtat = "NV";
-          console.log(`    → L'UE sera NV car cette matière est en état ${etat}`);
-        }
-      }
-
-      // Assignation finale de l'état de l'UE
+      const etats = matieres.map((m) => matiereEtats.get(m.CODE_MATIERE) || "NV");
+      const ueFinalEtat = getEtatUE(etats);
       ueEtats.set(ueCode, ueFinalEtat);
       console.log(`État final de l'UE ${ue.NOM_MATIERE}: ${ueFinalEtat}`);
-
-      // Vérification de sécurité: si aucune matière n'est associée, l'UE est NV par défaut
-      if (matieres.length === 0) {
-        ueEtats.set(ueCode, "NV");
-        console.log(`L'UE ${ue.NOM_MATIERE} n'a aucune matière associée, état forcé à NV`);
-      }
     }
 
     // 5. Mettre à jour les ECTS des matières en rattrapage
