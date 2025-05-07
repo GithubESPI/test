@@ -14,7 +14,7 @@ function getEtatUE(etatsMatieres: string[]): string {
   if (etatsMatieres.includes("NV") || etatsMatieres.includes("R")) {
     return "NV";
   } else if (etatsMatieres.includes("C")) {
-    return "C";
+    return "VA";
   } else {
     return "VA";
   }
