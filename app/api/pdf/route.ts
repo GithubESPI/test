@@ -8,7 +8,9 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
+// Modification de la fonction getEtatUE pour gérer l'exception de l'UE 4
 function getEtatUE(etatsMatieres: string[]): string {
+  // Si une seule matière est NV ou R, l'UE entière est NV
   if (etatsMatieres.includes("NV") || etatsMatieres.includes("R")) {
     return "NV";
   } else if (etatsMatieres.includes("C")) {
@@ -17,7 +19,6 @@ function getEtatUE(etatsMatieres: string[]): string {
     return "VA";
   }
 }
-
 // Type definitions for the student data
 interface StudentData {
   CODE_APPRENANT: string;
@@ -718,13 +719,54 @@ async function createStudentPDF(
       }
     }
 
+    // Dans la boucle où vous traitez les UE
     for (const [ueCode, { ue, matieres }] of ueMap.entries()) {
-      const etats = matieres.map((m) => matiereEtats.get(m.CODE_MATIERE) || "NV");
-      const ueFinalEtat = getEtatUE(etats);
-      ueEtats.set(ueCode, ueFinalEtat);
-      console.log(`État final de l'UE ${ue.NOM_MATIERE}: ${ueFinalEtat}`);
-    }
+      // Si c'est l'UE 4 spécifiquement
+      // Si c'est l'UE 4 spécifiquement
+      // Si c'est l'UE 4 spécifiquement
+      if (ue.NOM_MATIERE && ue.NOM_MATIERE.includes("UE 4")) {
+        console.log(`Traitement spécial pour ${ue.NOM_MATIERE}`);
 
+        // Vérifier les états NV et R pour les matières associées directement à l'UE
+        const hasNVorRMatieres = matieres.some((m) => {
+          const etat = matiereEtats.get(m.CODE_MATIERE);
+          return etat === "NV" || etat === "R";
+        });
+
+        // Vérifier également les matières ESPI en cherchant dans tous les sujets de l'étudiant
+        const hasNVorRInESPIMatieres = Array.from(matiereEtats.entries()).some(
+          ([codeMatiere, etat]) => {
+            // Trouver la matière correspondant à ce code
+            const matiere = subjects.find(
+              (s) => s.CODE_APPRENANT === student.CODE_APPRENANT && s.CODE_MATIERE === codeMatiere
+            );
+
+            // Vérifier si c'est une matière ESPI avec état NV ou R
+            return (
+              matiere &&
+              matiere.NOM_MATIERE &&
+              (matiere.NOM_MATIERE.includes("ESPI Career") ||
+                matiere.NOM_MATIERE.includes("ESPI Inside")) &&
+              (etat === "NV" || etat === "R")
+            );
+          }
+        );
+
+        if (hasNVorRMatieres || hasNVorRInESPIMatieres) {
+          console.log(
+            `🔴 OVERRIDE FINAL: UE ${ue.NOM_MATIERE} forcée à NV car elle contient des matières en NV ou R`
+          );
+          ueEtats.set(ueCode, "NV");
+        } else {
+          // Sinon, calcul normal
+          const etats = matieres.map((m) => matiereEtats.get(m.CODE_MATIERE) || "NV");
+          const ueFinalEtat = getEtatUE(etats);
+          ueEtats.set(ueCode, ueFinalEtat);
+        }
+      }
+
+      console.log(`État final de l'UE ${ue.NOM_MATIERE}: ${ueEtats.get(ueCode)}`);
+    }
     // 5. Mettre à jour les ECTS des matières en rattrapage
     for (const subject of subjects) {
       if (subject.CODE_APPRENANT === student.CODE_APPRENANT) {
@@ -1159,7 +1201,18 @@ async function createStudentPDF(
           }
         } else {
           if (!matiereEtats.has(subject.CODE_MATIERE)) {
-            matiereEtats.set(subject.CODE_MATIERE, "NV");
+            const moyenneTextuelle = String(subject.MOYENNE || "")
+              .toUpperCase()
+              .trim();
+            if (["VA", "NV", "R", "C"].includes(moyenneTextuelle)) {
+              matiereEtats.set(subject.CODE_MATIERE, moyenneTextuelle);
+              console.log(
+                `✅ Rattrapage depuis moyenne brute pour ${subject.NOM_MATIERE} → ${moyenneTextuelle}`
+              );
+            } else {
+              matiereEtats.set(subject.CODE_MATIERE, "NV");
+              console.warn(`⚠️ Matière sans état défini, forcée à NV : ${subject.NOM_MATIERE}`);
+            }
           }
         }
       }
