@@ -454,11 +454,13 @@ export default function Home() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {campuses.map((campus) => (
-                            <SelectItem key={campus.id} value={campus.id} className="text-sm">
-                              {campus.label}
-                            </SelectItem>
-                          ))}
+                          {campuses
+                            .filter((campus) => campus.label !== "GROUPE ESPI")
+                            .map((campus) => (
+                              <SelectItem key={campus.id} value={campus.id} className="text-sm">
+                                {campus.label}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                       <FormMessage className="text-red-500" />
@@ -478,15 +480,32 @@ export default function Home() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {groups.map((group) => (
-                            <SelectItem
-                              key={group.id}
-                              value={group.id.toString()}
-                              className="text-sm"
-                            >
-                              {group.label}
-                            </SelectItem>
-                          ))}
+                          {groups
+                            .filter((group) => {
+                              // Liste des préfixes à exclure
+                              const prefixesToExclude = [
+                                "P-BTS1",
+                                "M-BTS1",
+                                "N-BTS1",
+                                "L-BTS1",
+                                "LI-BTS1",
+                                "B-BTS1",
+                                "MP-BTS1",
+                              ];
+                              // Vérifie si le label du groupe commence par l'un des préfixes à exclure
+                              return !prefixesToExclude.some((prefix) =>
+                                group.label.startsWith(prefix)
+                              );
+                            })
+                            .map((group) => (
+                              <SelectItem
+                                key={group.id}
+                                value={group.id.toString()}
+                                className="text-sm"
+                              >
+                                {group.label}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                       <FormMessage className="text-red-500" />
