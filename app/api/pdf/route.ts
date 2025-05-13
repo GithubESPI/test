@@ -69,7 +69,7 @@ interface GroupInfo {
   NOM_GROUPE: string;
   ETENDU_GROUPE?: string;
   NOM_FORMATION?: string;
-  CODE_PERSONNEL_GESTIONNAIRE?: string;
+  CODE_PERSONNEL?: string;
   NOM_PERSONNEL?: string;
   PRENOM_PERSONNEL?: string;
   NOM_FONCTION_PERSONNEL?: string;
@@ -462,25 +462,21 @@ function associerMatieresAuxUE(
 }
 
 // Fonction d'aide pour obtenir le nom du fichier de signature en fonction du code personnel
-function getSignatureFilename(codePersonnelGestionnaire: string): string | null {
+function getSignatureFilename(codePersonnel: string): string | null {
   // Mapping entre les codes personnels gestionnaires et les noms de fichiers de signature
   const signatureMap: Record<string, string> = {
-    "466": "signMylèneDubois.png",
-    "89152": "magali.png",
-    "500": "estelle.jpg",
-    "2239": "signature_marionsoustelle.png",
-    "482": "ludivinelaунay.png",
-    "459": "camilledias.png",
-    "438": "signSandraBertrand.jpg",
     "460": "christine.jpg",
+    "482": "ludivinelaунay.png",
+    "500": "estelle.jpg",
     "517": "signYoussefSAKER.jpg",
-    "149170": "lebon.png",
-    "493": "nathalie.jpg",
-    "524": "christine.jpg", // Ajout pour le CODE_PERSONNEL_GESTIONNAIRE "524"
+    "2239": "signature_marionsoustelle.png",
+    "306975": "lebon.png",
+    "89152": "magali.png",
+    "650429": "", // Ajout pour le CODE_PERSONNEL
     // You can add more mappings as needed
   };
 
-  return signatureMap[codePersonnelGestionnaire] || null;
+  return signatureMap[codePersonnel] || null;
 }
 
 // Function to create a PDF for a student
@@ -724,47 +720,72 @@ async function createStudentPDF(
       // Si c'est l'UE 4 spécifiquement
       // Si c'est l'UE 4 spécifiquement
       // Si c'est l'UE 4 spécifiquement
+      // Si c'est l'UE 4 spécifiquement
+      // Si c'est l'UE 4 spécifiquement
+      // Si c'est l'UE 4 spécifiquement
+      // Si c'est l'UE 4 spécifiquement
       if (ue.NOM_MATIERE && ue.NOM_MATIERE.includes("UE 4")) {
         console.log(`Traitement spécial pour ${ue.NOM_MATIERE}`);
 
-        // Vérifier les états NV et R pour les matières associées directement à l'UE
-        const hasNVorRMatieres = matieres.some((m) => {
+        // Vérifier si une matière de l'UE 4 est en NV ou R
+        const hasNVorR = matieres.some((m) => {
           const etat = matiereEtats.get(m.CODE_MATIERE);
+          console.log(`Matière de l'UE 4: ${m.NOM_MATIERE}, état: ${etat}`);
           return etat === "NV" || etat === "R";
         });
 
-        // Vérifier également les matières ESPI en cherchant dans tous les sujets de l'étudiant
-        const hasNVorRInESPIMatieres = Array.from(matiereEtats.entries()).some(
+        // Vérifier également les matières qui pourraient ne pas être correctement associées
+        const additionalMatieres = [
+          "Communication Digitale et Orale",
+          "ESPI Career Services",
+          "ESPI Inside",
+          "Real Estate English",
+          "Rencontres de l'Immobilier",
+          "Immersion Professionnelle",
+          "Projet Voltaire",
+          "Real Estate English & TOEFL",
+          "Mémoire de Recherche",
+          "Méthodologie de la Recherche",
+          "Mobilité Internationale",
+          "Techniques de Négociation",
+          "Real Estate Industry Overview",
+          "Dissertation Methodology",
+        ];
+
+        const hasAdditionalNVorR = Array.from(matiereEtats.entries()).some(
           ([codeMatiere, etat]) => {
-            // Trouver la matière correspondant à ce code
+            if (etat !== "NV" && etat !== "R") return false;
+
             const matiere = subjects.find(
               (s) => s.CODE_APPRENANT === student.CODE_APPRENANT && s.CODE_MATIERE === codeMatiere
             );
 
-            // Vérifier si c'est une matière ESPI avec état NV ou R
-            return (
-              matiere &&
-              matiere.NOM_MATIERE &&
-              (matiere.NOM_MATIERE.includes("ESPI Career") ||
-                matiere.NOM_MATIERE.includes("ESPI Inside")) &&
-              (etat === "NV" || etat === "R")
+            if (!matiere || !matiere.NOM_MATIERE) return false;
+
+            const isUE4Matiere = additionalMatieres.some((name) =>
+              matiere.NOM_MATIERE.includes(name)
             );
+
+            if (isUE4Matiere) {
+              console.log(
+                `Matière supplémentaire de l'UE 4 détectée: ${matiere.NOM_MATIERE}, état: ${etat}`
+              );
+            }
+
+            return isUE4Matiere;
           }
         );
 
-        if (hasNVorRMatieres || hasNVorRInESPIMatieres) {
+        if (hasNVorR || hasAdditionalNVorR) {
           console.log(
-            `🔴 OVERRIDE FINAL: UE ${ue.NOM_MATIERE} forcée à NV car elle contient des matières en NV ou R`
+            `🔴 OVERRIDE FINAL UE 4: Forcée à NV car contient au moins une matière en NV ou R`
           );
           ueEtats.set(ueCode, "NV");
         } else {
-          // Sinon, calcul normal
-          const etats = matieres.map((m) => matiereEtats.get(m.CODE_MATIERE) || "NV");
-          const ueFinalEtat = getEtatUE(etats);
-          ueEtats.set(ueCode, ueFinalEtat);
+          console.log(`UE 4: Toutes les matières sont validées, état VA`);
+          ueEtats.set(ueCode, "VA");
         }
       }
-
       console.log(`État final de l'UE ${ue.NOM_MATIERE}: ${ueEtats.get(ueCode)}`);
     }
     // 5. Mettre à jour les ECTS des matières en rattrapage
@@ -1789,7 +1810,7 @@ async function createStudentPDF(
     );
 
     // Récupérer le code personnel du gestionnaire à partir du groupe si disponible
-    let codePersonnelGestionnaire = "";
+    let codePersonnel = "";
     let nomPersonnel = "";
     let prenomPersonnel = "";
     let nomFonctionPersonnel = "";
@@ -1800,13 +1821,13 @@ async function createStudentPDF(
 
     // Vérifier d'abord si les données sont disponibles directement dans groupInfo
     if (groupInfo.length > 0) {
-      codePersonnelGestionnaire = groupInfo[0].CODE_PERSONNEL_GESTIONNAIRE || "";
+      codePersonnel = groupInfo[0].CODE_PERSONNEL || "";
       nomPersonnel = groupInfo[0].NOM_PERSONNEL || "";
       prenomPersonnel = groupInfo[0].PRENOM_PERSONNEL || "";
       nomFonctionPersonnel = groupInfo[0].NOM_FONCTION_PERSONNEL || "";
 
       console.log("From groupInfo:", {
-        code: codePersonnelGestionnaire,
+        code: codePersonnel,
         nom: nomPersonnel,
         prenom: prenomPersonnel,
         fonction: nomFonctionPersonnel,
@@ -1816,13 +1837,13 @@ async function createStudentPDF(
     // Si aucune donnée n'est disponible dans groupInfo, vérifier si PERSONNEL est disponible
     if ((!nomPersonnel || !prenomPersonnel) && personnelData && personnelData.length > 0) {
       const personnel = personnelData[0];
-      codePersonnelGestionnaire = personnel.CODE_PERSONNEL_GESTIONNAIRE || "";
+      codePersonnel = personnel.CODE_PERSONNEL || "";
       nomPersonnel = personnel.NOM_PERSONNEL || "";
       prenomPersonnel = personnel.PRENOM_PERSONNEL || "";
       nomFonctionPersonnel = personnel.NOM_FONCTION_PERSONNEL || "";
 
       console.log("From PERSONNEL data:", {
-        code: codePersonnelGestionnaire,
+        code: codePersonnel,
         nom: nomPersonnel,
         prenom: prenomPersonnel,
         fonction: nomFonctionPersonnel,
@@ -1833,23 +1854,21 @@ async function createStudentPDF(
     if (!nomPersonnel) nomPersonnel = "Responsable";
     if (!prenomPersonnel) prenomPersonnel = "Pédagogique";
     if (!nomFonctionPersonnel) nomFonctionPersonnel = "Responsable Pédagogique";
-    if (!codePersonnelGestionnaire && campus && campus.CODE_PERSONNEL) {
-      codePersonnelGestionnaire = campus.CODE_PERSONNEL;
+    if (!codePersonnel && campus && campus.CODE_PERSONNEL) {
+      codePersonnel = campus.CODE_PERSONNEL;
     }
 
     // Debug log
     console.log("Final signature data:", {
-      code: codePersonnelGestionnaire,
+      code: codePersonnel,
       nom: nomPersonnel,
       prenom: prenomPersonnel,
       fonction: nomFonctionPersonnel,
     });
 
     // Obtenir le nom du fichier de signature correspondant au code personnel
-    const signatureFilename = getSignatureFilename(codePersonnelGestionnaire);
-    console.log(
-      `Searching signature for code ${codePersonnelGestionnaire}, found: ${signatureFilename}`
-    );
+    const signatureFilename = getSignatureFilename(codePersonnel);
+    console.log(`Searching signature for code ${codePersonnel}, found: ${signatureFilename}`);
 
     // Si un fichier de signature est disponible pour ce code personnel
     // Si un fichier de signature est disponible pour ce code personnel
@@ -1940,7 +1959,7 @@ async function createStudentPDF(
         });
 
         // Afficher le code personnel
-        page.drawText(`Code personnel: ${codePersonnelGestionnaire}`, {
+        page.drawText(`Code personnel: ${codePersonnel}`, {
           x: pageWidth - margin - 200,
           y: signatureY - 34,
           size: 7,
