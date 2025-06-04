@@ -1392,7 +1392,7 @@ async function createStudentPDF(
       if (etat === "R") {
         etatColor = rgb(0.93, 0.43, 0.41); // #ed6d68 en RGB pour "R"
       } else if (etat === "C") {
-        etatColor = rgb(0.04, 0.36, 0.51); // #0a5d81 en RGB pour "C"
+        etatColor = rgb(0.04, 0.36, 0.51); // #156082 en RGB pour "C"
       } else {
         etatColor = rgb(0, 0, 0); // Noir pour les autres états
       }
@@ -1471,7 +1471,7 @@ async function createStudentPDF(
         if (moyenneGeneraleValue !== null && !isNaN(moyenneGeneraleValue)) {
           moyenneGenerale =
             typeof moyenneGeneraleValue.toFixed === "function"
-              ? moyenneGeneraleValue.toFixed(2)
+              ? moyenneGeneraleValue.toFixed(2).replace(".", ",") // ← Ajout du .replace(".", ",")
               : moyenneGeneraleValue.toString();
         }
       } catch (error) {

@@ -412,7 +412,7 @@ export default function Home() {
         <div className="w-full max-w-md">
           <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-hidden">
             <div
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#0a5d81] to-[#003349] transition-all duration-300 ease-out"
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#156082] to-[#003349] transition-all duration-300 ease-out"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -428,11 +428,11 @@ export default function Home() {
         <Card className="w-full max-w-lg mx-4 shadow-none">
           <CardHeader className="pb-4 px-8">
             <div className="flex justify-center mb-2">
-              <div className="bg-gradient-to-r from-[#0a5d81] to-[#003349] rounded-full p-3">
+              <div className="bg-gradient-to-r from-[#156082] to-[#003349] rounded-full p-3">
                 <School className="w-6 h-6 text-white" />
               </div>
             </div>
-            <CardTitle className="text-2xl font-bold text-center bg-gradient-to-r from-[#0a5d81] to-[#003349] bg-clip-text text-transparent">
+            <CardTitle className="text-2xl font-bold text-center bg-gradient-to-r from-[#156082] to-[#003349] bg-clip-text text-transparent">
               Choisir les bulletins à éditer
             </CardTitle>
           </CardHeader>
@@ -453,7 +453,7 @@ export default function Home() {
                         value={field.value}
                       >
                         <FormControl>
-                          <SelectTrigger className="h-10 text-sm border-2 focus:border-[#0a5d81]">
+                          <SelectTrigger className="h-10 text-sm border-2 focus:border-[#156082]">
                             <SelectValue placeholder="Sélectionnez un campus" />
                           </SelectTrigger>
                         </FormControl>
@@ -479,7 +479,7 @@ export default function Home() {
                       <FormLabel className="text-md font-semibold text-gray-700">Groupe</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
-                          <SelectTrigger className="h-10 text-sm border-2 focus:border-[#0a5d81]">
+                          <SelectTrigger className="h-10 text-sm border-2 focus:border-[#156082]">
                             <SelectValue placeholder="Sélectionnez un groupe" />
                           </SelectTrigger>
                         </FormControl>
@@ -548,7 +548,7 @@ export default function Home() {
                         value={field.value}
                       >
                         <FormControl>
-                          <SelectTrigger className="h-10 text-sm border-2 focus:border-[#0a5d81]">
+                          <SelectTrigger className="h-10 text-sm border-2 focus:border-[#156082]">
                             <SelectValue placeholder="Sélectionnez une période" />
                           </SelectTrigger>
                         </FormControl>
@@ -570,7 +570,7 @@ export default function Home() {
                 />
                 <Button
                   type="submit"
-                  className="w-full h-10 text-sm font-bold bg-gradient-to-r from-[#0a5d81] to-[#003349] hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2 mt-2"
+                  className="w-full h-10 text-sm font-bold bg-gradient-to-r from-[#156082] to-[#003349] hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2 mt-2"
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? (

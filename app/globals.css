@@ -168,11 +168,11 @@
 }
 
 .bg-wtm-button-linear {
-  background-image: linear-gradient(93deg, #0a5d81, #003349);
+  background-image: linear-gradient(93deg, #156082, #003349);
 }
 
 .text-wtm-button-linear {
-  color: linear-gradient(93deg, #0a5d81, #003349);
+  color: linear-gradient(93deg, #156082, #003349);
 }
 
 .hover\:bg-wtm-button-linear-reverse:hover {
