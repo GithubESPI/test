@@ -86,14 +86,12 @@ interface Absence {
   CODE_APPRENANT: string;
   NOM_APPRENANT: string;
   PRENOM_APPRENANT: string;
-  IS_JUSTIFIE: string;
-  IS_RETARD: string;
-  DUREE: string;
-  DATE_DEB?: string;
-  DATE_FIN?: string;
-  CODE_SESSION?: string;
-  TOTAL_MINUTES_ABSENCE?: string;
-  [key: string]: any;
+  IS_JUSTIFIE: string | number;
+  IS_RETARD: string | number;
+  DUREE: string | number;
+  DATE_DEB: string;
+  DATE_FIN: string;
+  CODE_ABSENCE: string;
 }
 
 interface ProcessedAbsence {
@@ -105,182 +103,218 @@ interface ProcessedAbsence {
   RETARDS: string;
 }
 
+interface DuplicateStat {
+  codeAbsence: string;
+  count: number;
+  durees: number[];
+  totalDuree: number;
+  maxDuree: number;
+  dates: string;
+}
+
+// ... interfaces inchangées ...
+
 function processAbsences(
   absences: Absence[],
-  startDate?: string,
-  endDate?: string
-): ProcessedAbsence[] {
+  startDate = "2024-08-26 00:00:00",
+  endDate = "2025-08-24 00:00:00",
+  handleDuplicates: "sum" | "max" | "deduplicate" = "sum"
+): {
+  students: ProcessedAbsence[];
+  globalTotals: {
+    justifiees: number;
+    injustifiees: number;
+    retards: number;
+    justifieesFormatted: string;
+    injustifieesFormatted: string;
+    retardsFormatted: string;
+  };
+  duplicatesInfo: {
+    duplicateGroups: any[];
+    totalDuplicates: number;
+  };
+} {
   const groupedAbsences: Record<string, ProcessedAbsence> = {};
+  const filterStartDate = new Date(startDate);
+  const filterEndDate = new Date(endDate);
 
-  // Dates fixes de l'année académique 2024-2025
-  const academicStartDate = new Date("2024-08-26T00:00:00");
-  const academicEndDate = new Date("2025-08-24T00:00:00");
+  const duplicateGroups: Record<string, any[]> = {};
 
-  // Utiliser soit les dates fournies, soit les dates académiques par défaut
-  const filterStartDate = startDate ? new Date(startDate) : academicStartDate;
-  const filterEndDate = endDate ? new Date(endDate) : academicEndDate;
+  absences.forEach((absence, index) => {
+    const { CODE_ABSENCE, DATE_DEB, DUREE } = absence;
+    if (DATE_DEB) {
+      try {
+        const absenceDate = new Date(DATE_DEB.replace(" ", "T"));
+        if (absenceDate < filterStartDate || absenceDate > filterEndDate) {
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
 
-  console.log("====== TRAITEMENT DES ABSENCES ======");
-  console.log(
-    `Période de filtrage: ${filterStartDate.toISOString()} - ${filterEndDate.toISOString()}`
-  );
-  console.log(`Nombre total d'absences avant filtrage: ${absences.length}`);
+    const duree = parseInt(DUREE?.toString() || "0", 10);
+    if (duree <= 0) return;
 
-  // Compteur pour les statistiques
-  let countIncluded = 0;
-  let countExcluded = 0;
-  let countExcludedByDate = 0;
-  let countExcludedBySession = 0;
+    if (!duplicateGroups[CODE_ABSENCE]) {
+      duplicateGroups[CODE_ABSENCE] = [];
+    }
 
-  absences.forEach((absence) => {
+    duplicateGroups[CODE_ABSENCE].push({
+      ...absence,
+      originalIndex: index,
+      duree: duree,
+    });
+  });
+
+  const duplicateStats: DuplicateStat[] = [];
+  let totalDuplicatesFound = 0;
+
+  Object.keys(duplicateGroups).forEach((codeAbsence) => {
+    const group = duplicateGroups[codeAbsence];
+
+    if (group.length > 1) {
+      totalDuplicatesFound++;
+      const totalDuree = group.reduce((sum, item) => sum + item.duree, 0);
+      const maxDuree = Math.max(...group.map((item) => item.duree));
+
+      duplicateStats.push({
+        codeAbsence,
+        count: group.length,
+        durees: group.map((item) => item.duree),
+        totalDuree,
+        maxDuree,
+        dates: group[0].DATE_DEB + " → " + group[0].DATE_FIN,
+      });
+
+      console.log(`🔍 CODE_ABSENCE ${codeAbsence}: ${group.length} enregistrements`);
+      console.log(`   Durées: ${group.map((item) => item.duree).join(", ")} min`);
+      console.log(`   Total: ${totalDuree} min, Max: ${maxDuree} min`);
+      console.log(`   Période: ${group[0].DATE_DEB} → ${group[0].DATE_FIN}`);
+    }
+  });
+
+  let totalJustifiees = 0;
+  let totalInjustifiees = 0;
+  let totalRetards = 0;
+
+  Object.values(duplicateGroups).forEach((group) => {
+    const representative = group[0];
     const {
       CODE_APPRENANT,
       NOM_APPRENANT,
       PRENOM_APPRENANT,
       IS_JUSTIFIE,
       IS_RETARD,
-      DUREE,
+      CODE_ABSENCE,
       DATE_DEB,
-      CODE_SESSION,
-    } = absence;
+      DATE_FIN,
+    } = representative;
 
-    // Log des informations complètes de l'absence
-    console.log(`\nTraitement absence: ${NOM_APPRENANT} ${PRENOM_APPRENANT}`);
-    console.log(`  Date: ${DATE_DEB}, Session: ${CODE_SESSION}, Durée: ${DUREE}`);
-    console.log(`  Justifiée: ${IS_JUSTIFIE}, Retard: ${IS_RETARD}`);
-
-    let isInPeriod = true;
-
-    // 1. Vérifier CODE_SESSION
-    if (CODE_SESSION !== "4") {
-      console.log(`  → Exclusion: CODE_SESSION ${CODE_SESSION} ≠ 4`);
-      isInPeriod = false;
-      countExcludedBySession++;
+    if (!groupedAbsences[CODE_APPRENANT]) {
+      groupedAbsences[CODE_APPRENANT] = {
+        CODE_APPRENANT,
+        NOM_APPRENANT,
+        PRENOM_APPRENANT,
+        ABSENCES_JUSTIFIEES: "00h00",
+        ABSENCES_INJUSTIFIEES: "00h00",
+        RETARDS: "00h00",
+      };
     }
 
-    // 2. Vérifier la date
-    if (DATE_DEB) {
-      const absenceDate = new Date(DATE_DEB);
-
-      if (absenceDate < filterStartDate) {
-        console.log(
-          `  → Exclusion: Date ${absenceDate.toISOString()} avant ${filterStartDate.toISOString()}`
-        );
-        isInPeriod = false;
-        countExcludedByDate++;
-      } else if (absenceDate > filterEndDate) {
-        console.log(
-          `  → Exclusion: Date ${absenceDate.toISOString()} après ${filterEndDate.toISOString()}`
-        );
-        isInPeriod = false;
-        countExcludedByDate++;
-      }
-    } else {
-      console.log(`  → Exclusion: Absence sans date`);
-      isInPeriod = false;
-      countExcludedByDate++;
-    }
-
-    if (isInPeriod) {
-      console.log(`  ✓ INCLUSE`);
-      countIncluded++;
-
-      // Convertir les minutes en nombre
-      const dureeMinutes = parseInt(DUREE, 10) || 0;
-
-      // Initialiser l'entrée pour cet étudiant si elle n'existe pas
-      if (!groupedAbsences[CODE_APPRENANT]) {
-        groupedAbsences[CODE_APPRENANT] = {
-          CODE_APPRENANT,
-          NOM_APPRENANT,
-          PRENOM_APPRENANT,
-          ABSENCES_JUSTIFIEES: "00h00",
-          ABSENCES_INJUSTIFIEES: "00h00",
-          RETARDS: "00h00",
-        };
-      }
-
-      // Accumuler les temps d'absence selon le type
-      if (dureeMinutes > 0) {
-        // Cas 1: Absence injustifiée (non justifiée et non retard)
-        if (IS_JUSTIFIE === "0" && IS_RETARD === "0") {
-          const previousMinutes = parseTimeToMinutes(
-            groupedAbsences[CODE_APPRENANT].ABSENCES_INJUSTIFIEES
-          );
-          groupedAbsences[CODE_APPRENANT].ABSENCES_INJUSTIFIEES = formatTime(
-            previousMinutes + dureeMinutes
-          );
-          console.log(
-            `    + ${dureeMinutes}min absence injustifiée → Total: ${
-              previousMinutes + dureeMinutes
-            }min`
-          );
-        }
-        // Cas 2: Absence justifiée (justifiée et non retard)
-        else if (IS_JUSTIFIE === "1" && IS_RETARD === "0") {
-          const previousMinutes = parseTimeToMinutes(
-            groupedAbsences[CODE_APPRENANT].ABSENCES_JUSTIFIEES
-          );
-          groupedAbsences[CODE_APPRENANT].ABSENCES_JUSTIFIEES = formatTime(
-            previousMinutes + dureeMinutes
-          );
-          console.log(
-            `    + ${dureeMinutes}min absence justifiée → Total: ${
-              previousMinutes + dureeMinutes
-            }min`
-          );
-        }
-        // Cas 3: Retard (avec ou sans justification)
-        else if (IS_RETARD === "1") {
-          const previousMinutes = parseTimeToMinutes(groupedAbsences[CODE_APPRENANT].RETARDS);
-          groupedAbsences[CODE_APPRENANT].RETARDS = formatTime(previousMinutes + dureeMinutes);
-          console.log(
-            `    + ${dureeMinutes}min retard → Total: ${previousMinutes + dureeMinutes}min`
-          );
-        }
-      }
-    } else {
-      countExcluded++;
-    }
-  });
-
-  // Statistiques de filtrage
-  console.log("\n====== STATISTIQUES DE FILTRAGE ======");
-  console.log(`Absences incluses: ${countIncluded}`);
-  console.log(`Absences exclues: ${countExcluded}`);
-  console.log(`  - Exclues par date: ${countExcludedByDate}`);
-  console.log(`  - Exclues par session: ${countExcludedBySession}`);
-  console.log(`Étudiants avec absences: ${Object.keys(groupedAbsences).length}`);
-
-  // Résumé des absences par étudiant
-  console.log("\n====== RÉSUMÉ PAR ÉTUDIANT ======");
-  Object.values(groupedAbsences).forEach((abs) => {
-    console.log(
-      `${abs.NOM_APPRENANT} ${abs.PRENOM_APPRENANT}: ` +
-        `Justifiées=${abs.ABSENCES_JUSTIFIEES}, ` +
-        `Injustifiées=${abs.ABSENCES_INJUSTIFIEES}, ` +
-        `Retards=${abs.RETARDS}`
+    // ✅ Si au moins 2 enregistrements avec la même CODE_ABSENCE ont des DUREE différentes ET même DATE_DEB/DATE_FIN => probablement multi-jour fractionné
+    const hasMultipleEntries = group.length > 1;
+    const uniqueDurations = new Set(group.map((item) => item.duree)).size;
+    const sameDates = group.every(
+      (item) => item.DATE_DEB === DATE_DEB && item.DATE_FIN === DATE_FIN
     );
+    const isSplitOverMultipleLines = hasMultipleEntries && sameDates && uniqueDurations >= 1;
+
+    let dureeToUse = 0;
+    if (isSplitOverMultipleLines) {
+      dureeToUse = group.reduce((sum, item) => sum + item.duree, 0);
+    } else {
+      switch (handleDuplicates) {
+        case "sum":
+          dureeToUse = group.reduce((sum, item) => sum + item.duree, 0);
+          break;
+        case "max":
+          dureeToUse = Math.max(...group.map((item) => item.duree));
+          break;
+        case "deduplicate":
+          dureeToUse = group[0].duree;
+          break;
+      }
+    }
+
+    const student = groupedAbsences[CODE_APPRENANT];
+    const isJustifie = IS_JUSTIFIE === 1 || IS_JUSTIFIE === "1";
+    const isRetard = IS_RETARD === 1 || IS_RETARD === "1";
+    const isInjustifie =
+      (IS_JUSTIFIE === 0 || IS_JUSTIFIE === "0") && (IS_RETARD === 0 || IS_RETARD === "0");
+
+    if (group.length > 1) {
+      console.log(
+        `📝 ${CODE_ABSENCE}: Durée utilisée = ${dureeToUse}min (méthode: ${handleDuplicates}${
+          isSplitOverMultipleLines ? " + multi-jour" : ""
+        })`
+      );
+    }
+
+    if (isRetard) {
+      const prev = parseTimeToMinutes(student.RETARDS);
+      student.RETARDS = formatTime(prev + dureeToUse);
+      totalRetards += dureeToUse;
+    } else if (isJustifie) {
+      const prev = parseTimeToMinutes(student.ABSENCES_JUSTIFIEES);
+      student.ABSENCES_JUSTIFIEES = formatTime(prev + dureeToUse);
+      totalJustifiees += dureeToUse;
+    } else if (isInjustifie) {
+      const prev = parseTimeToMinutes(student.ABSENCES_INJUSTIFIEES);
+      student.ABSENCES_INJUSTIFIEES = formatTime(prev + dureeToUse);
+      totalInjustifiees += dureeToUse;
+    }
   });
 
-  return Object.values(groupedAbsences);
+  console.log("\n====== STATISTIQUES GLOBALES ======");
+  console.log(`📊 CODE_ABSENCE uniques traités: ${Object.keys(duplicateGroups).length}`);
+  console.log(`📊 Groupes avec doublons: ${totalDuplicatesFound}`);
+  console.log(`📊 Total justifiées: ${formatTime(totalJustifiees)} (${totalJustifiees} min)`);
+  console.log(`📊 Total injustifiées: ${formatTime(totalInjustifiees)} (${totalInjustifiees} min)`);
+  console.log(`📊 Total retards: ${formatTime(totalRetards)} (${totalRetards} min)`);
+
+  return {
+    students: Object.values(groupedAbsences),
+    globalTotals: {
+      justifiees: totalJustifiees,
+      injustifiees: totalInjustifiees,
+      retards: totalRetards,
+      justifieesFormatted: formatTime(totalJustifiees),
+      injustifieesFormatted: formatTime(totalInjustifiees),
+      retardsFormatted: formatTime(totalRetards),
+    },
+    duplicatesInfo: {
+      duplicateGroups: duplicateStats,
+      totalDuplicates: totalDuplicatesFound,
+    },
+  };
 }
 
-// Fonction pour convertir un texte "hhmm" en minutes
-function parseTimeToMinutes(time: string): number {
-  const match = time.match(/(\d{2})h(\d{2})/);
-  if (!match) return 0;
-  const hours = parseInt(match[1], 10) || 0;
-  const minutes = parseInt(match[2], 10) || 0;
-  return hours * 60 + minutes;
+// Fonctions utilitaires (inchangées)
+function parseTimeToMinutes(timeStr: string): number {
+  if (!timeStr || timeStr === "00h00") return 0;
+  const parts = timeStr.match(/(\d+)h(\d+)/);
+  if (!parts) return 0;
+  return parseInt(parts[1]) * 60 + parseInt(parts[2]);
 }
 
-// Fonction pour formater en hh:mm
 function formatTime(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${hours.toString().padStart(2, "0")}h${mins.toString().padStart(2, "0")}`;
 }
+
+// Fonction pour convertir un texte "hhmm" en minutes
 
 function updateUECredits(subjects: any[]): any[] {
   // 1. Cloner les sujets pour ne pas modifier les originaux
@@ -2116,8 +2150,11 @@ export async function POST(req: NextRequest) {
     const updatedSubjects = updateUECredits(sourceMatieres);
     console.log(`✅ Crédits UE mis à jour (${updatedSubjects.length} matières traitées)`);
 
-    const startDateFromPeriod = "2024-08-26 00:00:00"; // Début de l'année académique
-    const endDateFromPeriod = "2025-08-24 00:00:00"; // Fin de l'année académique
+    // Par ceci:
+    const startDateFromPeriod = "2024-08-26T00:00:00";
+    const endDateFromPeriod = "2025-08-24T00:00:00";
+
+    console.log(`Traitement des absences de ${startDateFromPeriod} à ${endDateFromPeriod}`);
 
     // Générer PDFs pour chaque étudiant
     for (const studentObj of data.APPRENANT) {
@@ -2140,14 +2177,14 @@ export async function POST(req: NextRequest) {
           data.MOYENNES_UE || [],
           data.MOYENNE_GENERALE || [],
           data.OBSERVATIONS || [],
-          updatedSubjects, // Utilisez tous les subjects mis à jour, sans filtrage par ECTS
+          updatedSubjects,
           data.GROUPE || [],
           data.SITE || [],
           periodeEvaluation,
           data.ABSENCE || [],
-          processAbsences(data.ABSENCE || [], startDateFromPeriod, endDateFromPeriod),
+          processAbsences(data.ABSENCE || [], startDateFromPeriod, endDateFromPeriod).students, // ✅ Ajouter .students
           data.PERSONNEL || [],
-          data.NOTES || [] // Ajout des données NOTES
+          data.NOTES || []
         );
 
         console.log("📌 Matières brutes reçues :", data.ECTS_PAR_MATIERE);

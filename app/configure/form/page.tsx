@@ -274,6 +274,10 @@ export default function Home() {
         values.periodeEvaluation = selectedPeriod.NOM_PERIODE_EVALUATION;
       }
 
+      // 🆕 Récupérer les dates de la période sélectionnée
+      const selectedPeriod = periods.find((p) => p.CODE_PERIODE_EVALUATION === values.semester);
+      if (!selectedPeriod) throw new Error("Période d'évaluation non trouvée");
+
       // Stocker le nom du groupe sélectionné
       const selectedGroup = groups.find((group) => group.id.toString() === values.group);
       if (selectedGroup) {
@@ -286,13 +290,21 @@ export default function Home() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          campus: selectedCampus.codeSite.toString(), // Utiliser codeSite au lieu de l'ID
+          campus: selectedCampus.codeSite.toString(),
           group: values.group,
           periodeEvaluationCode: values.periodeEvaluationCode,
           periodeEvaluation: values.periodeEvaluation,
           semester: values.semester,
+          // 🆕 Ajouter les dates de période
+          periodeEvaluationDates: {
+            DATE_DEB: selectedPeriod.DATE_DEB,
+            DATE_FIN: selectedPeriod.DATE_FIN,
+            CODE_PERIODE_EVALUATION: selectedPeriod.CODE_PERIODE_EVALUATION,
+            NOM_PERIODE_EVALUATION: selectedPeriod.NOM_PERIODE_EVALUATION,
+          },
         }),
       });
+
       const data = await response.json();
 
       if (!response.ok) {
@@ -300,6 +312,7 @@ export default function Home() {
       }
 
       console.log("✅ Données récupérées:", data);
+      console.log("📅 Dates de période transmises:", selectedPeriod);
 
       // Stocker les données dans à la fois la ref et l'état
       responseDataRef.current = data.data;
@@ -331,20 +344,6 @@ export default function Home() {
 
     try {
       setIsGeneratingPDF(true);
-      // Vérification supplémentaire
-
-      console.log("Données pour génération PDF:", dataToUse);
-      console.log("APPRENANT:", dataToUse.APPRENANT?.length || 0);
-      console.log("MOYENNES_UE:", dataToUse.MOYENNES_UE?.length || 0);
-      console.log("MOYENNE_GENERALE:", dataToUse.MOYENNE_GENERALE?.length || 0);
-      console.log("OBSERVATIONS:", dataToUse.OBSERVATIONS?.length || 0);
-      console.log("ECTS_PAR_MATIERE:", dataToUse.ECTS_PAR_MATIERE?.length || 0);
-      console.log("GROUPE:", dataToUse.GROUPE?.length || 0);
-      console.log("SITE:", dataToUse.SITE?.length || 0);
-
-      if (!dataToUse.MOYENNES_UE || dataToUse.MOYENNES_UE.length === 0) {
-        console.warn("Attention: Aucune moyenne trouvée pour les UE");
-      }
 
       // Assurez-vous que les données critiques sont bien définies
       const selectedPeriod = form.getValues("periodeEvaluation") || "";
@@ -356,15 +355,11 @@ export default function Home() {
         throw new Error("Nom du groupe non défini");
       }
 
-      // Log des données pour le débogage
-      console.log("Envoi des données pour génération PDF:", {
-        apprenantCount: dataToUse.APPRENANT?.length || 0,
-        moyennesUECount: dataToUse.MOYENNES_UE?.length || 0,
-        period: selectedPeriod,
-        groupName: selectedGroupName,
-      });
-      console.log("Période sélectionnée:", selectedPeriod);
-      console.log("Nom du groupe:", selectedGroupName);
+      // 🆕 Récupérer les dates de la période pour les transmettre à l'API PDF
+      const selectedPeriodCode = form.getValues("semester");
+      const periodWithDates = periods.find((p) => p.CODE_PERIODE_EVALUATION === selectedPeriodCode);
+
+      console.log("📅 Dates de période pour PDF:", periodWithDates);
 
       const response = await fetch("/api/pdf", {
         method: "POST",
@@ -375,6 +370,15 @@ export default function Home() {
           data: dataToUse,
           periodeEvaluation: selectedPeriod,
           groupName: selectedGroupName,
+          // 🆕 Ajouter les dates de période pour le calcul des absences
+          periodeEvaluationDates: periodWithDates
+            ? {
+                DATE_DEB: periodWithDates.DATE_DEB,
+                DATE_FIN: periodWithDates.DATE_FIN,
+                CODE_PERIODE_EVALUATION: periodWithDates.CODE_PERIODE_EVALUATION,
+                NOM_PERIODE_EVALUATION: periodWithDates.NOM_PERIODE_EVALUATION,
+              }
+            : null,
         }),
       });
 
