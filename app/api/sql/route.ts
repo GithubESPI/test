@@ -144,7 +144,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const nomGroupe = groupResults[0].NOM_GROUPE; // Extraction du NOM_GROUPE
+    //const nomGroupe = groupResults[0].NOM_GROUPE; // Extraction du NOM_GROUPE
+    const nomGroupe = groupResults[0].NOM_GROUPE;
     const groupNumQuery = groupResults[0].NUMERO_ANNEE; // Extraction du NUMERO_ANNEE
     const codeFormation = groupResults[0].CODE_FORMATION;
 
@@ -307,14 +308,17 @@ export async function POST(request: Request) {
         INNER JOIN APPRENANT ap ON i.CODE_APPRENANT = ap.CODE_APPRENANT
         INNER JOIN SESSION s ON i.CODE_SESSION = s.CODE_SESSION
         WHERE g.CODE_GROUPE = ${group}
-          AND g.NOM_GROUPE = '${nomGroupe}'
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
-          AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
           AND r.CODE_SESSION = 4
           AND g.CODE_SITE = ${campus}
-          AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
+          ${
+            nomGroupe && nomGroupe.includes("Rentrée décalée")
+              ? `AND r.CODE_ANNEE = ${codeAnnee}`
+              : `AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))`
+          }
         ORDER BY ap.NOM_APPRENANT, ap.PRENOM_APPRENANT, rd.NUM_ORDRE, m.NOM_MATIERE
       `,
+
       // Ajoutez cette nouvelle requête à votre objet queries
       OBSERVATIONS: `
       SELECT 

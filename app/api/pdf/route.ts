@@ -514,7 +514,222 @@ function getSignatureFilename(codePersonnel: string): string | null {
 }
 
 // Function to create a PDF for a student
-// Function to create a PDF for a student
+// Ajouter ces fonctions avant createStudentPDF
+function isTPGroup(groupInfo: GroupInfo[]): boolean {
+  return groupInfo.length > 0 && !!groupInfo[0].NOM_GROUPE?.includes("TP");
+}
+
+function drawTableHeader(
+  page: any,
+  currentY: number,
+  col1X: number,
+  col2X: number,
+  col3X: number,
+  col4X: number,
+  col1Width: number,
+  col2Width: number,
+  col3Width: number,
+  col4Width: number,
+  tableWidth: number,
+  rowHeight: number,
+  fontSize: number,
+  boldFont: any,
+  espiGray: any,
+  espiBlue: any,
+  rgb: any
+): number {
+  // Dessiner l'en-tête du tableau
+  page.drawRectangle({
+    x: col1X,
+    y: currentY - rowHeight,
+    width: tableWidth,
+    height: rowHeight,
+    borderColor: espiGray,
+    borderWidth: 1,
+    color: espiBlue,
+  });
+
+  // Colonnes de l'en-tête
+  page.drawLine({
+    start: { x: col2X, y: currentY },
+    end: { x: col2X, y: currentY - rowHeight },
+    thickness: 1,
+    color: espiGray,
+  });
+
+  page.drawLine({
+    start: { x: col3X, y: currentY },
+    end: { x: col3X, y: currentY - rowHeight },
+    thickness: 1,
+    color: espiGray,
+  });
+
+  page.drawLine({
+    start: { x: col4X, y: currentY },
+    end: { x: col4X, y: currentY - rowHeight },
+    thickness: 1,
+    color: espiGray,
+  });
+
+  // Texte de l'en-tête
+  const enseignementsText = "Enseignements";
+  const enseignementsWidth = boldFont.widthOfTextAtSize(enseignementsText, fontSize);
+  const col1Center = col1X + col1Width / 2 - enseignementsWidth / 2;
+
+  page.drawText(enseignementsText, {
+    x: col1Center,
+    y: currentY - 15,
+    size: fontSize,
+    font: boldFont,
+    color: rgb(1, 1, 1),
+  });
+
+  const moyenneText = "Moyenne";
+  const moyenneWidth = boldFont.widthOfTextAtSize(moyenneText, fontSize);
+  const col2Center = col2X + col2Width / 2 - moyenneWidth / 2;
+
+  page.drawText(moyenneText, {
+    x: col2Center,
+    y: currentY - 15,
+    size: fontSize,
+    font: boldFont,
+    color: rgb(1, 1, 1),
+  });
+
+  const ectsText = "Total ECTS";
+  const ectsWidth = boldFont.widthOfTextAtSize(ectsText, fontSize);
+  const col3Center = col3X + col3Width / 2 - ectsWidth / 2;
+
+  page.drawText(ectsText, {
+    x: col3Center,
+    y: currentY - 15,
+    size: fontSize,
+    font: boldFont,
+    color: rgb(1, 1, 1),
+  });
+
+  const etatText = "État";
+  const etatWidth = boldFont.widthOfTextAtSize(etatText, fontSize);
+  const col4Center = col4X + col4Width / 2 - etatWidth / 2;
+
+  page.drawText(etatText, {
+    x: col4Center,
+    y: currentY - 15,
+    size: fontSize,
+    font: boldFont,
+    color: rgb(1, 1, 1),
+  });
+
+  return currentY - rowHeight;
+}
+
+function handleTPPageBreak(
+  isTPGroupFlag: boolean,
+  currentSubject: any,
+  ue4MatiereCounter: number,
+  shouldBreakForUE4: boolean, // ✅ Paramètre renommé et simplifié
+  currentY: number,
+  pdfDoc: any,
+  pageHeight: number,
+  margin: number,
+  col1X: number,
+  col2X: number,
+  col3X: number,
+  col4X: number,
+  col1Width: number,
+  col2Width: number,
+  col3Width: number,
+  col4Width: number,
+  tableWidth: number,
+  rowHeight: number,
+  fontSize: number,
+  boldFont: any,
+  espiGray: any,
+  espiBlue: any,
+  rgb: any
+): { shouldBreak: boolean; newPage?: any; newCurrentY?: number } {
+  // Pour les groupes TP : saut de page à partir de la 3ème matière de l'UE 4
+  const needsPageBreak =
+    isTPGroupFlag &&
+    (shouldBreakForUE4 || // Saut contrôlé pour la 4ème UE 4
+      currentY < margin + 3 * rowHeight); // Espace insuffisant seulement
+
+  if (needsPageBreak) {
+    const reason = shouldBreakForUE4
+      ? `4ème matière UE 4: ${currentSubject.NOM_MATIERE}`
+      : "Espace insuffisant";
+
+    console.log(`🔄 Saut de page forcé pour groupe TP - Raison: ${reason}`);
+
+    const newPage = pdfDoc.addPage([595.28, 841.89]);
+    let newCurrentY = pageHeight - margin;
+
+    // Redessiner l'en-tête du tableau sur la nouvelle page
+    newCurrentY = drawTableHeader(
+      newPage,
+      newCurrentY,
+      col1X,
+      col2X,
+      col3X,
+      col4X,
+      col1Width,
+      col2Width,
+      col3Width,
+      col4Width,
+      tableWidth,
+      rowHeight,
+      fontSize,
+      boldFont,
+      espiGray,
+      espiBlue,
+      rgb
+    );
+
+    return { shouldBreak: true, newPage, newCurrentY };
+  }
+  return { shouldBreak: false };
+}
+
+function isUE4RelatedSubject(
+  subject: any,
+  ueMap: Map<string, { ue: any; matieres: any[] }>
+): boolean {
+  // Vérifier si c'est directement l'UE 4
+  if (subject.NOM_MATIERE && subject.NOM_MATIERE.includes("UE 4")) {
+    return true;
+  }
+
+  // Vérifier si c'est une matière appartenant à l'UE 4
+  for (const [, { ue, matieres }] of ueMap) {
+    if (ue.NOM_MATIERE && ue.NOM_MATIERE.includes("UE 4")) {
+      if (matieres.some((m) => m.CODE_MATIERE === subject.CODE_MATIERE)) {
+        return true;
+      }
+    }
+  }
+
+  // Vérifier également avec la liste des matières typiques de l'UE 4
+  const ue4MatiereNames = [
+    "Communication Digitale et Orale",
+    "ESPI Career Services",
+    "ESPI Inside",
+    "Real Estate English",
+    "Rencontres de l'Immobilier",
+    "Immersion Professionnelle",
+    "Projet Voltaire",
+    "Real Estate English & TOEFL",
+    "Mémoire de Recherche",
+    "Méthodologie de la Recherche",
+    "Mobilité Internationale",
+    "Techniques de Négociation",
+    "Real Estate Industry Overview",
+    "Dissertation Methodology",
+    "Outils de Représentation Spatiale", // ✅ AJOUT manquant
+  ];
+
+  return ue4MatiereNames.some((name) => subject.NOM_MATIERE && subject.NOM_MATIERE.includes(name));
+}
+
 async function createStudentPDF(
   student: StudentData,
   grades: StudentGrade[],
@@ -1108,7 +1323,12 @@ async function createStudentPDF(
           NUM_ORDRE: subject.NUM_ORDRE || "999",
         };
       })
-      .sort((a, b) => parseInt(a.NUM_ORDRE, 10) - parseInt(b.NUM_ORDRE, 10));
+      .sort((a, b) => parseInt(a.NUM_ORDRE, 10) - parseInt(b.NUM_ORDRE, 10)); // Compteur de matières affichées
+
+    const isTPGroupFlag = isTPGroup(groupInfo);
+    let matiereCounter = 0;
+    let ue4MatiereCounter = 0;
+    let hasAlreadyBrokenPage = false; // ✅ NOUVEAU FLAG
 
     // Puis utilisez allSubjects pour mettre à jour les ECTS
     for (const subject of allSubjects) {
@@ -1130,6 +1350,7 @@ async function createStudentPDF(
     for (const [ueCode] of ueMap) {
       ueEctsMap.set(ueCode, 0);
     }
+    // Le ueCode EST utilisé dans ueEctsMap.set(), donc l'erreur pourrait être ailleurs
 
     // Calculer la somme des ECTS pour chaque UE
     for (const subject of allSubjects) {
@@ -1164,6 +1385,58 @@ async function createStudentPDF(
 
     for (const subject of allSubjects) {
       const isUE = subject.NOM_MATIERE.startsWith("UE");
+      // ✅ Incrémenter le compteur UE 4 si nécessaire
+      if (isUE4RelatedSubject(subject, ueMap)) {
+        ue4MatiereCounter++;
+        console.log(
+          `📊 Matière UE 4 détectée: ${subject.NOM_MATIERE} (compteur: ${ue4MatiereCounter})`
+        );
+      }
+
+      const shouldBreakForUE4 =
+        isTPGroupFlag &&
+        isUE4RelatedSubject(subject, ueMap) &&
+        ue4MatiereCounter === 4 &&
+        !hasAlreadyBrokenPage;
+
+      // Éviter plusieurs sauts de page
+      const pageBreakResult = handleTPPageBreak(
+        isTPGroupFlag,
+        subject,
+        ue4MatiereCounter,
+        shouldBreakForUE4, // ✅ Paramètre modifié
+        currentY,
+        pdfDoc,
+        pageHeight,
+        margin,
+        col1X,
+        col2X,
+        col3X,
+        col4X,
+        col1Width,
+        col2Width,
+        col3Width,
+        col4Width,
+        tableWidth,
+        rowHeight,
+        fontSize,
+        boldFont,
+        espiGray,
+        espiBlue,
+        rgb
+      );
+
+      // ✅ Marquer que le saut a été fait
+      if (pageBreakResult.shouldBreak) {
+        page = pageBreakResult.newPage!;
+        currentY = pageBreakResult.newCurrentY!;
+        hasAlreadyBrokenPage = true; // ✅ IMPORTANT
+        console.log(`✅ Saut de page effectué pour groupe TP à la matière: ${subject.NOM_MATIERE}`);
+      }
+
+      // Incrémenter le compteur de matières
+      matiereCounter++;
+      console.log(`Matière ${matiereCounter}: ${subject.NOM_MATIERE}`);
 
       // Définir la couleur de fond
       const backgroundColor = isUE ? espiGray : undefined;
