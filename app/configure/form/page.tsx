@@ -501,7 +501,9 @@ export default function Home() {
                                 group.label.startsWith(prefix)
                               );
                               const containsExcludedTerm =
-                                group.label.includes("RP") || group.label.includes("Césure");
+                                group.label.includes("RP") ||
+                                group.label.includes("Césure") ||
+                                group.label.includes("Rentrée décalée");
 
                               return !startsWithExcludedPrefix && !containsExcludedTerm;
                             })
