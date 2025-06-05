@@ -486,7 +486,6 @@ export default function Home() {
                         <SelectContent>
                           {groups
                             .filter((group) => {
-                              // Liste des préfixes à exclure
                               const prefixesToExclude = [
                                 "P-BTS1",
                                 "M-BTS1",
@@ -496,10 +495,15 @@ export default function Home() {
                                 "B-BTS1",
                                 "MP-BTS1",
                               ];
-                              // Vérifie si le label du groupe commence par l'un des préfixes à exclure
-                              return !prefixesToExclude.some((prefix) =>
+
+                              // Vérifie si le nom commence par un des préfixes ou contient "RP" ou "Césure"
+                              const startsWithExcludedPrefix = prefixesToExclude.some((prefix) =>
                                 group.label.startsWith(prefix)
                               );
+                              const containsExcludedTerm =
+                                group.label.includes("RP") || group.label.includes("Césure");
+
+                              return !startsWithExcludedPrefix && !containsExcludedTerm;
                             })
                             .map((group) => (
                               <SelectItem
