@@ -1662,9 +1662,7 @@ async function createStudentPDF(
 
       // Déterminer la couleur selon l'état
       let etatColor;
-      if (etat === "NV") {
-        etatColor = rgb(0.93, 0.43, 0.41); // #ed6d68 en RGB pour "NV"
-      } else if (etat === "C") {
+      if (etat === "C") {
         etatColor = rgb(0.04, 0.36, 0.51); // #156082 en RGB pour "C"
       } else {
         etatColor = rgb(0, 0, 0); // Noir pour les autres états
