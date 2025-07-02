@@ -11,7 +11,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 // Modification de la fonction getEtatUE pour gérer l'exception de l'UE 4
 function getEtatUE(etatsMatieres: string[]): string {
   // Si une seule matière est NV ou R, l'UE entière est NV
-  if (etatsMatieres.includes("NV") || etatsMatieres.includes("R")) {
+  if (etatsMatieres.includes("NV") || etatsMatieres.includes("NV")) {
     return "NV";
   } else if (etatsMatieres.includes("C")) {
     return "VA";
@@ -827,7 +827,7 @@ async function createStudentPDF(
           if (moyenneValue >= 10) {
             matiereEtats.set(grade.CODE_MATIERE, "VA");
           } else if (moyenneValue < 8) {
-            matiereEtats.set(grade.CODE_MATIERE, "R");
+            matiereEtats.set(grade.CODE_MATIERE, "NV");
           } else {
             matiereEtats.set(grade.CODE_MATIERE, "TEMP_8_10");
           }
@@ -882,7 +882,7 @@ async function createStudentPDF(
       // 1. Compter les matières par état (avant modifications)
       for (const matiere of matieres) {
         const etat = matiereEtats.get(matiere.CODE_MATIERE);
-        if (etat === "R") countR++;
+        if (etat === "NV") countR++;
         else if (etat === "TEMP_8_10") count8_10++;
         else if (etat === "VA") countVA++;
         else if (etat === "C") countC++;
@@ -897,7 +897,7 @@ async function createStudentPDF(
         if (countR > 0) {
           for (const matiere of matieres) {
             if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
-              matiereEtats.set(matiere.CODE_MATIERE, "R");
+              matiereEtats.set(matiere.CODE_MATIERE, "NV");
               console.log(
                 `Matière ${matiere.NOM_MATIERE}: mise en R car UE contient des matières en R`
               );
@@ -905,7 +905,7 @@ async function createStudentPDF(
           }
         } else if (matieres.length === 1 && count8_10 === 1) {
           const matiere = matieres[0];
-          matiereEtats.set(matiere.CODE_MATIERE, "R");
+          matiereEtats.set(matiere.CODE_MATIERE, "NV");
           console.log(
             `Matière ${matiere.NOM_MATIERE}: mise en R car UE n'a qu'une seule matière entre 8 et 10`
           );
@@ -921,7 +921,7 @@ async function createStudentPDF(
         } else {
           for (const matiere of matieres) {
             if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
-              matiereEtats.set(matiere.CODE_MATIERE, "R");
+              matiereEtats.set(matiere.CODE_MATIERE, "NV");
               console.log(`Matière ${matiere.NOM_MATIERE}: mise en R (cas par défaut)`);
             }
           }
@@ -980,7 +980,7 @@ async function createStudentPDF(
         const hasNVorR = matieres.some((m) => {
           const etat = matiereEtats.get(m.CODE_MATIERE);
           console.log(`Matière de l'UE 4: ${m.NOM_MATIERE}, état: ${etat}`);
-          return etat === "NV" || etat === "R";
+          return etat === "NV" || etat === "NV";
         });
 
         // Vérifier également les matières qui pourraient ne pas être correctement associées
@@ -1003,7 +1003,7 @@ async function createStudentPDF(
 
         const hasAdditionalNVorR = Array.from(matiereEtats.entries()).some(
           ([codeMatiere, etat]) => {
-            if (etat !== "NV" && etat !== "R") return false;
+            if (etat !== "NV" && etat !== "NV") return false;
 
             const matiere = subjects.find(
               (s) => s.CODE_APPRENANT === student.CODE_APPRENANT && s.CODE_MATIERE === codeMatiere
@@ -1042,7 +1042,7 @@ async function createStudentPDF(
       if (subject.CODE_APPRENANT === student.CODE_APPRENANT) {
         const etat = matiereEtats.get(subject.CODE_MATIERE);
         // Si la matière est en rattrapage et n'est pas une UE, mettre son ECTS à 0
-        if (etat === "R" && !subject.NOM_MATIERE.startsWith("UE")) {
+        if (etat === "NV" && !subject.NOM_MATIERE.startsWith("UE")) {
           console.log(`Mise à jour ECTS à 0 pour matière en rattrapage: ${subject.NOM_MATIERE}`);
           subject.CREDIT_ECTS = 0;
         }
@@ -1532,7 +1532,7 @@ async function createStudentPDF(
             const moyenneTextuelle = String(subject.MOYENNE || "")
               .toUpperCase()
               .trim();
-            if (["VA", "NV", "R", "C"].includes(moyenneTextuelle)) {
+            if (["VA", "NV", "NV", "C"].includes(moyenneTextuelle)) {
               matiereEtats.set(subject.CODE_MATIERE, moyenneTextuelle);
               console.log(
                 `✅ Rattrapage depuis moyenne brute pour ${subject.NOM_MATIERE} → ${moyenneTextuelle}`
@@ -1640,8 +1640,8 @@ async function createStudentPDF(
         }
       }
 
-      // Mettre à jour les ECTS à 0 si état est "NV" ou "R" et ce n'est pas une UE
-      if ((etat === "NV" || etat === "R") && !subject.NOM_MATIERE.startsWith("UE")) {
+      // Mettre à jour les ECTS à 0 si état est "NV" ou "NV" et ce n'est pas une UE
+      if ((etat === "NV" || etat === "NV") && !subject.NOM_MATIERE.startsWith("UE")) {
         subject.CREDIT_ECTS = 0;
         console.log(`Mise à jour ECTS à 0 pour matière avec état ${etat}: ${subject.NOM_MATIERE}`);
       }
@@ -1658,12 +1658,12 @@ async function createStudentPDF(
       });
 
       // Sélectionner la police en fonction de l'état
-      const etatFont = isUE ? boldFont : etat === "R" || etat === "C" ? boldFont : mainFont;
+      const etatFont = isUE ? boldFont : etat === "C" ? boldFont : mainFont;
 
       // Déterminer la couleur selon l'état
       let etatColor;
-      if (etat === "R") {
-        etatColor = rgb(0.93, 0.43, 0.41); // #ed6d68 en RGB pour "R"
+      if (etat === "NV") {
+        etatColor = rgb(0.93, 0.43, 0.41); // #ed6d68 en RGB pour "NV"
       } else if (etat === "C") {
         etatColor = rgb(0.04, 0.36, 0.51); // #156082 en RGB pour "C"
       } else {
@@ -2293,7 +2293,7 @@ async function createStudentPDF(
 
     // Déplacer la légende en pied de page
     const footerY = 25; // Position plus basse pour la légende
-    page.drawText("VA : Validé / NV : Non Validé / C : Compensation / R : Rattrapage", {
+    page.drawText("VA : Validé / NV : Non Validé / C : Compensation", {
       // Ajout d'espaces avant les deux points
       x: margin,
       y: footerY,
@@ -2404,10 +2404,10 @@ export async function POST(req: NextRequest) {
 
     // Utiliser les données MATIERE si disponibles, sinon ECTS_PAR_MATIERE
     const sourceMatieres = data.MATIERE || data.ECTS_PAR_MATIERE || [];
-    // Appliquer la règle : si une matière avec CODE_TYPE_MATIERE "3" a un état "R", ses ECTS passent à 0
+    // Appliquer la règle : si une matière avec CODE_TYPE_MATIERE "3" a un état "NV", ses ECTS passent à 0
     sourceMatieres.forEach((matiere: any) => {
       // Vérifier si la matière est en rattrapage
-      if (matiere.CODE_TYPE_MATIERE !== "2" && matiere.ETAT === "R") {
+      if (matiere.CODE_TYPE_MATIERE !== "2" && matiere.ETAT === "NV") {
         matiere.CREDIT_ECTS = 0; // Annuler les crédits si la matière est en rattrapage
         console.log(
           `Matière en rattrapage: ${matiere.NOM_MATIERE}, État: ${matiere.ETAT}, ECTS mis à 0`
