@@ -230,8 +230,6 @@ model Authenticator {
 - L’application doit pouvoir gérer la génération de bulletins pour une classe entière (jusqu’à 100 étudiants) sans crash.
 - Respect du RGPD : les données personnelles (noms, notes, commentaires) doivent être sécurisées et inaccessibles aux personnes non autorisées.
 
-```
-
 ## 🆘 12. Que faire si le site retourne une erreur 404 ?
 
 ### ✅ Étapes de vérification (Vercel)
@@ -253,5 +251,9 @@ model Authenticator {
 
 > Responsable technique : **Andy Vespuce**  
 > Mail : **a.vespuce@groupe-espi.fr**  
+
+```
+
+
 
 ```
