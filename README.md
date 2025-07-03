@@ -1,8 +1,9 @@
-# Cahier des Charges du Projet Next.js
+# 📄 Cahier des Charges – Application de Génération de Bulletins PDF (Next.js)
 
 ## Introduction
 
 Développer une application web permettant de générer automatiquement des **bulletins scolaires au format PDF** à partir d’un formulaire de sélection (campus, groupe, période évaluation), via une interface simple, rapide et sécurisée.
+🔗 **URL de production** : [https://bulletin.groupe-espi.fr](https://bulletin.groupe-espi.fr)
 
 ## 🎯 Objectifs du Projet
 
@@ -29,6 +30,12 @@ Développer une application web permettant de générer automatiquement des **bu
 
 ## ⚙️ Fonctionnalités principales
 
+## 🔐 4. Authentification
+
+- Basée sur Azure AD (via `NextAuth.js`)
+- Sessions persistantes
+- Stockage sécurisé via Prisma + PostgreSQL
+- 
 ### 🎓 Utilisateur
 
 - Authentification à son espace utilisateur via Azure AD
@@ -41,7 +48,10 @@ Développer une application web permettant de générer automatiquement des **bu
 - Extraction et récupération des données (requêteur Yparéo).
 - Création et modification des PDF.
 - Génération et enregistrement du `.zip`.
+- Génération PDF (`pdf-lib`)
 - Réponse avec lien de téléchargement.
+- Traitement des notes et états (VA, NV, C)
+
 
 ### 🔐 Intégration Yparéo
 
@@ -221,5 +231,27 @@ model Authenticator {
 - Respect du RGPD : les données personnelles (noms, notes, commentaires) doivent être sécurisées et inaccessibles aux personnes non autorisées.
 
 ```
+
+## 🆘 12. Que faire si le site retourne une erreur 404 ?
+
+### ✅ Étapes de vérification (Vercel)
+
+1. Accéder au dashboard : https://vercel.com/espi1 ( Se connecter avec le compte Github de GithubESPI )
+2. Projet : test / bulletin.groupe-espi.fr
+3. Vérifier :
+   - Le dernier déploiement est vert ✅
+   - Pas d’erreur `build failed`
+4. Cliquer sur `Deploy` > `Redeploy production`
+5. Vérifier que `app/page.tsx` existe
+6. Vérifier les routes d’API :
+   - `/api/pdf`, `/api/auth/session`, etc.
+7. Vérifier l’onglet **Domains** > reconnecter `bulletin.groupe-espi.fr` si besoin
+
+---
+
+## ✉️ Contact en cas d’urgence
+
+> Responsable technique : **Andy Vespuce**  
+> Mail : **a.vespuce@groupe-espi.fr**  
 
 ```
