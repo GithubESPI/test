@@ -274,14 +274,36 @@ export default function Home() {
         values.periodeEvaluation = selectedPeriod.NOM_PERIODE_EVALUATION;
       }
 
-      // 🆕 Récupérer les dates de la période sélectionnée
-      const selectedPeriod = periods.find((p) => p.CODE_PERIODE_EVALUATION === values.semester);
-      if (!selectedPeriod) throw new Error("Période d'évaluation non trouvée");
-
       // Stocker le nom du groupe sélectionné
       const selectedGroup = groups.find((group) => group.id.toString() === values.group);
       if (selectedGroup) {
         setSelectedGroupName(selectedGroup.label);
+      }
+
+      const selectedPeriod = periods.find((p) => p.CODE_PERIODE_EVALUATION === values.semester);
+      if (!selectedPeriod) throw new Error("Période d'évaluation non trouvée");
+
+      // ✅ Vérification de la cohérence entre groupe et période
+      const groupName = selectedGroup?.label.toUpperCase() || "";
+      const periodName = selectedPeriod.NOM_PERIODE_EVALUATION.toUpperCase();
+
+      const isGroupALT = groupName.includes("ALT");
+      const isGroupTP = groupName.includes("TP");
+      const isPeriodALT = periodName.includes("ALT");
+      const isPeriodTP = periodName.includes("TP");
+
+      // ❌ Groupe ALT avec période non-ALT
+      if (isGroupALT && isPeriodTP) {
+        throw new Error(
+          `Le groupe "${selectedGroupName}" est en alternance, mais la période "${selectedPeriod.NOM_PERIODE_EVALUATION}" est réservée aux temps pleins.`
+        );
+      }
+
+      // ❌ Groupe TP avec période ALT
+      if (isGroupTP && isPeriodALT) {
+        throw new Error(
+          `Le groupe "${selectedGroupName}" est en temps plein, mais la période "${selectedPeriod.NOM_PERIODE_EVALUATION}" est réservée à l'alternance.`
+        );
       }
 
       const response = await fetch("/api/sql", {
