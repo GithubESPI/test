@@ -2262,15 +2262,6 @@ async function createStudentPDF(
           size: 7,
           font: boldFont,
         });
-
-        // Afficher le code personnel
-        page.drawText(`Code personnel: ${codePersonnel}`, {
-          x: pageWidth - margin - 200,
-          y: signatureY - 34,
-          size: 7,
-          font: mainFont,
-        });
-      }
     } else {
       // Pour les codes personnels sans signature, afficher uniquement le texte
       page.drawText(`Signature du : ${nomFonctionPersonnel}`, {
