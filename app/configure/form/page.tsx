@@ -460,6 +460,7 @@ export default function Home() {
                         <SelectContent>
                           {campuses
                             .filter((campus) => campus.label !== "GROUPE ESPI")
+                            .sort((a, b) => a.label.localeCompare(b.label)) // TRIER ICI
                             .map((campus) => (
                               <SelectItem key={campus.id} value={campus.id} className="text-sm">
                                 {campus.label}
@@ -495,17 +496,15 @@ export default function Home() {
                                 "B-BTS1",
                                 "MP-BTS1",
                               ];
-
-                              // Vérifie si le nom commence par un des préfixes ou contient "RP" ou "Césure"
                               const startsWithExcludedPrefix = prefixesToExclude.some((prefix) =>
                                 group.label.startsWith(prefix)
                               );
                               const containsExcludedTerm =
                                 group.label.includes("RP") || group.label.includes("Césure");
-                              //group.label.includes("Rentrée décalée");
 
                               return !startsWithExcludedPrefix && !containsExcludedTerm;
                             })
+                            .sort((a, b) => a.label.localeCompare(b.label)) // TRIER ICI
                             .map((group) => (
                               <SelectItem
                                 key={group.id}
@@ -558,15 +557,20 @@ export default function Home() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {periods.map((period) => (
-                            <SelectItem
-                              key={period.CODE_PERIODE_EVALUATION}
-                              value={period.CODE_PERIODE_EVALUATION}
-                              className="text-sm"
-                            >
-                              {period.NOM_PERIODE_EVALUATION}
-                            </SelectItem>
-                          ))}
+                          {periods
+                            .filter((period) => !period.NOM_PERIODE_EVALUATION.startsWith("BTS")) // ❌ Masquer les périodes "BTS"
+                            .sort((a, b) =>
+                              a.NOM_PERIODE_EVALUATION.localeCompare(b.NOM_PERIODE_EVALUATION)
+                            ) // ✅ Trier par nom
+                            .map((period) => (
+                              <SelectItem
+                                key={period.CODE_PERIODE_EVALUATION}
+                                value={period.CODE_PERIODE_EVALUATION}
+                                className="text-sm"
+                              >
+                                {period.NOM_PERIODE_EVALUATION}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                       <FormMessage className="text-red-500" />
