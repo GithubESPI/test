@@ -2283,7 +2283,7 @@ async function createStudentPDF(
 
     // Déplacer la légende en pied de page
     const footerY = 25; // Position plus basse pour la légende
-    page.drawText("VA : Validé / NV : Non Validé / C : Compensation / R : Rattrapage", {
+    page.drawText("VA : Validé / NV : Non Validé / C : Compensation", {
       // Ajout d'espaces avant les deux points
       x: margin,
       y: footerY,
