@@ -516,7 +516,7 @@ function getSignatureFilename(codePersonnel: string): string | null {
 // Function to create a PDF for a student
 // Ajouter ces fonctions avant createStudentPDF
 function isTPGroup(groupInfo: GroupInfo[]): boolean {
-  return groupInfo.length > 0 && !!groupInfo[0].NOM_GROUPE?.includes("TP");
+  return groupInfo.length > 0 && !!groupInfo[0].NOM_GROUPE?.includes("none");
 }
 
 function drawTableHeader(
@@ -788,7 +788,7 @@ async function createStudentPDF(
     // const fontSizeHeader = 10;
 
     // Set up margins
-    const margin = 50;
+    const margin = 44;
     const pageWidth = page.getWidth();
     const pageHeight = page.getHeight();
     let currentY = pageHeight - margin;
@@ -1194,7 +1194,7 @@ async function createStudentPDF(
 
     // Tableau des notes
     // En-têtes
-    const rowHeight = 20;
+    const rowHeight = 16;
     // 1. Calculate the center of the page
 
     // 2. Define the table width - make it slightly narrower than the full width
@@ -1255,7 +1255,7 @@ async function createStudentPDF(
 
     page.drawText(enseignementsText, {
       x: col1Center,
-      y: currentY - 15,
+      y: currentY - 10,
       size: fontSize,
       font: boldFont,
       color: rgb(1, 1, 1),
@@ -1267,7 +1267,7 @@ async function createStudentPDF(
 
     page.drawText(moyenneText, {
       x: col2Center,
-      y: currentY - 15,
+      y: currentY - 10,
       size: fontSize,
       font: boldFont,
       color: rgb(1, 1, 1),
@@ -1279,7 +1279,7 @@ async function createStudentPDF(
 
     page.drawText(ectsText, {
       x: col3Center,
-      y: currentY - 15,
+      y: currentY - 10,
       size: fontSize,
       font: boldFont,
       color: rgb(1, 1, 1),
@@ -1291,7 +1291,7 @@ async function createStudentPDF(
 
     page.drawText(etatText, {
       x: col4Center,
-      y: currentY - 15,
+      y: currentY - 10,
       size: fontSize,
       font: boldFont,
       color: rgb(1, 1, 1),
@@ -1475,7 +1475,7 @@ async function createStudentPDF(
       // Texte matière
       page.drawText(subject.NOM_MATIERE, {
         x: col1X + 5,
-        y: currentY - 15,
+        y: currentY - 10,
         size: fontSize,
         font: isUE ? boldFont : mainFont, // 👉 Texte en gras si UE
         color: rgb(0, 0, 0),
@@ -1548,7 +1548,7 @@ async function createStudentPDF(
       const moyenneWidth = mainFont.widthOfTextAtSize(moyenne, fontSize);
       page.drawText(moyenne, {
         x: col2X + col2Width / 2 - moyenneWidth / 2,
-        y: currentY - 15,
+        y: currentY - 10,
         size: fontSize,
         font: isUE ? boldFont : mainFont,
         color: rgb(0, 0, 0),
@@ -1651,7 +1651,7 @@ async function createStudentPDF(
       const ectsWidth = mainFont.widthOfTextAtSize(ects, fontSize);
       page.drawText(ects, {
         x: col3X + col3Width / 2 - ectsWidth / 2,
-        y: currentY - 15,
+        y: currentY - 10,
         size: fontSize,
         font: isUE ? boldFont : mainFont,
         color: rgb(0, 0, 0),
@@ -1671,7 +1671,7 @@ async function createStudentPDF(
       const etatWidth = mainFont.widthOfTextAtSize(etat, fontSize);
       page.drawText(etat, {
         x: col4X + col4Width / 2 - etatWidth / 2,
-        y: currentY - 15,
+        y: currentY - 10,
         size: fontSize,
         font: etatFont, // Utiliser etatFont au lieu de mainFont
         color: etatColor, // Utiliser etatColor au lieu de rgb(0, 0, 0)
@@ -1721,7 +1721,7 @@ async function createStudentPDF(
     // Text "Moyenne générale"
     page.drawText("Moyenne générale", {
       x: col1X + 5,
-      y: currentY - 15,
+      y: currentY - 10,
       size: fontSize,
       font: boldFont,
       color: rgb(1, 1, 1),
@@ -1756,7 +1756,7 @@ async function createStudentPDF(
 
     page.drawText(moyenneGenerale, {
       x: moyenneGeneraleCenterX,
-      y: currentY - 15,
+      y: currentY - 10,
       size: fontSize,
       font: boldFont,
       color: rgb(1, 1, 1),
@@ -1790,7 +1790,7 @@ async function createStudentPDF(
     // ✅ Ajout du texte proprement
     page.drawText(totalECTSText, {
       x: totalECTSCenterX,
-      y: currentY - 15,
+      y: currentY - 10,
       size: fontSize,
       font: boldFont,
       color: rgb(1, 1, 1),
@@ -1828,7 +1828,7 @@ async function createStudentPDF(
 
     page.drawText(etatGeneral, {
       x: etatGeneralCenterX,
-      y: currentY - 15,
+      y: currentY - 10,
       size: fontSize,
       font: boldFont,
       color: rgb(1, 1, 1),
@@ -1838,7 +1838,7 @@ async function createStudentPDF(
 
     // Section absences et observations
     const boxWidthABS = pageWidth - 2 * margin;
-    const boxHeightABS = 40;
+    const boxHeightABS = 36;
 
     // Dessiner le rectangle principal
     page.drawRectangle({
@@ -2093,7 +2093,7 @@ async function createStudentPDF(
     currentY -= 15; // Espace additionnel
 
     // Vérifier s'il reste assez d'espace pour la signature
-    const MIN_SPACE_FOR_SIGNATURE = 70;
+    const MIN_SPACE_FOR_SIGNATURE = 60;
     if (currentY < margin + MIN_SPACE_FOR_SIGNATURE) {
       // Pas assez d'espace, créer une nouvelle page
       page = pdfDoc.addPage([595.28, 841.89]);
