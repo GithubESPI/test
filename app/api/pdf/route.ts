@@ -506,7 +506,7 @@ function getSignatureFilename(codePersonnel: string): string | null {
     "2239": "signature_marionsoustelle.png",
     "306975": "lebon.png",
     "89152": "magali.png",
-    "650429": "", // Ajout pour le CODE_PERSONNEL
+    "650429": "Anne-Lise.png", // Ajout pour le CODE_PERSONNEL
     // You can add more mappings as needed
   };
 
