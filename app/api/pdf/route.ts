@@ -899,7 +899,7 @@ async function createStudentPDF(
             if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
               matiereEtats.set(matiere.CODE_MATIERE, "NV");
               console.log(
-                `Matière ${matiere.NOM_MATIERE}: mise en R car UE contient des matières en R`
+                `Matière ${matiere.NOM_MATIERE}: mise en NV car UE contient des matières en NV`
               );
             }
           }
@@ -907,7 +907,7 @@ async function createStudentPDF(
           const matiere = matieres[0];
           matiereEtats.set(matiere.CODE_MATIERE, "NV");
           console.log(
-            `Matière ${matiere.NOM_MATIERE}: mise en R car UE n'a qu'une seule matière entre 8 et 10`
+            `Matière ${matiere.NOM_MATIERE}: mise en NV car UE n'a qu'une seule matière entre 8 et 10`
           );
         } else if (countVA >= 1 && count8_10 === 1) {
           for (const matiere of matieres) {
@@ -921,8 +921,8 @@ async function createStudentPDF(
         } else {
           for (const matiere of matieres) {
             if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
-              matiereEtats.set(matiere.CODE_MATIERE, "NV");
-              console.log(`Matière ${matiere.NOM_MATIERE}: mise en R (cas par défaut)`);
+              matiereEtats.set(matiere.CODE_MATIERE, "C");
+              console.log(`Matière ${matiere.NOM_MATIERE}: mise en C (cas par défaut)`);
             }
           }
         }
