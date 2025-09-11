@@ -8,16 +8,65 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
-// Modification de la fonction getEtatUE pour gérer l'exception de l'UE 4
-function getEtatUE(etatsMatieres: string[]): string {
-  const E = etatsMatieres.map((e) =>
-    String(e ?? "")
-      .toUpperCase()
+function getUeAverage(ueAverages: any[], ueCode: string, studentId?: string): number | null {
+  const norm = (x: any) =>
+    String(x ?? "")
       .trim()
-  );
-  if (E.some((e) => e === "NV")) return "NV"; // une NV => UE NV
-  if (E.some((e) => e === "C" || e === "VA")) return "VA"; // C compte comme VA
-  return "NV"; // aucune info -> prudence = NV
+      .toUpperCase();
+  const target = norm(ueCode);
+
+  const row = (ueAverages || []).find((a) => {
+    const code = norm(a.CODE_UE ?? a.CODE_MATIERE);
+    const okStudent = studentId ? String(a.CODE_APPRENANT ?? "") === String(studentId) : true;
+    return code === target && okStudent;
+  });
+
+  // Ne retourner que du numérique
+  return parseUeAverage(row?.MOYENNE_UE ?? row?.MOYENNE);
+}
+
+export type Etat = "VA" | "NV" | "C";
+
+const parseUeAverage = (v?: number | string | null): number | null => {
+  if (v == null) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if (s === "" || s === "-" || s === "VA" || s === "NV" || s === "C") return null;
+  const n = Number(s.replace(",", "."));
+  return Number.isNaN(n) ? null : n;
+};
+
+export function getEtatUE(
+  matiereEtats: Etat[],
+  ueAverage: number | string | null | undefined
+): Etat {
+  // 1) Une seule NV en matière => UE = NV
+  if (matiereEtats.some((e) => e === "NV")) return "NV";
+
+  const allVA = matiereEtats.every((e) => e === "VA");
+  const allVAorC = matiereEtats.every((e) => e === "VA" || e === "C");
+
+  // 2) Moyenne numérique ?
+  const avg = parseUeAverage(ueAverage);
+
+  // 2.a) Moyenne absente => fallback: seulement si TOUT = VA on valide
+  if (avg === null) return allVA ? "VA" : "NV";
+
+  // 2.b) Règle stricte demandée
+  if (allVAorC) return avg >= 10 ? "VA" : "NV";
+
+  // Sécurité (normalement couvert par le test NV au début)
+  return "NV";
+}
+
+// ✅ Toute valeur libre → Etat ; "R" est converti en "NV"
+function normalizeEtat(s: string | undefined | null): Etat {
+  const up = String(s ?? "")
+    .trim()
+    .toUpperCase();
+  if (up === "R") return "NV"; // ← exigence : pas de R
+  if (up === "VA" || up === "NV" || up === "C") return up;
+  return "NV"; // fallback prudent
 }
 
 // Type definitions for the student data
@@ -773,17 +822,18 @@ function isUE4RelatedSubject(
 
 async function createStudentPDF(
   student: StudentData,
-  grades: StudentGrade[],
-  averages: StudentAverage[],
+  grades: StudentGrade[], // ← MOYENNES_UE (lignes UE)
+  ueAverages: any[], // ← MOYENNES_UE (source des moyennes d’UE)
   observations: Observation[],
-  subjects: SubjectECTS[], // Single subjects parameter
+  subjects: SubjectECTS[],
   groupInfo: GroupInfo[],
   campusInfo: CampusInfo[],
   period: string,
   absence: Absence[],
   processedABS: ProcessedAbsence[],
   personnelData?: any[],
-  notes?: any[]
+  notes?: any[],
+  generalAverages?: StudentAverage[] // ← MOYENNE_GENERALE (affichage bas)
 ): Promise<Uint8Array> {
   try {
     // Create a new PDF document
@@ -1000,8 +1050,18 @@ async function createStudentPDF(
         }
       }
 
-      const etatsMatieres = matieres.map((m) => matiereEtats.get(m.CODE_MATIERE) || "NV");
-      const ueFinalEtat = getEtatUE(etatsMatieres);
+      // 1) États des matières bruts pour l’UE courante
+      const rawEtats: string[] = matieres.map((m: { CODE_MATIERE: string }) =>
+        String(matiereEtats.get(m.CODE_MATIERE) ?? "NV")
+      );
+
+      // 2) Normalise (R -> NV) + typage du paramètre
+      const etatsMatieresNorm: Etat[] = rawEtats.map((e: string) => normalizeEtat(e));
+
+      const ueAvg = getUeAverage(ueAverages, ueCode);
+
+      // Si tu as la moyenne de l’UE
+      const ueFinalEtat: Etat = getEtatUE(etatsMatieresNorm, ueAvg);
       ueEtats.set(ueCode, ueFinalEtat);
 
       console.log(
@@ -1010,6 +1070,79 @@ async function createStudentPDF(
           .join(", ")})`
       );
     }
+
+    // === GARDE-FOU FINAL — à mettre DANS createStudentPDF,
+    // juste après avoir construit `ueMap`, et avant de dessiner le tableau ===
+
+    // utilitaires locaux (si pas déjà définis plus haut dans le fichier)
+    const parseUeAverageLocal = (v?: number | string | null): number | null => {
+      if (v == null) return null;
+      if (typeof v === "number") return Number.isFinite(v) ? v : null;
+      const s = String(v).trim();
+      if (s === "" || s === "-" || s === "VA" || s === "NV" || s === "C") return null;
+      const n = Number(s.replace(",", "."));
+      return Number.isNaN(n) ? null : n;
+    };
+
+    const getUeAverageStrict = (
+      ueAverages: any[],
+      ueCode: string,
+      studentId?: string
+    ): number | null => {
+      const up = (x: any) =>
+        String(x ?? "")
+          .trim()
+          .toUpperCase();
+      const row = (ueAverages || []).find(
+        (a) =>
+          up(a.CODE_UE ?? a.CODE_MATIERE) === up(ueCode) &&
+          (studentId ? String(a.CODE_APPRENANT ?? "") === String(studentId) : true)
+      );
+      return parseUeAverageLocal(row?.MOYENNE_UE ?? row?.MOYENNE);
+    };
+
+    // 1) moyenne NUMERIQUE fiable par UE
+    const ueAvgByCode = new Map<string, number | null>();
+    for (const [ueCode, { ue }] of ueMap) {
+      const numFromRow = parseUeAverageLocal((ue as any)?.MOYENNE_UE ?? (ue as any)?.MOYENNE);
+      const numFromList =
+        numFromRow ??
+        getUeAverageStrict(
+          grades as any[], // <- chez toi, les moyennes d'UE sont dans `grades`
+          ueCode,
+          student.CODE_APPRENANT // <- paramètre de createStudentPDF
+        );
+      ueAvgByCode.set(ueCode, numFromList ?? null);
+    }
+
+    // 2) applique ta règle stricte et RÉÉCRIT ueEtats
+    for (const [ueCode, { matieres }] of ueMap) {
+      const childEtats = matieres.map(
+        (m) => String(matiereEtats.get(m.CODE_MATIERE) ?? "NV").toUpperCase() as "VA" | "NV" | "C"
+      );
+
+      const hasNV = childEtats.some((e) => e === "NV");
+      const allVAorC = childEtats.every((e) => e === "VA" || e === "C");
+      const allVA = childEtats.every((e) => e === "VA");
+      const avg = ueAvgByCode.get(ueCode); // number|null
+
+      let finalEtat: "VA" | "NV" | "C";
+      if (hasNV) {
+        finalEtat = "NV";
+      } else if (avg == null) {
+        // fallback: pas de moyenne -> VA seulement si TOUT = VA
+        finalEtat = allVA ? "VA" : "NV";
+      } else {
+        // RÈGLE stricte : (toutes VA/C) ET (moyenne ≥ 10) => VA ; sinon NV
+        finalEtat = allVAorC && avg >= 10 ? "VA" : "NV";
+      }
+
+      ueEtats.set(ueCode, finalEtat);
+      console.log(
+        `UE ${ueCode}: avg=${avg} ; enfants=[${childEtats.join(",")}] ; final=${finalEtat}`
+      );
+    }
+    // === FIN GARDE-FOU FINAL ===
 
     // 4. Créer une map pour associer les matières à leurs UE (par code)
     const matiereToUeMap = new Map<string, string>();
@@ -1036,85 +1169,27 @@ async function createStudentPDF(
       }
     }
 
-    // Dans la boucle où vous traitez les UE
-    for (const [ueCode, { ue, matieres }] of ueMap.entries()) {
-      // Si c'est l'UE 4 spécifiquement
-      if (ue.NOM_MATIERE && ue.NOM_MATIERE.includes("UE 4")) {
-        console.log(`Traitement spécial pour ${ue.NOM_MATIERE}`);
-
-        // Vérifier si une matière de l'UE 4 est en NV ou R
-        const hasNVorR = matieres.some((m) => {
-          const etat = matiereEtats.get(m.CODE_MATIERE);
-          console.log(`Matière de l'UE 4: ${m.NOM_MATIERE}, état: ${etat}`);
-          return etat === "NV" || etat === "NV";
-        });
-
-        // Vérifier également les matières qui pourraient ne pas être correctement associées
-        const additionalMatieres = [
-          "Communication Digitale et Orale",
-          "ESPI Career Services",
-          "ESPI Inside",
-          "Real Estate English",
-          "Rencontres de l'Immobilier",
-          "Immersion Professionnelle",
-          "Projet Voltaire",
-          "Real Estate English & TOEFL",
-          "Mémoire de Recherche",
-          "Méthodologie de la Recherche",
-          "Mobilité Internationale",
-          "Techniques de Négociation",
-          "Real Estate Industry Overview",
-          "Dissertation Methodology",
-        ];
-
-        const hasAdditionalNVorR = Array.from(matiereEtats.entries()).some(
-          ([codeMatiere, etat]) => {
-            if (etat !== "NV" && etat !== "NV") return false;
-
-            const matiere = subjects.find(
-              (s) => s.CODE_APPRENANT === student.CODE_APPRENANT && s.CODE_MATIERE === codeMatiere
-            );
-
-            if (!matiere || !matiere.NOM_MATIERE) return false;
-
-            const isUE4Matiere = additionalMatieres.some((name) =>
-              matiere.NOM_MATIERE.includes(name)
-            );
-
-            if (isUE4Matiere) {
-              console.log(
-                `Matière supplémentaire de l'UE 4 détectée: ${matiere.NOM_MATIERE}, état: ${etat}`
-              );
-            }
-
-            return isUE4Matiere;
-          }
-        );
-
-        if (hasNVorR || hasAdditionalNVorR) {
-          console.log(
-            `🔴 OVERRIDE FINAL UE 4: Forcée à NV car contient au moins une matière en NV ou R`
-          );
-          ueEtats.set(ueCode, "NV");
-        } else {
-          console.log(`UE 4: Toutes les matières sont validées, état VA`);
-          ueEtats.set(ueCode, "VA");
-        }
-      }
-      console.log(`État final de l'UE ${ue.NOM_MATIERE}: ${ueEtats.get(ueCode)}`);
-    }
-
     // ⬇⬇ Fallback: donner un état aux UEs qui n'en ont pas (ex: International)
     // ✅ Fallback plus robuste : calcule l’état depuis les enfants déjà associés dans ueMap
-    for (const [ueCode, { matieres }] of ueMap) {
+    // On part du principe que tu as déjà :
+    // type Etat = "VA" | "NV" | "C";
+    // function normalizeEtat(...)
+    // function getEtatUE(...)
+
+    for (const [ueCode, { ue, matieres }] of ueMap) {
       if (!ueEtats.has(ueCode)) {
-        const etatsChildren = matieres.map((m) =>
+        const rawEtats: string[] = matieres.map((m) =>
           String(matiereEtats.get(m.CODE_MATIERE) ?? "NV")
-            .toUpperCase()
-            .trim()
         );
-        ueEtats.set(ueCode, getEtatUE(etatsChildren));
-        console.log(`(fallback) UE ${ueCode} = ${ueEtats.get(ueCode)} via états enfants (ueMap).`);
+        const etatsMatieresNorm: Etat[] = rawEtats.map((e: string) => normalizeEtat(e));
+
+        const avgFromUeRowNum = parseUeAverage((ue as any)?.MOYENNE_UE ?? (ue as any)?.MOYENNE);
+
+        const ueAvgNum: number | null =
+          avgFromUeRowNum ?? getUeAverage(ueAverages, ueCode, student.CODE_APPRENANT);
+
+        const ueFinalEtat = getEtatUE(etatsMatieresNorm, ueAvgNum);
+        ueEtats.set(ueCode, ueFinalEtat);
       }
     }
 
@@ -1810,7 +1885,10 @@ async function createStudentPDF(
     });
 
     // Valeur de la moyenne générale
-    const studentAverage = averages.find((avg) => avg.CODE_APPRENANT === student.CODE_APPRENANT);
+    const studentAverage = generalAverages?.find(
+      (avg: any) => avg.CODE_APPRENANT === student.CODE_APPRENANT
+    );
+
     let moyenneGenerale = "N/A";
 
     if (studentAverage) {
@@ -2517,8 +2595,8 @@ export async function POST(req: NextRequest) {
 
         const pdfBytes = await createStudentPDF(
           student,
-          data.MOYENNES_UE || [],
-          data.MOYENNE_GENERALE || [],
+          data.MOYENNES_UE || [], // grades
+          data.MOYENNES_UE || [], // ueAverages ✅
           data.OBSERVATIONS || [],
           updatedSubjects,
           data.GROUPE || [],
@@ -2527,7 +2605,8 @@ export async function POST(req: NextRequest) {
           data.ABSENCE || [],
           processAbsences(data.ABSENCE || [], startDateFromPeriod, endDateFromPeriod).students, // ✅ Ajouter .students
           data.PERSONNEL || [],
-          data.NOTES || []
+          data.NOTES || [],
+          data.MOYENNE_GENERALE || []
         );
 
         console.log("📌 Matières brutes reçues :", data.ECTS_PAR_MATIERE);
