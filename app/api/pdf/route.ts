@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Utiliser fileStorage au lieu de tempFileStorage
+import { Etat, getEtatUE, getUeAverage, normalizeEtat, parseUeAverage } from "@/lib/bulletin/ue";
 import { fileStorage } from "@/lib/fileStorage";
 import fontkit from "@pdf-lib/fontkit";
 import fs from "fs";
@@ -7,67 +8,6 @@ import JSZip from "jszip";
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-
-function getUeAverage(ueAverages: any[], ueCode: string, studentId?: string): number | null {
-  const norm = (x: any) =>
-    String(x ?? "")
-      .trim()
-      .toUpperCase();
-  const target = norm(ueCode);
-
-  const row = (ueAverages || []).find((a) => {
-    const code = norm(a.CODE_UE ?? a.CODE_MATIERE);
-    const okStudent = studentId ? String(a.CODE_APPRENANT ?? "") === String(studentId) : true;
-    return code === target && okStudent;
-  });
-
-  // Ne retourner que du numérique
-  return parseUeAverage(row?.MOYENNE_UE ?? row?.MOYENNE);
-}
-
-export type Etat = "VA" | "NV" | "C";
-
-const parseUeAverage = (v?: number | string | null): number | null => {
-  if (v == null) return null;
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  const s = String(v).trim();
-  if (s === "" || s === "-" || s === "VA" || s === "NV" || s === "C") return null;
-  const n = Number(s.replace(",", "."));
-  return Number.isNaN(n) ? null : n;
-};
-
-export function getEtatUE(
-  matiereEtats: Etat[],
-  ueAverage: number | string | null | undefined
-): Etat {
-  // 1) Une seule NV en matière => UE = NV
-  if (matiereEtats.some((e) => e === "NV")) return "NV";
-
-  const allVA = matiereEtats.every((e) => e === "VA");
-  const allVAorC = matiereEtats.every((e) => e === "VA" || e === "C");
-
-  // 2) Moyenne numérique ?
-  const avg = parseUeAverage(ueAverage);
-
-  // 2.a) Moyenne absente => fallback: seulement si TOUT = VA on valide
-  if (avg === null) return allVA ? "VA" : "NV";
-
-  // 2.b) Règle stricte demandée
-  if (allVAorC) return avg >= 10 ? "VA" : "NV";
-
-  // Sécurité (normalement couvert par le test NV au début)
-  return "NV";
-}
-
-// ✅ Toute valeur libre → Etat ; "R" est converti en "NV"
-function normalizeEtat(s: string | undefined | null): Etat {
-  const up = String(s ?? "")
-    .trim()
-    .toUpperCase();
-  if (up === "R") return "NV"; // ← exigence : pas de R
-  if (up === "VA" || up === "NV" || up === "C") return up;
-  return "NV"; // fallback prudent
-}
 
 // Type definitions for the student data
 interface StudentData {
