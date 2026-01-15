@@ -106,8 +106,8 @@ interface DuplicateStat {
 
 function processAbsences(
   absences: Absence[],
-  startDate = "2024-08-26 00:00:00",
-  endDate = "2025-08-24 00:00:00",
+  startDate = "2025-08-25 00:00:00",
+  endDate = "2026-08-23 00:00:00",
   handleDuplicates: "sum" | "max" | "deduplicate" = "sum"
 ): {
   students: ProcessedAbsence[];
@@ -245,8 +245,7 @@ function processAbsences(
 
     if (group.length > 1) {
       console.log(
-        `📝 ${CODE_ABSENCE}: Durée utilisée = ${dureeToUse}min (méthode: ${handleDuplicates}${
-          isSplitOverMultipleLines ? " + multi-jour" : ""
+        `📝 ${CODE_ABSENCE}: Durée utilisée = ${dureeToUse}min (méthode: ${handleDuplicates}${isSplitOverMultipleLines ? " + multi-jour" : ""
         })`
       );
     }
@@ -1196,7 +1195,7 @@ async function createStudentPDF(
 
     // Titre du bulletin
     currentY -= 10;
-    const bulletinTitle = "Bulletin de notes 2024-2025";
+    const bulletinTitle = "Bulletin de notes 2025-2026";
     const bulletinTitleWidth = boldFont.widthOfTextAtSize(bulletinTitle, fontSizeTitle);
     page.drawText(bulletinTitle, {
       x: (pageWidth - bulletinTitleWidth) / 2,
@@ -2512,8 +2511,8 @@ export async function POST(req: NextRequest) {
     console.log(`✅ Crédits UE mis à jour (${updatedSubjects.length} matières traitées)`);
 
     // Par ceci:
-    const startDateFromPeriod = "2024-08-26T00:00:00";
-    const endDateFromPeriod = "2025-08-24T00:00:00";
+    const startDateFromPeriod = "2025-08-25T00:00:00";
+    const endDateFromPeriod = "2026-08-23T00:00:00";
 
     console.log(`Traitement des absences de ${startDateFromPeriod} à ${endDateFromPeriod}`);
 
@@ -2578,7 +2577,7 @@ export async function POST(req: NextRequest) {
         const periodClean = periodeEvaluation.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
 
         // Générer le nom de fichier au format demandé
-        const filename = `2024-2025_${nomFormation}_${nomAnnee}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
+        const filename = `2025-2026_${nomFormation}_${nomAnnee}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
 
         // Add PDF to the zip file (in memory)
         zip.file(filename, pdfBytes);

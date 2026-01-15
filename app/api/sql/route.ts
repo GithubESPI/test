@@ -166,7 +166,8 @@ export async function POST(request: Request) {
       console.log("✅ Utilisation du CODE_PERIODE_EVALUATION fourni:", cdeval);
     } else {
       // Sinon, on cherche à le récupérer comme avant
-      const codeEvalQuery = `SELECT DISTINCT r.CODE_PERIODE_EVALUATION FROM REFERENTIEL r WHERE r.CODE_FORMATION = ${codeFormation} AND r.CODE_SESSION = 4 AND r.CODE_ANNEE = ${codeAnnee}`;
+      // Remplacez r.CODE_SESSION = 5 par 5
+      const codeEvalQuery = `SELECT DISTINCT r.CODE_PERIODE_EVALUATION FROM REFERENTIEL r WHERE r.CODE_FORMATION = ${codeFormation} AND r.CODE_SESSION = 5 AND r.CODE_ANNEE = ${codeAnnee}`;
 
       const codeEvalResults = await executeQuery(codeEvalQuery, token);
 
@@ -205,7 +206,19 @@ export async function POST(request: Request) {
 
       // Modifiez la requête ABSENCE dans votre fichier paste.txt
 
-      ABSENCE: `SELECT DISTINCT a.CODE_APPRENANT, a.NOM_APPRENANT, a.PRENOM_APPRENANT, g.CODE_GROUPE, abs.CODE_ABSENCE, abs.MINUTE_DEB, abs.MINUTE_FIN, abs.IS_RETARD, ma.IS_JUSTIFIE, ad.DUREE, ad.NUM_JOUR, ad.DATE_ABSENCE, s.CODE_SESSION, s.DATE_DEB, s.DATE_FIN FROM GROUPE g INNER JOIN FREQUENTE f ON g.CODE_GROUPE = f.CODE_GROUPE INNER JOIN INSCRIPTION i ON f.CODE_INSCRIPTION = i.CODE_INSCRIPTION INNER JOIN APPRENANT a ON i.CODE_APPRENANT = a.CODE_APPRENANT INNER JOIN ABSENCE abs ON a.CODE_APPRENANT = abs.CODE_APPRENANT LEFT JOIN MOTIF_ABSENCE ma ON abs.CODE_MOTIF_ABSENCE = ma.CODE_MOTIF_ABSENCE LEFT JOIN ABSENCE_DETAIL ad ON abs.CODE_ABSENCE = ad.CODE_ABSENCE LEFT JOIN CALENDRIER c ON f.CODE_CALENDRIER = c.CODE_CALENDRIER LEFT JOIN SESSION s ON c.CODE_SESSION = s.CODE_SESSION WHERE g.CODE_GROUPE = ${group} AND CONVERT(date, abs.DATE_DEB) BETWEEN '2024-08-26' AND '2025-08-24' ORDER BY a.NOM_APPRENANT, ad.DATE_ABSENCE`,
+      ABSENCE: `SELECT DISTINCT a.CODE_APPRENANT, a.NOM_APPRENANT, a.PRENOM_APPRENANT, g.CODE_GROUPE, abs.CODE_ABSENCE, abs.MINUTE_DEB, abs.MINUTE_FIN, abs.IS_RETARD, ma.IS_JUSTIFIE, ad.DUREE, ad.NUM_JOUR, ad.DATE_ABSENCE, s.CODE_SESSION, s.DATE_DEB, s.DATE_FIN 
+          FROM GROUPE g 
+          INNER JOIN FREQUENTE f ON g.CODE_GROUPE = f.CODE_GROUPE 
+          INNER JOIN INSCRIPTION i ON f.CODE_INSCRIPTION = i.CODE_INSCRIPTION 
+          INNER JOIN APPRENANT a ON i.CODE_APPRENANT = a.CODE_APPRENANT 
+          INNER JOIN ABSENCE abs ON a.CODE_APPRENANT = abs.CODE_APPRENANT 
+          LEFT JOIN MOTIF_ABSENCE ma ON abs.CODE_MOTIF_ABSENCE = ma.CODE_MOTIF_ABSENCE 
+          LEFT JOIN ABSENCE_DETAIL ad ON abs.CODE_ABSENCE = ad.CODE_ABSENCE 
+          LEFT JOIN CALENDRIER c ON f.CODE_CALENDRIER = c.CODE_CALENDRIER 
+          LEFT JOIN SESSION s ON c.CODE_SESSION = s.CODE_SESSION 
+          WHERE g.CODE_GROUPE = ${group} 
+          AND CONVERT(date, abs.DATE_DEB) BETWEEN '2025-08-25' AND '2026-08-23' 
+          ORDER BY a.NOM_APPRENANT, ad.DATE_ABSENCE`,
 
       MATIERE: `
         SELECT g.CODE_GROUPE, m.CODE_MATIERE, r.CODE_PERIODE_EVALUATION, pe.NOM_PERIODE_EVALUATION, r.CODE_REFERENTIEL, 
@@ -219,7 +232,7 @@ export async function POST(request: Request) {
         WHERE g.CODE_GROUPE = ${group} 
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode} 
           AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}' 
-          AND r.CODE_SESSION = 4 
+          AND r.CODE_SESSION = 5 
           AND g.CODE_SITE = ${campus} 
           AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
         ORDER BY rd.NUM_ORDRE ASC, m.NOM_MATIERE
@@ -251,7 +264,7 @@ export async function POST(request: Request) {
       WHERE g.CODE_GROUPE = ${group}
         AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
         AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
-        AND r.CODE_SESSION = 4
+        AND r.CODE_SESSION = 5
         AND g.CODE_SITE = ${campus}
         AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
         AND r.IS_DANS_MOYENNE = '1'
@@ -279,7 +292,7 @@ export async function POST(request: Request) {
     WHERE g.CODE_GROUPE = ${group}
       AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
       AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
-      AND r.CODE_SESSION = 4
+      AND r.CODE_SESSION = 5
       AND g.CODE_SITE = ${campus}
       AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
     GROUP BY g.CODE_GROUPE, g.NOM_GROUPE, ap.CODE_APPRENANT, ap.NOM_APPRENANT, ap.PRENOM_APPRENANT, pe.NOM_PERIODE_EVALUATION
@@ -309,13 +322,12 @@ export async function POST(request: Request) {
         INNER JOIN SESSION s ON i.CODE_SESSION = s.CODE_SESSION
         WHERE g.CODE_GROUPE = ${group}
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
-          AND r.CODE_SESSION = 4
+          AND r.CODE_SESSION = 5
           AND g.CODE_SITE = ${campus}
-          ${
-            nomGroupe && nomGroupe.includes("Rentrée décalée")
-              ? `AND r.CODE_ANNEE = ${codeAnnee}`
-              : `AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))`
-          }
+          ${nomGroupe && nomGroupe.includes("Rentrée décalée")
+          ? `AND r.CODE_ANNEE = ${codeAnnee}`
+          : `AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))`
+        }
         ORDER BY ap.NOM_APPRENANT, ap.PRENOM_APPRENANT, rd.NUM_ORDRE, m.NOM_MATIERE
       `,
 
@@ -339,7 +351,7 @@ export async function POST(request: Request) {
       INNER JOIN REFERENTIEL r ON ap.CODE_REFERENTIEL = r.CODE_REFERENTIEL
       INNER JOIN PERIODE_EVALUATION pe ON r.CODE_PERIODE_EVALUATION = pe.CODE_PERIODE_EVALUATION
       WHERE g.CODE_GROUPE = ${group}
-        AND r.CODE_SESSION = 4
+        AND r.CODE_SESSION = 5
         AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
         AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
         AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
@@ -355,7 +367,7 @@ export async function POST(request: Request) {
         WHERE n.CODE_EVALUATION_NOTE IN (1, 2)
           AND g.CODE_GROUPE = ${group}
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
-          AND r.CODE_SESSION = 4
+          AND r.CODE_SESSION = 5
           AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
       `,
     };

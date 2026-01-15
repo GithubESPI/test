@@ -9,7 +9,7 @@ export async function GET() {
       throw new Error("Variables d'environnement manquantes");
     }
 
-    const url = `${baseUrl}/r/v1/formation-longue/apprenants?codesPeriode=4`;
+    const url = `${baseUrl}/r/v1/formation-longue/apprenants?codesPeriode=5`;
 
     console.log("Calling API with URL:", url);
     const response = await fetch(url, {

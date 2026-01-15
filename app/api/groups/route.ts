@@ -51,7 +51,7 @@ export async function GET() {
       throw new Error("Variables d'environnement manquantes");
     }
 
-    const url = `${baseUrl}/r/v1/formation-longue/groupes?codesPeriode=4`;
+    const url = `${baseUrl}/r/v1/formation-longue/groupes?codesPeriode=5`;
     console.log("URL de l'API:", url);
 
     const data = await fetchWithRetry(url, {

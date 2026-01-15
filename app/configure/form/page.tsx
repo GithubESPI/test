@@ -161,8 +161,8 @@ export default function Home() {
 
         // Filtrage des périodes
         if (periodsData.success && Array.isArray(periodsData.data)) {
-          const startDate = new Date("2024-08-26 00:00:00");
-          const endDate = new Date("2025-07-31 00:00:00");
+          const startDate = new Date("2025-08-25 00:00:00");
+          const endDate = new Date("2026-08-23 00:00:00");
 
           const filteredPeriods = periodsData.data.filter((period: PeriodeEvaluation) => {
             const periodStartDate = new Date(period.DATE_DEB);
@@ -395,11 +395,11 @@ export default function Home() {
           // 🆕 Ajouter les dates de période pour le calcul des absences
           periodeEvaluationDates: periodWithDates
             ? {
-                DATE_DEB: periodWithDates.DATE_DEB,
-                DATE_FIN: periodWithDates.DATE_FIN,
-                CODE_PERIODE_EVALUATION: periodWithDates.CODE_PERIODE_EVALUATION,
-                NOM_PERIODE_EVALUATION: periodWithDates.NOM_PERIODE_EVALUATION,
-              }
+              DATE_DEB: periodWithDates.DATE_DEB,
+              DATE_FIN: periodWithDates.DATE_FIN,
+              CODE_PERIODE_EVALUATION: periodWithDates.CODE_PERIODE_EVALUATION,
+              NOM_PERIODE_EVALUATION: periodWithDates.NOM_PERIODE_EVALUATION,
+            }
             : null,
         }),
       });
@@ -511,18 +511,23 @@ export default function Home() {
                             .filter((group) => {
                               const prefixesToExclude = [
                                 "P-BTS1",
+                                "P-BTS2",
                                 "M-BTS1",
+                                "M-BTS2",
                                 "N-BTS1",
+                                "N-BTS2",
                                 "L-BTS1",
                                 "LI-BTS1",
+                                "LI-BTS2",
                                 "B-BTS1",
                                 "MP-BTS1",
+                                "MP-BTS2",
+                                "B-BTS2",
                               ];
                               const startsWithExcludedPrefix = prefixesToExclude.some((prefix) =>
                                 group.label.startsWith(prefix)
                               );
-                              const containsExcludedTerm =
-                                group.label.includes("RP") || group.label.includes("Césure");
+                              const containsExcludedTerm = group.label.includes("Césure") || group.label.includes("TEST GROUPE");
 
                               return !startsWithExcludedPrefix && !containsExcludedTerm;
                             })
