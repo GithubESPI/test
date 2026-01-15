@@ -527,7 +527,7 @@ export default function Home() {
                               const startsWithExcludedPrefix = prefixesToExclude.some((prefix) =>
                                 group.label.startsWith(prefix)
                               );
-                              const containsExcludedTerm = group.label.includes("Césure") || group.label.includes("TEST GROUPE");
+                              const containsExcludedTerm = group.label.includes("Césure");
 
                               return !startsWithExcludedPrefix && !containsExcludedTerm;
                             })
