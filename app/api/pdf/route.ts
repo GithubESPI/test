@@ -1219,35 +1219,55 @@ async function createStudentPDF(
     const group = groupInfo.length > 0 ? groupInfo[0] : null;
     const etenduGroupe = group && group.ETENDU_GROUPE ? group.ETENDU_GROUPE : "";
 
-    // --- AFFICHAGE SUR DEUX LIGNES PERSONNALISÉES ---
+    // On cherche l'index du mot "spécialité"
+    const keyword = "spécialité";
+    const indexSpecialite = etenduGroupe.indexOf(keyword);
 
-    // 1. Première partie du diplôme
+    if (indexSpecialite !== -1) {
+      // --- CAS OÙ ON TROUVE "SPÉCIALITÉ" : ON COUPE EN DEUX ---
+
+      // ligne 1 : du début jusqu'à "spécialité" inclus
+      const line1 = etenduGroupe.substring(0, indexSpecialite + keyword.length);
+      // ligne 2 : le reste + la période (Semestre)
+      const line2 = etenduGroupe.substring(indexSpecialite + keyword.length).trim() + " " + period;
+
+      // Dessin Ligne 1
+      currentY -= 20;
+      const l1Width = boldFont.widthOfTextAtSize(line1, fontSizeTitle);
+      page.drawText(line1, {
+        x: (pageWidth - l1Width) / 2,
+        y: currentY,
+        size: fontSizeTitle,
+        font: boldFont,
+        color: espiBlue,
+      });
+
+      // Dessin Ligne 2
+      currentY -= 15;
+      const l2Width = boldFont.widthOfTextAtSize(line2, fontSizeTitle);
+      page.drawText(line2, {
+        x: (pageWidth - l2Width) / 2,
+        y: currentY,
+        size: fontSizeTitle,
+        font: boldFont,
+        color: espiBlue,
+      });
+
+    } else {
+      // --- CAS CLASSIQUE : ON GARDE TOUT SUR UNE LIGNE (si pas de "spécialité") ---
+      currentY -= 20;
+      const periodeText = `${etenduGroupe} ${period}`;
+      const periodeTextWidth = boldFont.widthOfTextAtSize(periodeText, fontSizeTitle);
+      page.drawText(periodeText, {
+        x: (pageWidth - periodeTextWidth) / 2,
+        y: currentY,
+        size: fontSizeTitle,
+        font: boldFont,
+        color: espiBlue,
+      });
+    }
+
     currentY -= 20;
-    const line1 = "Diplôme Supérieur en immobilier spécialité";
-    const line1Width = boldFont.widthOfTextAtSize(line1, fontSizeTitle);
-    page.drawText(line1, {
-      x: (pageWidth - line1Width) / 2,
-      y: currentY,
-      size: fontSizeTitle,
-      font: boldFont,
-      color: espiBlue,
-    });
-
-    // 2. Deuxième partie : Manager + Année + Période
-    currentY -= 15; // Espacement entre les deux lignes
-    const line2 = `Property manager-Gestion Immobilière ${period}`;
-    // Note : 'period' contient déjà "ALT Semestre 1" d'après votre code
-
-    const line2Width = boldFont.widthOfTextAtSize(line2, fontSizeTitle);
-    page.drawText(line2, {
-      x: (pageWidth - line2Width) / 2,
-      y: currentY,
-      size: fontSizeTitle,
-      font: boldFont,
-      color: espiBlue,
-    });
-
-    currentY -= 20; // Espace avant la suite
 
     // Cadre d'informations étudiant et groupe
     const boxWidth = pageWidth - 2 * margin;
@@ -2322,25 +2342,35 @@ async function createStudentPDF(
         }
 
         // Obtenir les dimensions de l'image et la redimensionner si nécessaire
+        const personnelCode = groupInfo[0]?.CODE_PERSONNEL || "";
         const originalWidth = signatureImage.width;
         let scale = 0.2; // Échelle par défaut
 
-        // Ajuster l'échelle en fonction de la largeur de l'image
-        if (originalWidth > 400) scale = 0.15;
-        else if (originalWidth < 200) scale = 0.35;
+        // --- MODIFICATION POUR LUDIVINE LAUNAY ---
+        // On définit la largeur max par défaut
+        let currentMaxWidth = 120;
 
-        // Ajouter une limite de taille maximale pour la signature
-        const MAX_WIDTH = 120; // Limite la signature à 120 points de large
+        // Ajuster l'échelle en fonction de la largeur de l'image
+        if (String(personnelCode) === "482") {
+          scale = 0.45;         // Échelle plus grande (au lieu de 0.2)
+          currentMaxWidth = 220; // Largeur max plus grande (au lieu de 120)
+        } else {
+          // Logique d'ajustement standard pour les autres signatures
+          if (originalWidth > 400) scale = 0.15;
+          else if (originalWidth < 200) scale = 0.35;
+        }
+
         const scaleByWidth = signatureImage.scale(scale);
         let finalScale = scale;
 
-        // Si même avec notre échelle la signature est trop large, réduire davantage
-        if (scaleByWidth.width > MAX_WIDTH) {
-          finalScale = scale * (MAX_WIDTH / scaleByWidth.width);
+        // On utilise currentMaxWidth (qui vaut 220 pour le code 482)
+        if (scaleByWidth.width > currentMaxWidth) {
+          finalScale = scale * (currentMaxWidth / scaleByWidth.width);
         }
 
         const signatureDims = signatureImage.scale(finalScale);
 
+        // D'abord dessiner l'image de signature
         // D'abord dessiner l'image de signature
         page.drawText(`Signature du ${nomFonctionPersonnel}`, {
           x: pageWidth - margin - 200,
@@ -2351,7 +2381,6 @@ async function createStudentPDF(
 
         // Afficher le prénom et nom inversés en gras après le texte fonction, mais avant l'image
         page.drawText(`${prenomPersonnel} ${nomPersonnel}`, {
-          // Inverser nom et prénom
           x: pageWidth - margin - 200,
           y: signatureY - 27,
           size: 7,
