@@ -480,11 +480,22 @@ function associerMatieresAuxUE(
   const attach = (item: any) => {
     if (isUEByName(item)) return;
 
-    // 1) Rattachement direct par parent
+    // 1) Rattachement direct par parent (existant)
     const parent = norm(item.CODE_UE_PARENT);
     if (parent && ueMap.has(parent)) {
       ueMap.get(parent)!.matieres.push(item);
       return;
+    }
+
+    // 1-bis) NOUVEAU : Forcer le rattachement des matières UE4 par leur nom
+    // Si la matière contient "English", "Career", "Voltaire", etc.
+    if (isUE4RelatedSubject(item, ueMap)) {
+      for (const [code, { ue }] of ueMap) {
+        if (norm(ue.NOM_MATIERE).includes("UE 4")) {
+          ueMap.get(code)!.matieres.push(item);
+          return;
+        }
+      }
     }
 
     // 1-bis) Spécial "International" : rattachement par nom
@@ -529,7 +540,7 @@ function getSignatureFilename(codePersonnel: string): string | null {
   // Mapping entre les codes personnels gestionnaires et les noms de fichiers de signature
   const signatureMap: Record<string, string> = {
     "460": "christine.jpg",
-    "482": "ludivinelaунay.png",
+    "482": "ludivinelaunay.png",
     "500": "estelle.jpg",
     "517": "signYoussefSAKER.jpg",
     "2239": "signature_marionsoustelle.png",
@@ -1208,19 +1219,35 @@ async function createStudentPDF(
     const group = groupInfo.length > 0 ? groupInfo[0] : null;
     const etenduGroupe = group && group.ETENDU_GROUPE ? group.ETENDU_GROUPE : "";
 
-    // Semestre
+    // --- AFFICHAGE SUR DEUX LIGNES PERSONNALISÉES ---
+
+    // 1. Première partie du diplôme
     currentY -= 20;
-    const periodeText = `${etenduGroupe} ${period}`;
-    const periodeTextWidth = boldFont.widthOfTextAtSize(periodeText, fontSizeTitle);
-    page.drawText(periodeText, {
-      x: (pageWidth - periodeTextWidth) / 2,
+    const line1 = "Diplôme Supérieur en immobilier spécialité";
+    const line1Width = boldFont.widthOfTextAtSize(line1, fontSizeTitle);
+    page.drawText(line1, {
+      x: (pageWidth - line1Width) / 2,
       y: currentY,
       size: fontSizeTitle,
       font: boldFont,
       color: espiBlue,
     });
 
-    currentY -= 20;
+    // 2. Deuxième partie : Manager + Année + Période
+    currentY -= 15; // Espacement entre les deux lignes
+    const line2 = `Property manager-Gestion Immobilière ${period}`;
+    // Note : 'period' contient déjà "ALT Semestre 1" d'après votre code
+
+    const line2Width = boldFont.widthOfTextAtSize(line2, fontSizeTitle);
+    page.drawText(line2, {
+      x: (pageWidth - line2Width) / 2,
+      y: currentY,
+      size: fontSizeTitle,
+      font: boldFont,
+      color: espiBlue,
+    });
+
+    currentY -= 20; // Espace avant la suite
 
     // Cadre d'informations étudiant et groupe
     const boxWidth = pageWidth - 2 * margin;

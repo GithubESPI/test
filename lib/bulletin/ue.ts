@@ -37,18 +37,22 @@ const toKey = (v: unknown): string =>
 export function getUeAverage(
   ueAverages: ReadonlyArray<UeAverageRow>,
   ueCode: string,
-  studentId?: string | number
+  studentId?: string | number,
+  matiereNom?: string // Ajoutez ce paramètre optionnel
 ): number | null {
   const target = toKey(ueCode);
+  const targetNom = matiereNom ? toKey(matiereNom) : null;
 
   const row = ueAverages.find((a) => {
     const code = toKey(a.CODE_UE ?? a.CODE_MATIERE);
-    const okStudent =
-      studentId == null ? true : String(a.CODE_APPRENANT ?? "") === String(studentId);
-    return code === target && okStudent;
+    const nom = (a as any).NOM_MATIERE ? toKey((a as any).NOM_MATIERE) : null;
+
+    const okStudent = studentId == null ? true : String(a.CODE_APPRENANT ?? "") === String(studentId);
+
+    // On cherche par CODE ou par NOM
+    return okStudent && (code === target || (targetNom && nom === targetNom));
   });
 
-  // parseUeAverage doit retourner number | null
   return parseUeAverage(row?.MOYENNE_UE ?? row?.MOYENNE);
 }
 
