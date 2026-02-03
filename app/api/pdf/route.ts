@@ -790,9 +790,6 @@ async function createStudentPDF(
     const pdfDoc = await PDFDocument.create();
     let page = pdfDoc.addPage([595.28, 841.89]); // Format A4
 
-    // Initialize ueEtats Map at the beginning of the function
-    const ueEtats = new Map<string, string>();
-
     // Charger les polices Poppins (s'ils sont disponibles)
     let poppinsRegular;
     let poppinsBold;
@@ -835,326 +832,88 @@ async function createStudentPDF(
     let currentY = pageHeight - margin;
 
     // Associer les matières à leurs UE respectives
+    // --- 1. FILTRAGE ET INITIALISATION ---
     const studentGrades = grades.filter((g) => g.CODE_APPRENANT === student.CODE_APPRENANT);
-    console.log(
-      `Nombre de notes pour l'étudiant ${student.CODE_APPRENANT}: ${studentGrades.length}`
-    );
+    const studentSubjects = subjects.filter((s) => s.CODE_APPRENANT === student.CODE_APPRENANT);
 
-    const ueMap = associerMatieresAuxUE(
-      studentGrades,
-      subjects.filter((s) => s.CODE_APPRENANT === student.CODE_APPRENANT)
-    );
-
-    // Calculer pour chaque matière si elle est en rattrapage (R) en fonction de sa moyenne
     const matiereEtats = new Map<string, string>();
-    // Initialiser la map pour contenir les états de UE qui ont des matières en rattrapage
+    const ueEtats = new Map<string, Etat>();
 
-    // 1. Amélioration du traitement initial des moyennes et états
-    for (const grade of studentGrades) {
-      // Traitement des moyennes textuelles ou vides
-      const moyenneStr = String(grade.MOYENNE || "")
-        .toUpperCase()
-        .trim();
+    // Association propre des matières aux UE
+    const ueMap = associerMatieresAuxUE(studentGrades, studentSubjects);
 
-      if (moyenneStr === "VA") {
-        matiereEtats.set(grade.CODE_MATIERE, "VA");
-        continue;
-      } else if (moyenneStr === "NV" || moyenneStr === "" || moyenneStr === "-") {
-        matiereEtats.set(grade.CODE_MATIERE, "NV");
-        console.log(`État défini à NV pour ${grade.NOM_MATIERE} (moyenne: "${moyenneStr}")`);
-        continue;
-      }
-
-      // Pour les moyennes numériques
-      try {
-        const moyenneValue = parseFloat(moyenneStr.replace(",", "."));
-        if (!isNaN(moyenneValue)) {
-          if (moyenneValue >= 10) {
-            matiereEtats.set(grade.CODE_MATIERE, "VA");
-          } else if (moyenneValue < 8) {
-            matiereEtats.set(grade.CODE_MATIERE, "NV");
-          } else {
-            matiereEtats.set(grade.CODE_MATIERE, "TEMP_8_10");
-          }
-        } else {
-          // Si la conversion échoue, on met NV par défaut
-          matiereEtats.set(grade.CODE_MATIERE, "NV");
-          console.log(
-            `État défini à NV pour ${grade.NOM_MATIERE} (moyenne non numérique: "${moyenneStr}")`
-          );
-        }
-      } catch (error) {
-        // En cas d'erreur, on met NV par défaut
-        matiereEtats.set(grade.CODE_MATIERE, "NV");
-        console.log(`Erreur pour ${grade.NOM_MATIERE}, état défini à NV:`, error);
-      }
-    }
-
-    // 👇 Ce bloc garantit que chaque matière a un état, même si l'apprenant est absent toute l'année
-    // S'assurer que toutes les matières ont un état, sinon mettre NV
-    // ✅ Donner un état à toute matière SANS l'écraser trop tôt
+    // --- 2. CALCUL DES ÉTATS INDIVIDUELS DES MATIÈRES (Source Unique) ---
     for (const { matieres } of ueMap.values()) {
       for (const m of matieres) {
-        if (matiereEtats.has(m.CODE_MATIERE)) continue; // déjà fixé ailleurs
+        let finalEtat: string = "NV";
 
-        // 1) NOTES (le plus fiable pour VA/NV)
-        let etatInferé: string | null = null;
-        const note =
-          notes?.find(
-            (n) => n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === m.CODE_MATIERE
-          ) ??
-          notes?.find(
-            (n) => n.CODE_APPRENANT === student.CODE_APPRENANT && n.NOM_MATIERE === m.NOM_MATIERE
-          );
-        if (note) {
-          if (Number(note.CODE_EVALUATION_NOTE) === 1) etatInferé = "VA";
-          else if (Number(note.CODE_EVALUATION_NOTE) === 2) etatInferé = "NV";
+        const gradeInfo = grades.find(g => g.CODE_APPRENANT === student.CODE_APPRENANT && g.CODE_MATIERE === m.CODE_MATIERE);
+        const noteInfo = notes?.find(n => n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === m.CODE_MATIERE);
+
+        const evalText = gradeInfo?.NOM_EVALUATION_NOTE || "";
+        const moyenneRaw = gradeInfo?.MOYENNE;
+
+        // RÈGLE A : Texte "Validé" (priorité haute)
+        if (evalText === "Validé" || String(moyenneRaw).toUpperCase() === "VA") {
+          finalEtat = "VA";
+        }
+        // RÈGLE B : Moyenne numérique
+        else if (moyenneRaw !== null && moyenneRaw !== undefined && !isNaN(parseFloat(String(moyenneRaw).replace(",", ".")))) {
+          const n = parseFloat(String(moyenneRaw).replace(",", "."));
+          if (n >= 10) finalEtat = "VA";
+          else if (n >= 8) finalEtat = "TEMP_8_10"; // Marqueur pour compensation
+          else finalEtat = "NV";
+        }
+        // RÈGLE C : Table des notes (CODE 1 = Validé)
+        else if (noteInfo && Number(noteInfo.CODE_EVALUATION_NOTE) === 1) {
+          finalEtat = "VA";
         }
 
-        // 2) GRADES (MOYENNES_UE) si présent et textuel VA/NV
-        if (!etatInferé) {
-          const g = grades.find(
-            (gg) =>
-              gg.CODE_APPRENANT === student.CODE_APPRENANT && gg.CODE_MATIERE === m.CODE_MATIERE
-          );
-          const moyTxt = String(g?.MOYENNE ?? "")
-            .toUpperCase()
-            .trim();
-          if (moyTxt === "VA" || moyTxt === "NV") etatInferé = moyTxt;
-          // pas de NV par défaut ici — on laisse la chance à subjects
-        }
-
-        // 3) SUBJECTS (ECTS_PAR_MATIERE) si moyenne textuelle VA/NV
-        if (!etatInferé) {
-          const s = subjects.find(
-            (ss) =>
-              ss.CODE_APPRENANT === student.CODE_APPRENANT && ss.CODE_MATIERE === m.CODE_MATIERE
-          ) as any;
-          const moyTxtSubj = String(s?.MOYENNE ?? "")
-            .toUpperCase()
-            .trim();
-          if (moyTxtSubj === "VA" || moyTxtSubj === "NV") etatInferé = moyTxtSubj;
-        }
-
-        // 4) Dernier recours
-        matiereEtats.set(m.CODE_MATIERE, etatInferé ?? "NV");
-        if (!etatInferé) {
-          console.warn(`⚠️ Matière sans note/état, défaut NV : ${m.NOM_MATIERE}`);
-        }
+        matiereEtats.set(m.CODE_MATIERE, finalEtat);
       }
     }
 
+    // --- 3. LOGIQUE DE COMPENSATION AU SEIN DE L'UE ---
+
     for (const [ueCode, { matieres }] of ueMap) {
-      // Étape 1 : Compter les états des matières
-      let countR = 0; // Rattrapage
-      let count8_10 = 0; // TEMP_8_10 (entre 8 et 10)
-      let countVA = 0; // Validées
-      let countC = 0; // Compensées
+      const etatsUe = matieres.map(m => matiereEtats.get(m.CODE_MATIERE));
+      const hasNV = etatsUe.includes("NV");
+      const hasVA = etatsUe.includes("VA");
 
-      // 1. Compter les matières par état (avant modifications)
-      for (const matiere of matieres) {
-        const etat = matiereEtats.get(matiere.CODE_MATIERE);
-        if (etat === "NV") countR++;
-        else if (etat === "TEMP_8_10") count8_10++;
-        else if (etat === "VA") countVA++;
-        else if (etat === "C") countC++;
-      }
-
-      console.log(
-        `UE ${ueCode}: Matières (total=${matieres.length}, VA=${countVA}, C=${countC}, 8-10=${count8_10}, R=${countR})`
-      );
-
-      // Étape 2 : Gérer les cas de compensation pour les matières TEMP_8_10
-      if (count8_10 > 0) {
-        if (countR > 0) {
-          for (const matiere of matieres) {
-            if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
-              matiereEtats.set(matiere.CODE_MATIERE, "NV");
-              console.log(
-                `Matière ${matiere.NOM_MATIERE}: mise en NV car UE contient des matières en NV`
-              );
-            }
-          }
-        } else if (matieres.length === 1 && count8_10 === 1) {
-          const matiere = matieres[0];
-          matiereEtats.set(matiere.CODE_MATIERE, "NV");
-          console.log(
-            `Matière ${matiere.NOM_MATIERE}: mise en NV car UE n'a qu'une seule matière entre 8 et 10`
-          );
-        } else if (countVA >= 1 && count8_10 === 1) {
-          for (const matiere of matieres) {
-            if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
-              matiereEtats.set(matiere.CODE_MATIERE, "C");
-              console.log(
-                `Matière ${matiere.NOM_MATIERE}: mise en C car UE contient des matières en VA`
-              );
-            }
-          }
-        } else {
-          for (const matiere of matieres) {
-            if (matiereEtats.get(matiere.CODE_MATIERE) === "TEMP_8_10") {
-              matiereEtats.set(matiere.CODE_MATIERE, "C");
-              console.log(`Matière ${matiere.NOM_MATIERE}: mise en C (cas par défaut)`);
-            }
+      for (const m of matieres) {
+        if (matiereEtats.get(m.CODE_MATIERE) === "TEMP_8_10") {
+          // On transforme en "C" (Compensé) si pas d'échec strict (NV) et présence d'un succès (VA)
+          if (!hasNV && hasVA) {
+            matiereEtats.set(m.CODE_MATIERE, "C");
+          } else {
+            matiereEtats.set(m.CODE_MATIERE, "NV");
           }
         }
       }
-
-      // 1) États des matières bruts pour l’UE courante
-      const rawEtats: string[] = matieres.map((m: { CODE_MATIERE: string }) =>
-        String(matiereEtats.get(m.CODE_MATIERE) ?? "NV")
-      );
-
-      // 2) Normalise (R -> NV) + typage du paramètre
-      const etatsMatieresNorm: Etat[] = rawEtats.map((e: string) => normalizeEtat(e));
-
-      const ueAvg = getUeAverage(ueAverages, ueCode);
-
-      // Si tu as la moyenne de l’UE
-      const ueFinalEtat: Etat = getEtatUE(etatsMatieresNorm, ueAvg);
-      ueEtats.set(ueCode, ueFinalEtat);
-
-      console.log(
-        `UE ${ueCode} = ${ueFinalEtat} (états des matières : ${matieres
-          .map((m) => `${m.NOM_MATIERE}=${matiereEtats.get(m.CODE_MATIERE)}`)
-          .join(", ")})`
-      );
     }
 
-    // === GARDE-FOU FINAL — à mettre DANS createStudentPDF,
-    // juste après avoir construit `ueMap`, et avant de dessiner le tableau ===
-
-    // utilitaires locaux (si pas déjà définis plus haut dans le fichier)
-    const parseUeAverageLocal = (v?: number | string | null): number | null => {
-      if (v == null) return null;
-      if (typeof v === "number") return Number.isFinite(v) ? v : null;
-      const s = String(v).trim();
-      if (s === "" || s === "-" || s === "VA" || s === "NV" || s === "C") return null;
-      const n = Number(s.replace(",", "."));
-      return Number.isNaN(n) ? null : n;
-    };
-
-    const getUeAverageStrict = (
-      ueAverages: any[],
-      ueCode: string,
-      studentId?: string
-    ): number | null => {
-      const up = (x: any) =>
-        String(x ?? "")
-          .trim()
-          .toUpperCase();
-      const row = (ueAverages || []).find(
-        (a) =>
-          up(a.CODE_UE ?? a.CODE_MATIERE) === up(ueCode) &&
-          (studentId ? String(a.CODE_APPRENANT ?? "") === String(studentId) : true)
-      );
-      return parseUeAverageLocal(row?.MOYENNE_UE ?? row?.MOYENNE);
-    };
-
-    // 1) moyenne NUMERIQUE fiable par UE
-    const ueAvgByCode = new Map<string, number | null>();
-    for (const [ueCode, { ue }] of ueMap) {
-      const numFromRow = parseUeAverageLocal((ue as any)?.MOYENNE_UE ?? (ue as any)?.MOYENNE);
-      const numFromList =
-        numFromRow ??
-        getUeAverageStrict(
-          grades as any[], // <- chez toi, les moyennes d'UE sont dans `grades`
-          ueCode,
-          student.CODE_APPRENANT // <- paramètre de createStudentPDF
-        );
-      ueAvgByCode.set(ueCode, numFromList ?? null);
-    }
-
-    // 2) applique ta règle stricte et RÉÉCRIT ueEtats
-    for (const [ueCode, { matieres }] of ueMap) {
-      const childEtats = matieres.map(
-        (m) => String(matiereEtats.get(m.CODE_MATIERE) ?? "NV").toUpperCase() as "VA" | "NV" | "C"
-      );
-
-      const hasNV = childEtats.some((e) => e === "NV");
-      const allVAorC = childEtats.every((e) => e === "VA" || e === "C");
-      const allVA = childEtats.every((e) => e === "VA");
-      const avg = ueAvgByCode.get(ueCode); // number|null
-
-      let finalEtat: "VA" | "NV" | "C";
-      if (hasNV) {
-        finalEtat = "NV";
-      } else if (avg == null) {
-        // fallback: pas de moyenne -> VA seulement si TOUT = VA
-        finalEtat = allVA ? "VA" : "NV";
-      } else {
-        // RÈGLE stricte : (toutes VA/C) ET (moyenne ≥ 10) => VA ; sinon NV
-        finalEtat = allVAorC && avg >= 10 ? "VA" : "NV";
-      }
-
-      ueEtats.set(ueCode, finalEtat);
-      console.log(
-        `UE ${ueCode}: avg=${avg} ; enfants=[${childEtats.join(",")}] ; final=${finalEtat}`
-      );
-    }
-    // === FIN GARDE-FOU FINAL ===
-
-    // 4. Créer une map pour associer les matières à leurs UE (par code)
-    const matiereToUeMap = new Map<string, string>();
-    for (const [ueCode, { matieres }] of ueMap) {
-      for (const matiere of matieres) {
-        matiereToUeMap.set(matiere.CODE_MATIERE, ueCode);
-      }
-    }
-
-    for (const subject of subjects.filter((s) => s.CODE_APPRENANT === student.CODE_APPRENANT)) {
-      if (!isUEByName(subject) && !matiereEtats.has(subject.CODE_MATIERE)) {
-        // Vérifier si une note existe dans la table des notes
-        const note = notes?.find(
-          (n) =>
-            n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === subject.CODE_MATIERE
-        );
-
-        if (note && note.CODE_EVALUATION_NOTE === "1") {
-          matiereEtats.set(subject.CODE_MATIERE, "VA");
-        } else {
-          matiereEtats.set(subject.CODE_MATIERE, "NV");
-          console.log(`Matière sans état ni moyenne définie à NV: ${subject.NOM_MATIERE}`);
-        }
-      }
-    }
-
-    // ⬇⬇ Fallback: donner un état aux UEs qui n'en ont pas (ex: International)
-    // ✅ Fallback plus robuste : calcule l’état depuis les enfants déjà associés dans ueMap
-    // On part du principe que tu as déjà :
-    // type Etat = "VA" | "NV" | "C";
-    // function normalizeEtat(...)
-    // function getEtatUE(...)
-
+    // --- 4. CALCUL DE L'ÉTAT FINAL DE CHAQUE UE ---
     for (const [ueCode, { ue, matieres }] of ueMap) {
-      if (!ueEtats.has(ueCode)) {
-        const rawEtats: string[] = matieres.map((m) =>
-          String(matiereEtats.get(m.CODE_MATIERE) ?? "NV")
-        );
-        const etatsMatieresNorm: Etat[] = rawEtats.map((e: string) => normalizeEtat(e));
+      const etatsFinaux = matieres.map(m => normalizeEtat(matiereEtats.get(m.CODE_MATIERE)));
 
-        const avgFromUeRowNum = parseUeAverage((ue as any)?.MOYENNE_UE ?? (ue as any)?.MOYENNE);
+      // Récupération de la moyenne de l'UE
+      const avgFromRow = parseUeAverage((ue as any)?.MOYENNE_UE ?? (ue as any)?.MOYENNE);
+      const ueAvg = avgFromRow ?? getUeAverage(ueAverages, ueCode, student.CODE_APPRENANT);
 
-        const ueAvgNum: number | null =
-          avgFromUeRowNum ?? getUeAverage(ueAverages, ueCode, student.CODE_APPRENANT);
+      // Application de votre règle : si pas de NV et moyenne >= 10 (ou pas de moyenne), alors VA
+      const finalUEStatus = getEtatUE(etatsFinaux, ueAvg);
+      ueEtats.set(ueCode, finalUEStatus);
 
-        const ueFinalEtat = getEtatUE(etatsMatieresNorm, ueAvgNum);
-        ueEtats.set(ueCode, ueFinalEtat);
-      }
+      console.log(`UE ${ueCode} : ${finalUEStatus} (Matières: ${etatsFinaux.join(', ')})`);
     }
 
-    // 5. Mettre à jour les ECTS des matières en rattrapage
-    for (const subject of subjects) {
-      if (subject.CODE_APPRENANT === student.CODE_APPRENANT) {
-        const etat = matiereEtats.get(subject.CODE_MATIERE);
-        // Si la matière est en rattrapage et n'est pas une UE, mettre son ECTS à 0
-        if (etat === "NV" && !isUEByName(subject)) {
-          console.log(`Mise à jour ECTS à 0 pour matière en rattrapage: ${subject.NOM_MATIERE}`);
-          subject.CREDIT_ECTS = 0;
-        }
+    // --- 5. SYNCHRONISATION DES ECTS DES MATIÈRES ---
+    for (const subject of studentSubjects) {
+      const etat = matiereEtats.get(subject.CODE_MATIERE);
+      if (etat === "NV" && !isUEByName(subject)) {
+        subject.CREDIT_ECTS = 0;
       }
     }
-
     // ESPI Logo and header section
     const logoOffsetLeft = 20; // Vous pouvez ajuster cette valeur selon le décalage souhaité
 
@@ -1444,6 +1203,7 @@ async function createStudentPDF(
     // Lignes pour chaque matière
     // ✅ Construction complète des matières à afficher (avec ou sans note)
     const allSubjects: Array<{
+      NOM_EVALUATION_NOTE: string;
       CODE_MATIERE: string;
       NOM_MATIERE: string;
       MOYENNE?: number;
@@ -1461,11 +1221,14 @@ async function createStudentPDF(
           CODE_MATIERE: subject.CODE_MATIERE,
           NOM_MATIERE: subject.NOM_MATIERE,
           MOYENNE: note ? note.MOYENNE : undefined,
+          // AJOUT DE LA PROPRIÉTÉ MANQUANTE :
+          // On récupère NOM_EVALUATION_NOTE depuis la note, ou une chaîne vide par défaut
+          NOM_EVALUATION_NOTE: note?.NOM_EVALUATION_NOTE || "",
           CREDIT_ECTS: subject.CREDIT_ECTS || 0,
-          NUM_ORDRE: subject.NUM_ORDRE || "999",
+          NUM_ORDRE: String(subject.NUM_ORDRE || "999"), // On s'assure que c'est un string pour le type
         };
       })
-      .sort((a, b) => parseInt(a.NUM_ORDRE, 10) - parseInt(b.NUM_ORDRE, 10)); // Compteur de matières affichées
+      .sort((a, b) => parseInt(a.NUM_ORDRE, 10) - parseInt(b.NUM_ORDRE, 10));
 
     const isTPGroupFlag = isTPGroup(groupInfo);
     let matiereCounter = 0;
@@ -1495,17 +1258,40 @@ async function createStudentPDF(
     // Le ueCode EST utilisé dans ueEctsMap.set(), donc l'erreur pourrait être ailleurs
 
     // Calculer la somme des ECTS pour chaque UE
-    for (const subject of allSubjects) {
-      if (!isUEByName(subject) && matiereToUeMap.has(subject.CODE_MATIERE)) {
+    // Remplacez votre bloc de recalcul ECTS par celui-ci
+
+    // --- 1. CRÉATION DU DICTIONNAIRE DE CORRESPONDANCE ---
+    // Ce bloc permet de savoir instantanément à quelle UE appartient une matière
+    const matiereToUeMap = new Map<string, string>();
+    for (const [ueCode, { matieres }] of ueMap) {
+      for (const matiere of matieres) {
+        matiereToUeMap.set(matiere.CODE_MATIERE, ueCode);
+      }
+    }
+
+    for (const subject of studentSubjects) {
+      // On ignore les lignes qui sont des en-têtes d'UE pour ne pas doubler les points
+      if (!isUEByName(subject)) {
         const ueCode = matiereToUeMap.get(subject.CODE_MATIERE);
-        if (ueCode !== undefined) {
+        const etat = matiereEtats.get(subject.CODE_MATIERE);
+
+        // RÈGLE : On n'ajoute les ECTS au total de l'UE que si la matière est validée ou compensée
+        if (ueCode && (etat === "VA" || etat === "C")) {
           const ects = Number(subject.CREDIT_ECTS) || 0;
           const currentTotal = ueEctsMap.get(ueCode) || 0;
           ueEctsMap.set(ueCode, currentTotal + ects);
-          console.log(
-            `Recalcul ECTS : Ajout de ${ects} ECTS de ${subject.NOM_MATIERE} au total de l'UE ${ueCode}`
-          );
+
+          console.log(`ECTS validés : ${subject.NOM_MATIERE} (${ects}) ajouté à l'UE ${ueCode}`);
         }
+      }
+    }
+
+    // --- 3. MISE À JOUR DES ECTS DANS L'OBJET SUBJECT (Pour l'affichage ligne par ligne) ---
+    for (const subject of studentSubjects) {
+      const etat = matiereEtats.get(subject.CODE_MATIERE);
+      // Si la matière est en rattrapage (NV), on affiche 0 ECTS sur sa ligne
+      if (etat === "NV" && !isUEByName(subject)) {
+        subject.CREDIT_ECTS = 0;
       }
     }
 
@@ -1627,63 +1413,30 @@ async function createStudentPDF(
       // Moyenne (ou "-" si vide)
       // Moyenne (ou "-" si vide)
       let moyenne;
+
       if (subject.MOYENNE !== undefined && subject.MOYENNE !== null) {
         const moyenneStr = String(subject.MOYENNE);
+        // ... (votre logique actuelle pour traiter les nombres ou VA/NV déjà présents dans MOYENNE)
         if (moyenneStr === "VA" || moyenneStr === "NV") {
           moyenne = moyenneStr;
-          if (!matiereEtats.has(subject.CODE_MATIERE)) {
-            matiereEtats.set(subject.CODE_MATIERE, moyenneStr);
-          }
-        } else if (moyenneStr === "-") {
-          moyenne = "-";
-          if (!matiereEtats.has(subject.CODE_MATIERE)) {
-            matiereEtats.set(subject.CODE_MATIERE, "NV");
-          }
         } else {
           try {
             moyenne = parseFloat(moyenneStr.replace(",", ".")).toFixed(2).replace(".", ",");
           } catch {
             moyenne = "-";
-            if (!matiereEtats.has(subject.CODE_MATIERE)) {
-              matiereEtats.set(subject.CODE_MATIERE, "NV");
-            }
           }
         }
       } else {
-        moyenne = "-";
-        let note = notes?.find(
-          (n) =>
-            n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === subject.CODE_MATIERE
-        );
-        if (!note) {
-          note = notes?.find(
-            (n) =>
-              n.CODE_APPRENANT === student.CODE_APPRENANT && n.NOM_MATIERE === subject.NOM_MATIERE
-          );
-        }
-        if (note) {
-          if (Number(note.CODE_EVALUATION_NOTE) === 1) {
-            moyenne = "VA";
-            matiereEtats.set(subject.CODE_MATIERE, "VA");
-          } else if (Number(note.CODE_EVALUATION_NOTE) === 2) {
-            moyenne = "NV";
-            matiereEtats.set(subject.CODE_MATIERE, "NV");
-          }
+        // GESTION DU TEXTE "Validé" / "Non Validé"
+        if (subject.NOM_EVALUATION_NOTE === "Validé") {
+          moyenne = "Validé";
+          matiereEtats.set(subject.CODE_MATIERE, "VA");
+        } else if (subject.NOM_EVALUATION_NOTE === "Non Validé") {
+          moyenne = "Non Validé";
+          matiereEtats.set(subject.CODE_MATIERE, "NV");
         } else {
-          if (!matiereEtats.has(subject.CODE_MATIERE)) {
-            const moyenneTextuelle = String(subject.MOYENNE || "")
-              .toUpperCase()
-              .trim();
-            if (["VA", "NV", "NV", "C"].includes(moyenneTextuelle)) {
-              matiereEtats.set(subject.CODE_MATIERE, moyenneTextuelle);
-              console.log(
-                `✅ Rattrapage depuis moyenne brute pour ${subject.NOM_MATIERE} → ${moyenneTextuelle}`
-              );
-            } else {
-              matiereEtats.set(subject.CODE_MATIERE, "NV");
-              console.warn(`⚠️ Matière sans état défini, forcée à NV : ${subject.NOM_MATIERE}`);
-            }
-          }
+          moyenne = "-";
+          if (!matiereEtats.has(subject.CODE_MATIERE)) matiereEtats.set(subject.CODE_MATIERE, "NV");
         }
       }
 
@@ -1701,8 +1454,9 @@ async function createStudentPDF(
 
       // Si c'est une UE, on utilise l'état calculé depuis ueEtats
       if (isUEByName(subject)) {
-        const ueCode = matiereToUeMap.get(subject.CODE_MATIERE) || subject.CODE_MATIERE;
-        etat = ueEtats.get(ueCode) ?? "-";
+        const ueCode = subject.CODE_MATIERE; // ou votre logique de clé UE
+        // On récupère l'état calculé à l'étape 4 du bloc précédent
+        etat = ueEtats.get(ueCode) || "NV";
       } else {
         const etatCalculé = matiereEtats.get(subject.CODE_MATIERE);
 
@@ -1720,18 +1474,6 @@ async function createStudentPDF(
             etat = "VA";
           } else if (moyenneStr === "NV") {
             etat = "NV";
-
-            // AJOUT: Forcer l'UE parente à NV
-            if (!isUEByName(subject)) {
-              // Utilisez subject au lieu de matiere
-              const ueCode = matiereToUeMap.get(subject.CODE_MATIERE); // Utilisez subject au lieu de matiere
-              if (ueCode) {
-                ueEtats.set(ueCode, "NV");
-                console.log(
-                  `UE ${ueCode} forcée à NV car matière ${subject.NOM_MATIERE} a moyenne NV` // Utilisez subject au lieu de matiere
-                );
-              }
-            }
           } else if (moyenneStr === "-") {
             etat = "-";
           } else {

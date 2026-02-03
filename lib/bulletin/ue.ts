@@ -56,25 +56,27 @@ export function getUeAverage(
   return parseUeAverage(row?.MOYENNE_UE ?? row?.MOYENNE);
 }
 
+// À REMPLACER DANS lib/bulletin/ue.ts
+// À remplacer dans lib/bulletin/ue.ts
 export function getEtatUE(
   matiereEtats: Etat[],
   ueAverage: number | string | null | undefined
 ): Etat {
-  // 1) Une seule NV en matière => UE = NV
+  // 1. Si une seule matière est explicitement en échec (NV), l'UE est NV
   if (matiereEtats.some((e) => e === "NV")) return "NV";
 
-  const allVA = matiereEtats.every((e) => e === "VA");
-  const allVAorC = matiereEtats.every((e) => e === "VA" || e === "C");
+  // 2. On vérifie si on a des matières validées ou compensées (VA ou C)
+  const hasValidData = matiereEtats.some((e) => e === "VA" || e === "C");
 
-  // 2) Moyenne numérique ?
   const avg = parseUeAverage(ueAverage);
 
-  // 2.a) Moyenne absente => fallback: seulement si TOUT = VA on valide
-  if (avg === null) return allVA ? "VA" : "NV";
+  // 3. CAS : PAS DE MOYENNE NUMÉRIQUE
+  if (avg === null) {
+    // Si pas de NV et qu'on a du VA/C, on valide
+    return hasValidData ? "VA" : "NV";
+  }
 
-  // 2.b) Règle stricte demandée
-  if (allVAorC) return avg >= 10 ? "VA" : "NV";
-
-  // Sécurité (normalement couvert par le test NV au début)
-  return "NV";
+  // 4. CAS : MOYENNE NUMÉRIQUE PRÉSENTE
+  // L'UE est VA si moyenne >= 10 (l'absence de NV est déjà vérifiée au point 1)
+  return avg >= 10 ? "VA" : "NV";
 }

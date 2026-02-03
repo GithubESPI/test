@@ -241,36 +241,46 @@ export async function POST(request: Request) {
 
       MOYENNES_UE: `
         SELECT 
-        g.CODE_GROUPE,
-        g.NOM_GROUPE,
-        ap.CODE_APPRENANT,
-        ap.NOM_APPRENANT,
-        ap.PRENOM_APPRENANT,
-        m.CODE_MATIERE,
-        m.NOM_MATIERE,
-        rd.NUM_ORDRE,
-        mm.MOYENNE,
-        pe.NOM_PERIODE_EVALUATION,
-        r.CODE_REFERENTIEL,
-        r.NOM_REFERENTIEL
-      FROM GROUPE g 
-      INNER JOIN REFERENTIEL r ON g.CODE_FORMATION = r.CODE_FORMATION 
-      INNER JOIN REFERENTIEL_DETAIL rd ON r.CODE_REFERENTIEL = rd.CODE_REFERENTIEL 
-      INNER JOIN MATIERE m ON rd.CODE_MATIERE = m.CODE_MATIERE 
-      INNER JOIN PERIODE_EVALUATION pe ON r.CODE_PERIODE_EVALUATION = pe.CODE_PERIODE_EVALUATION
-      INNER JOIN MOYENNE_MATIERE_PERIODE mm ON mm.CODE_MATIERE = m.CODE_MATIERE
-        AND mm.CODE_GROUPE = g.CODE_GROUPE 
-        AND mm.CODE_REFERENTIEL = r.CODE_REFERENTIEL
-      INNER JOIN APPRENANT ap ON mm.CODE_APPRENANT = ap.CODE_APPRENANT
-      WHERE g.CODE_GROUPE = ${group}
-        AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
-        AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
-        AND r.CODE_SESSION = 5
-        AND g.CODE_SITE = ${campus}
-        AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
-        AND r.IS_DANS_MOYENNE = '1'
-      ORDER BY ap.NOM_APPRENANT, ap.PRENOM_APPRENANT, rd.NUM_ORDRE, m.NOM_MATIERE
-      `,
+            g.CODE_GROUPE,
+            g.NOM_GROUPE,
+            ap.CODE_APPRENANT,
+            ap.NOM_APPRENANT,
+            ap.PRENOM_APPRENANT,
+            m.CODE_MATIERE,
+            m.NOM_MATIERE,
+            rd.NUM_ORDRE,
+            mm.MOYENNE,
+            en.NOM_EVALUATION_NOTE,
+            pe.NOM_PERIODE_EVALUATION,
+            r.CODE_REFERENTIEL,
+            r.NOM_REFERENTIEL
+        FROM GROUPE g 
+        INNER JOIN REFERENTIEL r ON g.CODE_FORMATION = r.CODE_FORMATION 
+        INNER JOIN REFERENTIEL_DETAIL rd ON r.CODE_REFERENTIEL = rd.CODE_REFERENTIEL 
+        INNER JOIN MATIERE m ON rd.CODE_MATIERE = m.CODE_MATIERE 
+        INNER JOIN PERIODE_EVALUATION pe ON r.CODE_PERIODE_EVALUATION = pe.CODE_PERIODE_EVALUATION
+        /* Utilisation de FREQUENTE et INSCRIPTION pour lister tous les apprenants du groupe */
+        INNER JOIN FREQUENTE f ON g.CODE_GROUPE = f.CODE_GROUPE
+        INNER JOIN INSCRIPTION i ON f.CODE_INSCRIPTION = i.CODE_INSCRIPTION
+        INNER JOIN APPRENANT ap ON i.CODE_APPRENANT = ap.CODE_APPRENANT
+        /* Changement en LEFT JOIN pour inclure les moyennes nulles */
+        LEFT JOIN MOYENNE_MATIERE_PERIODE mm ON mm.CODE_MATIERE = m.CODE_MATIERE
+            AND mm.CODE_GROUPE = g.CODE_GROUPE 
+            AND mm.CODE_REFERENTIEL = r.CODE_REFERENTIEL
+            AND mm.CODE_APPRENANT = ap.CODE_APPRENANT
+        /* Récupération des statuts Validé / Non Validé */
+        LEFT JOIN NOTE n ON n.CODE_APPRENANT = ap.CODE_APPRENANT 
+            AND n.CODE_REFERENTIEL_DETAIL = rd.CODE_REFERENTIEL_DETAIL
+        LEFT JOIN EVALUATION_NOTE en ON n.CODE_EVALUATION_NOTE = en.CODE_EVALUATION_NOTE
+        WHERE g.CODE_GROUPE = ${group}
+            AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
+            AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
+            AND r.CODE_SESSION = 5
+            AND g.CODE_SITE = ${campus}
+            AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
+            AND r.IS_DANS_MOYENNE = '1'
+        ORDER BY ap.NOM_APPRENANT, ap.PRENOM_APPRENANT, rd.NUM_ORDRE, m.NOM_MATIERE
+    `,
 
       MOYENNE_GENERALE: `
              SELECT 
