@@ -749,25 +749,7 @@ function isUE4RelatedSubject(
   }
 
   // Vérifier également avec la liste des matières typiques de l'UE 4
-  const ue4MatiereNames = [
-    "Communication Digitale et Orale",
-    "ESPI Career Services",
-    "ESPI Inside",
-    "Real Estate English",
-    "Rencontres de l'Immobilier",
-    "Immersion Professionnelle",
-    "Projet Voltaire",
-    "Real Estate English & TOEFL",
-    "Mémoire de Recherche",
-    "Méthodologie de la Recherche",
-    "Mobilité Internationale",
-    "Techniques de Négociation",
-    "Real Estate Industry Overview",
-    "Dissertation Methodology",
-    "Outils de Représentation Spatiale", // ✅ AJOUT manquant
-  ];
-
-  return ue4MatiereNames.some((name) => subject.NOM_MATIERE && subject.NOM_MATIERE.includes(name));
+  return false;
 }
 
 async function createStudentPDF(
@@ -1269,6 +1251,18 @@ async function createStudentPDF(
       }
     }
 
+    // --- 3. MISE À JOUR DES ECTS DANS L'OBJET SUBJECT (Pour l'affichage ligne par ligne) ---
+    // ⚠️ IMPORTANT : FAIRE CECI EN PREMIER pour que ueEctsMap utilise les bonnes valeurs
+    for (const subject of studentSubjects) {
+      const etat = matiereEtats.get(subject.CODE_MATIERE);
+      // Si la matière est en rattrapage (NV), on affiche 0 ECTS sur sa ligne
+      if (etat === "NV" && !isUEByName(subject)) {
+        subject.CREDIT_ECTS = 0;
+        console.log(`⚠️ ECTS mis à 0 pour ${subject.NOM_MATIERE} (État: NV)`);
+      }
+    }
+
+    // --- 4. CALCUL DES TOTAUX UE (après mise à jour des ECTS) ---
     for (const subject of studentSubjects) {
       // On ignore les lignes qui sont des en-têtes d'UE pour ne pas doubler les points
       if (!isUEByName(subject)) {
@@ -1281,17 +1275,10 @@ async function createStudentPDF(
           const currentTotal = ueEctsMap.get(ueCode) || 0;
           ueEctsMap.set(ueCode, currentTotal + ects);
 
-          console.log(`ECTS validés : ${subject.NOM_MATIERE} (${ects}) ajouté à l'UE ${ueCode}`);
+          console.log(`✅ ECTS validés : ${subject.NOM_MATIERE} (${ects}) ajouté à l'UE ${ueCode} → Total: ${currentTotal + ects}`);
+        } else {
+          console.log(`❌ ${subject.NOM_MATIERE} non ajouté (État: ${etat})`);
         }
-      }
-    }
-
-    // --- 3. MISE À JOUR DES ECTS DANS L'OBJET SUBJECT (Pour l'affichage ligne par ligne) ---
-    for (const subject of studentSubjects) {
-      const etat = matiereEtats.get(subject.CODE_MATIERE);
-      // Si la matière est en rattrapage (NV), on affiche 0 ECTS sur sa ligne
-      if (etat === "NV" && !isUEByName(subject)) {
-        subject.CREDIT_ECTS = 0;
       }
     }
 
@@ -1653,23 +1640,18 @@ async function createStudentPDF(
     // ✅ Correction : Calcul du total des ECTS basé uniquement sur les UE
 
     // ✅ Vérification et correction du calcul du total des ECTS
-    const totalECTS = allSubjects
-      .filter((subject) => isUEByName(subject))
-      .reduce((acc, subject) => acc + (subject.CREDIT_ECTS || 0), 0);
-    console.log("Total ECTS (UE uniquement) :", totalECTS);
+    // On utilise directement ueEctsMap qui contient les ECTS validés de chaque UE
+    const totalECTS = Array.from(ueEctsMap.values()).reduce((acc, ects) => acc + ects, 0);
+    console.log("Total ECTS (somme des UE validées) :", totalECTS);
 
     // Log détaillé pour le débogage
     console.log("Détail des UE pour l'étudiant " + student.CODE_APPRENANT + ":");
-    subjects
-      .filter(
-        (subject) =>
-          subject.CODE_APPRENANT === student.CODE_APPRENANT &&
-          subject.NOM_MATIERE &&
-          isUEByName(subject)
-      )
-      .forEach((ue) => {
-        console.log(`${ue.NOM_MATIERE}: ${ue.CREDIT_ECTS} ECTS`);
-      });
+    for (const [ueCode, ectsTotal] of ueEctsMap) {
+      const ueSubject = allSubjects.find(s => s.CODE_MATIERE === ueCode && isUEByName(s));
+      if (ueSubject) {
+        console.log(`${ueSubject.NOM_MATIERE}: ${ectsTotal} ECTS`);
+      }
+    }
 
     const totalECTSText = String(Number(totalECTS) || 0);
     const totalECTSWidth = mainFont.widthOfTextAtSize(totalECTSText, fontSize);
