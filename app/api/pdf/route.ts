@@ -543,7 +543,7 @@ function getSignatureFilename(codePersonnel: string): string | null {
     "482": "ludivinelaunay.png",
     "500": "estelle.jpg",
     "517": "signYoussefSAKER.jpg",
-    "2239": "signature_marionsoustelle.png",
+    "2239": "marionsoustelle.png",
     "306975": "lebon.png",
     "89152": "magali.png",
     "650429": "Anne-Lise.png", // Ajout pour le CODE_PERSONNEL
@@ -2078,6 +2078,9 @@ async function createStudentPDF(
         if (String(personnelCode) === "482") {
           scale = 0.45;         // Échelle plus grande (au lieu de 0.2)
           currentMaxWidth = 220; // Largeur max plus grande (au lieu de 120)
+        } else if(String(personnelCode) === "2239") {
+          scale = 0.65;         // Échelle plus grande (au lieu de 0.2)
+          currentMaxWidth = 360; 
         } else {
           // Logique d'ajustement standard pour les autres signatures
           if (originalWidth > 400) scale = 0.15;
