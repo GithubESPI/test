@@ -33,17 +33,15 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 
-// Ajout du champ name dans le schéma
 const formSchema = z.object({
-  name: z.string().optional(), // Maintenant name est inclus dans le schéma
+  name: z.string().optional(),
   campus: z.string().min(1, "Veuillez sélectionner un campus"),
   group: z.string().min(1, "Veuillez sélectionner un groupe"),
   semester: z.string().min(1, "Veuillez sélectionner une période"),
-  periodeEvaluationCode: z.string().optional(), // Optionnel pour l'initialisation du formulaire
-  periodeEvaluation: z.string().optional(), // Optionnel pour l'initialisation du formulaire
+  periodeEvaluationCode: z.string().optional(),
+  periodeEvaluation: z.string().optional(),
 });
 
-// Types pour votre formulaire
 type FormValues = z.infer<typeof formSchema>;
 
 interface PeriodeEvaluation {
@@ -70,7 +68,7 @@ interface YpareoGroup {
 }
 
 interface Campus {
-  id: string; // Identifiant unique
+  id: string;
   codeSite: number;
   label: string;
 }
@@ -80,15 +78,13 @@ interface Group {
   label: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-interface QueryResults {
-  APPRENANT: YpareoStudent[];
-  MATIERE: string[];
-  GROUPE: YpareoGroup[];
-  SITE: Campus[];
-  NOTE: string[];
-  PERIODE_EVALUATION: PeriodeEvaluation[];
-}
+const EXCLUDED_PREFIXES = [
+  "P-BTS1", "P-BTS2", "M-BTS1", "M-BTS2", "N-BTS1", "N-BTS2",
+  "L-BTS1", "LI-BTS1", "LI-BTS2", "B-BTS1", "MP-BTS1", "MP-BTS2", "B-BTS2",
+];
+
+const PERIOD_START = new Date("2025-08-25 00:00:00");
+const PERIOD_END = new Date("2026-08-23 00:00:00");
 
 export default function Home() {
   const { data: session } = useSession();
@@ -109,7 +105,6 @@ export default function Home() {
   const [selectedGroupName, setSelectedGroupName] = useState<string>("");
   const [progress, setProgress] = useState(0);
 
-  // Déclarez une ref pour stocker les données entre les rendus
   const responseDataRef = useRef<any>(null);
 
   const form = useForm<FormValues>({
@@ -124,80 +119,67 @@ export default function Home() {
     },
   });
 
-  // Récupération des données utilisateur
+  // Récupération du nom utilisateur
   useEffect(() => {
-    if (session?.user?.email) {
-      const getUserData = async () => {
-        try {
-          const email = session?.user?.email;
-          if (email) {
-            const response = await fetch(`/api/user?email=${encodeURIComponent(email)}`);
-            const data = await response.json();
+    if (!session?.user?.email) return;
 
-            if (data?.name) {
-              form.setValue("name", data.name);
-            }
-          }
-        } catch (error) {
-          console.error("Erreur lors de la récupération du nom:", error);
-        }
-      };
+    const getUserData = async () => {
+      try {
+        const response = await fetch(`/api/user?email=${encodeURIComponent(session.user!.email!)}`);
+        const data = await response.json();
+        if (data?.name) form.setValue("name", data.name);
+      } catch (error) {
+        console.error("Erreur récupération nom utilisateur:", error);
+      }
+    };
 
-      getUserData();
-    }
+    getUserData();
   }, [session, form]);
 
+  // ✅ Chargement initial avec fetch parallèle
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
 
-        // Récupération des périodes d'évaluation
-        const periodsResponse = await fetch("/api/periods");
-        if (!periodsResponse.ok) {
-          throw new Error("Erreur lors de la récupération des périodes d'évaluation");
-        }
-        const periodsData = await periodsResponse.json();
+        // ✅ Les 3 appels API en parallèle au lieu de séquentiels
+        const [periodsResponse, studentsResponse, groupsResponse] = await Promise.all([
+          fetch("/api/periods"),
+          fetch("/api/students"),
+          fetch("/api/groups"),
+        ]);
+
+        if (!periodsResponse.ok) throw new Error("Erreur récupération périodes");
+        if (!studentsResponse.ok) throw new Error("Erreur récupération étudiants");
+        if (!groupsResponse.ok) throw new Error("Erreur récupération groupes");
+
+        const [periodsData, studentsData, groupsData] = await Promise.all([
+          periodsResponse.json(),
+          studentsResponse.json(),
+          groupsResponse.json(),
+        ]);
 
         // Filtrage des périodes
         if (periodsData.success && Array.isArray(periodsData.data)) {
-          const startDate = new Date("2025-08-25 00:00:00");
-          const endDate = new Date("2026-08-23 00:00:00");
-
           const filteredPeriods = periodsData.data.filter((period: PeriodeEvaluation) => {
             const periodStartDate = new Date(period.DATE_DEB);
             const periodEndDate = new Date(period.DATE_FIN);
-
             return (
-              // Cas 1 : Exactement les mêmes dates
-              (periodStartDate.getTime() === startDate.getTime() &&
-                periodEndDate.getTime() === endDate.getTime()) ||
-              // Cas 2 : Intervalle compris entre les dates spécifiées
-              (periodStartDate >= startDate && periodEndDate <= endDate)
+              (periodStartDate.getTime() === PERIOD_START.getTime() &&
+                periodEndDate.getTime() === PERIOD_END.getTime()) ||
+              (periodStartDate >= PERIOD_START && periodEndDate <= PERIOD_END)
             );
           });
           setPeriods(filteredPeriods);
         } else {
-          console.error("Format de données des périodes invalide:", periodsData);
           setPeriods([]);
         }
 
-        // Récupération des étudiants (une seule fois)
-        const studentsResponse = await fetch("/api/students");
-        if (!studentsResponse.ok) throw new Error("Erreur lors de la récupération des étudiants");
-        const studentsData = await studentsResponse.json();
-
-        // Récupération des groupes (une seule fois)
-        const groupsResponse = await fetch("/api/groups");
-        if (!groupsResponse.ok) throw new Error("Erreur lors de la récupération des groupes");
-        const groupsData = await groupsResponse.json();
-
         const studentsArray = Object.values(studentsData) as YpareoStudent[];
         const groupsArray = Object.values(groupsData) as YpareoGroup[];
-
         setAllGroups(groupsArray);
 
-        // Création de la liste des campus (une seule fois)
+        // Construction de la liste des campus
         const uniqueCampusMap = new Map<number, string>();
         studentsArray.forEach((student) => {
           student.inscriptions.forEach((inscription) => {
@@ -210,17 +192,17 @@ export default function Home() {
         const uniqueCampuses: Campus[] = Array.from(uniqueCampusMap).map(
           ([codeSite, nomSite], index) => ({
             id: `campus-${codeSite}-${index}`,
-            codeSite: codeSite,
+            codeSite,
             label: nomSite,
           })
         );
 
         setCampuses(uniqueCampuses);
       } catch (error) {
-        console.error("Erreur:", error);
+        console.error("Erreur chargement initial:", error);
         setErrorMessage("Erreur lors du chargement des données initiales");
         setShowErrorModal(true);
-        setPeriods([]); // Initialiser avec un tableau vide en cas d'erreur
+        setPeriods([]);
       } finally {
         setIsLoading(false);
       }
@@ -229,19 +211,13 @@ export default function Home() {
     fetchData();
   }, []);
 
+  // Barre de progression
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-
-    if (isLoading) {
-      setProgress(0);
-      interval = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 98) return prev;
-          return prev + 1; // Plus petit incrément
-        });
-      }, 50); // Plus fréquent
-    }
-
+    if (!isLoading) return;
+    setProgress(0);
+    const interval = setInterval(() => {
+      setProgress((prev) => (prev >= 98 ? prev : prev + 1));
+    }, 50);
     return () => clearInterval(interval);
   }, [isLoading]);
 
@@ -251,10 +227,8 @@ export default function Home() {
 
     const filteredGroups = allGroups
       .filter((group) => group.codeSite === selectedCampus.codeSite)
-      .map((group) => ({
-        id: group.codeGroupe,
-        label: group.nomGroupe,
-      }));
+      .map((group) => ({ id: group.codeGroupe, label: group.nomGroupe }));
+
     setGroups(filteredGroups);
   };
 
@@ -265,59 +239,41 @@ export default function Home() {
       const selectedCampus = campuses.find((campus) => campus.id === values.campus);
       if (!selectedCampus) throw new Error("Campus non trouvé");
 
-      // S'assurer que periodeEvaluationCode et periodeEvaluation sont définis
-      if (!values.periodeEvaluationCode || !values.periodeEvaluation) {
-        const selectedPeriod = periods.find((p) => p.CODE_PERIODE_EVALUATION === values.semester);
-        if (!selectedPeriod) throw new Error("Période d'évaluation non trouvée");
+      const selectedPeriod = periods.find((p) => p.CODE_PERIODE_EVALUATION === values.semester);
+      if (!selectedPeriod) throw new Error("Période d'évaluation non trouvée");
 
+      if (!values.periodeEvaluationCode || !values.periodeEvaluation) {
         values.periodeEvaluationCode = values.semester;
         values.periodeEvaluation = selectedPeriod.NOM_PERIODE_EVALUATION;
       }
 
-      // Stocker le nom du groupe sélectionné
       const selectedGroup = groups.find((group) => group.id.toString() === values.group);
-      if (selectedGroup) {
-        setSelectedGroupName(selectedGroup.label);
-      }
+      if (selectedGroup) setSelectedGroupName(selectedGroup.label);
 
-      const selectedPeriod = periods.find((p) => p.CODE_PERIODE_EVALUATION === values.semester);
-      if (!selectedPeriod) throw new Error("Période d'évaluation non trouvée");
-
-      // ✅ Vérification de la cohérence entre groupe et période
+      // Vérification cohérence groupe / période
       const groupName = selectedGroup?.label.toUpperCase() || "";
       const periodName = selectedPeriod.NOM_PERIODE_EVALUATION.toUpperCase();
 
-      const isGroupALT = groupName.includes("ALT");
-      const isGroupTP = groupName.includes("TP");
-      const isPeriodALT = periodName.includes("ALT");
-      const isPeriodTP = periodName.includes("TP");
-
-      // ❌ Groupe ALT avec période non-ALT
-      if (isGroupALT && isPeriodTP) {
+      if (groupName.includes("ALT") && periodName.includes("TP")) {
         throw new Error(
-          `Le groupe "${selectedGroupName}" est en alternance, mais la période "${selectedPeriod.NOM_PERIODE_EVALUATION}" est réservée aux temps pleins.`
+          `Le groupe "${selectedGroup?.label}" est en alternance, mais la période "${selectedPeriod.NOM_PERIODE_EVALUATION}" est réservée aux temps pleins.`
         );
       }
-
-      // ❌ Groupe TP avec période ALT
-      if (isGroupTP && isPeriodALT) {
+      if (groupName.includes("TP") && periodName.includes("ALT")) {
         throw new Error(
-          `Le groupe "${selectedGroupName}" est en temps plein, mais la période "${selectedPeriod.NOM_PERIODE_EVALUATION}" est réservée à l'alternance.`
+          `Le groupe "${selectedGroup?.label}" est en temps plein, mais la période "${selectedPeriod.NOM_PERIODE_EVALUATION}" est réservée à l'alternance.`
         );
       }
 
       const response = await fetch("/api/sql", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           campus: selectedCampus.codeSite.toString(),
           group: values.group,
           periodeEvaluationCode: values.periodeEvaluationCode,
           periodeEvaluation: values.periodeEvaluation,
           semester: values.semester,
-          // 🆕 Ajouter les dates de période
           periodeEvaluationDates: {
             DATE_DEB: selectedPeriod.DATE_DEB,
             DATE_FIN: selectedPeriod.DATE_FIN,
@@ -328,21 +284,12 @@ export default function Home() {
       });
 
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Erreur lors de la récupération des données");
 
-      if (!response.ok) {
-        throw new Error(data.error || "Erreur lors de la récupération des données");
-      }
-
-      console.log("✅ Données récupérées:", data);
-      console.log("📅 Dates de période transmises:", selectedPeriod);
-
-      // Stocker les données dans à la fois la ref et l'état
       responseDataRef.current = data.data;
       setRetrievedData(data.data);
-      console.log("Données stockées:", responseDataRef.current ? "Non null" : "Null");
       setShowSuccessModal(true);
     } catch (error: any) {
-      console.error("❌ Erreur lors de la soumission:", error);
       setErrorMessage(error.message || "Une erreur est survenue");
       setShowErrorModal(true);
     } finally {
@@ -351,15 +298,10 @@ export default function Home() {
   };
 
   const handleGeneratePDFs = async () => {
-    // Utilisez la ref ou l'état, selon ce qui est disponible
     const dataToUse = responseDataRef.current || retrievedData;
 
-    // Validation plus stricte des données
     if (!dataToUse || !dataToUse.APPRENANT || dataToUse.APPRENANT.length === 0) {
-      console.error("Données insuffisantes pour générer les PDFs", dataToUse);
-      setErrorMessage(
-        "Données insuffisantes pour générer les PDFs. Assurez-vous d'avoir des apprenants dans le groupe sélectionné."
-      );
+      setErrorMessage("Données insuffisantes pour générer les PDFs.");
       setShowErrorModal(true);
       return;
     }
@@ -367,56 +309,41 @@ export default function Home() {
     try {
       setIsGeneratingPDF(true);
 
-      // Assurez-vous que les données critiques sont bien définies
       const selectedPeriod = form.getValues("periodeEvaluation") || "";
-      if (!selectedPeriod) {
-        throw new Error("Période d'évaluation non définie");
-      }
+      if (!selectedPeriod) throw new Error("Période d'évaluation non définie");
+      if (!selectedGroupName) throw new Error("Nom du groupe non défini");
 
-      if (!selectedGroupName) {
-        throw new Error("Nom du groupe non défini");
-      }
-
-      // 🆕 Récupérer les dates de la période pour les transmettre à l'API PDF
       const selectedPeriodCode = form.getValues("semester");
       const periodWithDates = periods.find((p) => p.CODE_PERIODE_EVALUATION === selectedPeriodCode);
 
-      console.log("📅 Dates de période pour PDF:", periodWithDates);
-
       const response = await fetch("/api/pdf", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           data: dataToUse,
           periodeEvaluation: selectedPeriod,
           groupName: selectedGroupName,
-          // 🆕 Ajouter les dates de période pour le calcul des absences
           periodeEvaluationDates: periodWithDates
             ? {
-              DATE_DEB: periodWithDates.DATE_DEB,
-              DATE_FIN: periodWithDates.DATE_FIN,
-              CODE_PERIODE_EVALUATION: periodWithDates.CODE_PERIODE_EVALUATION,
-              NOM_PERIODE_EVALUATION: periodWithDates.NOM_PERIODE_EVALUATION,
-            }
+                DATE_DEB: periodWithDates.DATE_DEB,
+                DATE_FIN: periodWithDates.DATE_FIN,
+                CODE_PERIODE_EVALUATION: periodWithDates.CODE_PERIODE_EVALUATION,
+                NOM_PERIODE_EVALUATION: periodWithDates.NOM_PERIODE_EVALUATION,
+              }
             : null,
         }),
       });
 
-      // Vérifier si la réponse est OK
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || "Erreur lors de la génération des PDFs");
       }
 
       const data = await response.json();
-
       setPdfDownloadUrl(data.path);
       setPdfStudentCount(data.studentCount);
       setShowPdfSuccessModal(true);
     } catch (error: any) {
-      console.error("❌ Erreur lors de la génération des PDFs:", error);
       setErrorMessage(error.message || "Une erreur est survenue lors de la génération des PDFs");
       setShowErrorModal(true);
     } finally {
@@ -424,8 +351,26 @@ export default function Home() {
     }
   };
 
-  const closeSuccessModal = () => {
-    setShowSuccessModal(false);
+  // ✅ Fonction de téléchargement extraite du JSX
+  const handleDownload = async () => {
+    try {
+      const response = await fetch(pdfDownloadUrl);
+      if (!response.ok) throw new Error(`Erreur ${response.status}: ${response.statusText}`);
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      setErrorMessage("Erreur lors du téléchargement: " + (error as Error).message);
+      setShowErrorModal(true);
+      setShowPdfSuccessModal(false);
+    }
   };
 
   if (isLoading) {
@@ -461,6 +406,7 @@ export default function Home() {
           <CardContent className="pt-4">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                {/* Campus */}
                 <FormField
                   control={form.control}
                   name="campus"
@@ -482,7 +428,7 @@ export default function Home() {
                         <SelectContent>
                           {campuses
                             .filter((campus) => campus.label !== "GROUPE ESPI")
-                            .sort((a, b) => a.label.localeCompare(b.label)) // TRIER ICI
+                            .sort((a, b) => a.label.localeCompare(b.label))
                             .map((campus) => (
                               <SelectItem key={campus.id} value={campus.id} className="text-sm">
                                 {campus.label}
@@ -494,6 +440,8 @@ export default function Home() {
                     </FormItem>
                   )}
                 />
+
+                {/* Groupe */}
                 <FormField
                   control={form.control}
                   name="group"
@@ -509,31 +457,16 @@ export default function Home() {
                         <SelectContent>
                           {groups
                             .filter((group) => {
-                              const prefixesToExclude = [
-                                "P-BTS1",
-                                "P-BTS2",
-                                "M-BTS1",
-                                "M-BTS2",
-                                "N-BTS1",
-                                "N-BTS2",
-                                "L-BTS1",
-                                "LI-BTS1",
-                                "LI-BTS2",
-                                "B-BTS1",
-                                "MP-BTS1",
-                                "MP-BTS2",
-                                "B-BTS2",
-                              ];
-                              const startsWithExcludedPrefix = prefixesToExclude.some((prefix) =>
+                              const startsWithExcluded = EXCLUDED_PREFIXES.some((prefix) =>
                                 group.label.startsWith(prefix)
                               );
-                              const containsExcludedTerm = group.label.includes("Césure")
-                                || group.label.includes("RP")
-                                || group.label.includes("DDS");
-
-                              return !startsWithExcludedPrefix && !containsExcludedTerm;
+                              const containsExcluded =
+                                group.label.includes("Césure") ||
+                                group.label.includes("RP") ||
+                                group.label.includes("DDS");
+                              return !startsWithExcluded && !containsExcluded;
                             })
-                            .sort((a, b) => a.label.localeCompare(b.label)) // TRIER ICI
+                            .sort((a, b) => a.label.localeCompare(b.label))
                             .map((group) => (
                               <SelectItem
                                 key={group.id}
@@ -550,6 +483,7 @@ export default function Home() {
                   )}
                 />
 
+                {/* Période */}
                 <FormField
                   control={form.control}
                   name="semester"
@@ -563,19 +497,10 @@ export default function Home() {
                           const selectedPeriod = periods.find(
                             (p) => p.CODE_PERIODE_EVALUATION === value
                           );
-
-                          console.log("Période sélectionnée - Code:", value);
-                          console.log("Période sélectionnée - Détails:", selectedPeriod);
-
-                          // Stocker à la fois le code et le nom
                           if (selectedPeriod) {
-                            form.setValue("periodeEvaluationCode", value); // Le code sélectionné
-                            form.setValue(
-                              "periodeEvaluation",
-                              selectedPeriod.NOM_PERIODE_EVALUATION
-                            ); // Le nom correspondant
+                            form.setValue("periodeEvaluationCode", value);
+                            form.setValue("periodeEvaluation", selectedPeriod.NOM_PERIODE_EVALUATION);
                           }
-
                           field.onChange(value);
                         }}
                         value={field.value}
@@ -587,10 +512,10 @@ export default function Home() {
                         </FormControl>
                         <SelectContent>
                           {periods
-                            .filter((period) => !period.NOM_PERIODE_EVALUATION.startsWith("BTS")) // ❌ Masquer les périodes "BTS"
+                            .filter((period) => !period.NOM_PERIODE_EVALUATION.startsWith("BTS"))
                             .sort((a, b) =>
                               a.NOM_PERIODE_EVALUATION.localeCompare(b.NOM_PERIODE_EVALUATION)
-                            ) // ✅ Trier par nom
+                            )
                             .map((period) => (
                               <SelectItem
                                 key={period.CODE_PERIODE_EVALUATION}
@@ -606,6 +531,7 @@ export default function Home() {
                     </FormItem>
                   )}
                 />
+
                 <Button
                   type="submit"
                   className="w-full h-10 text-sm font-bold bg-gradient-to-r from-[#156082] to-[#003349] hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2 mt-2"
@@ -624,7 +550,7 @@ export default function Home() {
         </Card>
       </div>
 
-      {/* Modale de succès */}
+      {/* Modale succès données */}
       <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -638,11 +564,15 @@ export default function Home() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex flex-col sm:flex-row gap-3 sm:justify-center pt-4">
-            <Button onClick={closeSuccessModal} variant="outline" className="w-full sm:w-auto">
+            <Button
+              onClick={() => setShowSuccessModal(false)}
+              variant="outline"
+              className="w-full sm:w-auto"
+            >
               Fermer
             </Button>
             <Button
-              onClick={handleGeneratePDFs} // Utilisez la fonction ici
+              onClick={handleGeneratePDFs}
               disabled={isGeneratingPDF}
               className="w-full sm:w-auto bg-wtm-button-linear hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2"
             >
@@ -657,7 +587,7 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      {/* Modale de succès pour la génération des PDFs */}
+      {/* Modale succès PDF */}
       <Dialog open={showPdfSuccessModal} onOpenChange={setShowPdfSuccessModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -678,41 +608,7 @@ export default function Home() {
               Fermer
             </Button>
             <Button
-              onClick={async () => {
-                try {
-                  // Utiliser fetch pour télécharger le fichier plutôt que window.location
-                  const response = await fetch(pdfDownloadUrl);
-
-                  // Vérifier si la requête a réussi
-                  if (!response.ok) {
-                    throw new Error(`Erreur ${response.status}: ${response.statusText}`);
-                  }
-
-                  // Convertir la réponse en blob
-                  const blob = await response.blob();
-
-                  // Créer un URL pour le blob
-                  const url = URL.createObjectURL(blob);
-
-                  // Créer un élément <a> pour télécharger le fichier
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
-                  document.body.appendChild(a);
-
-                  // Déclencher le téléchargement
-                  a.click();
-
-                  // Nettoyer
-                  URL.revokeObjectURL(url);
-                  document.body.removeChild(a);
-                } catch (error) {
-                  console.error("Erreur lors du téléchargement:", error);
-                  setErrorMessage("Erreur lors du téléchargement: " + (error as Error).message);
-                  setShowErrorModal(true);
-                  setShowPdfSuccessModal(false);
-                }
-              }}
+              onClick={handleDownload}
               className="w-full sm:w-auto bg-wtm-button-linear hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2"
             >
               <FileDown className="w-5 h-5" />
@@ -722,7 +618,7 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      {/* Modale d'erreur */}
+      {/* Modale erreur */}
       <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

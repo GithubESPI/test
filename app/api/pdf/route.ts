@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// Utiliser fileStorage au lieu de tempFileStorage
 import { Etat, getEtatUE, getUeAverage, normalizeEtat, parseUeAverage } from "@/lib/bulletin/ue";
 import { fileStorage } from "@/lib/fileStorage";
 import fontkit from "@pdf-lib/fontkit";
@@ -9,7 +8,10 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
-// Type definitions for the student data
+// ============================================================
+// INTERFACES
+// ============================================================
+
 interface StudentData {
   CODE_APPRENANT: string;
   NOM_APPRENANT: string;
@@ -102,194 +104,60 @@ interface DuplicateStat {
   dates: string;
 }
 
-// ... interfaces inchangées ...
+// ============================================================
+// ASSETS PRÉCHARGÉS (chargés une seule fois pour tous les PDFs)
+// ============================================================
 
-function processAbsences(
-  absences: Absence[],
-  startDate = "2025-08-25 00:00:00",
-  endDate = "2026-08-23 00:00:00",
-  handleDuplicates: "sum" | "max" | "deduplicate" = "sum"
-): {
-  students: ProcessedAbsence[];
-  globalTotals: {
-    justifiees: number;
-    injustifiees: number;
-    retards: number;
-    justifieesFormatted: string;
-    injustifieesFormatted: string;
-    retardsFormatted: string;
-  };
-  duplicatesInfo: {
-    duplicateGroups: any[];
-    totalDuplicates: number;
-  };
-} {
-  const groupedAbsences: Record<string, ProcessedAbsence> = {};
-  const filterStartDate = new Date(startDate);
-  const filterEndDate = new Date(endDate);
-
-  const duplicateGroups: Record<string, any[]> = {};
-
-  absences.forEach((absence, index) => {
-    const { CODE_ABSENCE, DATE_DEB, DUREE } = absence;
-    if (DATE_DEB) {
-      try {
-        const absenceDate = new Date(DATE_DEB.replace(" ", "T"));
-        if (absenceDate < filterStartDate || absenceDate > filterEndDate) {
-          return;
-        }
-      } catch {
-        return;
-      }
-    }
-
-    const duree = parseInt(DUREE?.toString() || "0", 10);
-    if (duree <= 0) return;
-
-    if (!duplicateGroups[CODE_ABSENCE]) {
-      duplicateGroups[CODE_ABSENCE] = [];
-    }
-
-    duplicateGroups[CODE_ABSENCE].push({
-      ...absence,
-      originalIndex: index,
-      duree: duree,
-    });
-  });
-
-  const duplicateStats: DuplicateStat[] = [];
-  let totalDuplicatesFound = 0;
-
-  Object.keys(duplicateGroups).forEach((codeAbsence) => {
-    const group = duplicateGroups[codeAbsence];
-
-    if (group.length > 1) {
-      totalDuplicatesFound++;
-      const totalDuree = group.reduce((sum, item) => sum + item.duree, 0);
-      const maxDuree = Math.max(...group.map((item) => item.duree));
-
-      duplicateStats.push({
-        codeAbsence,
-        count: group.length,
-        durees: group.map((item) => item.duree),
-        totalDuree,
-        maxDuree,
-        dates: group[0].DATE_DEB + " → " + group[0].DATE_FIN,
-      });
-
-      console.log(`🔍 CODE_ABSENCE ${codeAbsence}: ${group.length} enregistrements`);
-      console.log(`   Durées: ${group.map((item) => item.duree).join(", ")} min`);
-      console.log(`   Total: ${totalDuree} min, Max: ${maxDuree} min`);
-      console.log(`   Période: ${group[0].DATE_DEB} → ${group[0].DATE_FIN}`);
-    }
-  });
-
-  let totalJustifiees = 0;
-  let totalInjustifiees = 0;
-  let totalRetards = 0;
-
-  Object.values(duplicateGroups).forEach((group) => {
-    const representative = group[0];
-    const {
-      CODE_APPRENANT,
-      NOM_APPRENANT,
-      PRENOM_APPRENANT,
-      IS_JUSTIFIE,
-      IS_RETARD,
-      CODE_ABSENCE,
-      DATE_DEB,
-      DATE_FIN,
-    } = representative;
-
-    if (!groupedAbsences[CODE_APPRENANT]) {
-      groupedAbsences[CODE_APPRENANT] = {
-        CODE_APPRENANT,
-        NOM_APPRENANT,
-        PRENOM_APPRENANT,
-        ABSENCES_JUSTIFIEES: "00h00",
-        ABSENCES_INJUSTIFIEES: "00h00",
-        RETARDS: "00h00",
-      };
-    }
-
-    // ✅ Si au moins 2 enregistrements avec la même CODE_ABSENCE ont des DUREE différentes ET même DATE_DEB/DATE_FIN => probablement multi-jour fractionné
-    const hasMultipleEntries = group.length > 1;
-    const uniqueDurations = new Set(group.map((item) => item.duree)).size;
-    const sameDates = group.every(
-      (item) => item.DATE_DEB === DATE_DEB && item.DATE_FIN === DATE_FIN
-    );
-    const isSplitOverMultipleLines = hasMultipleEntries && sameDates && uniqueDurations >= 1;
-
-    let dureeToUse = 0;
-    if (isSplitOverMultipleLines) {
-      dureeToUse = group.reduce((sum, item) => sum + item.duree, 0);
-    } else {
-      switch (handleDuplicates) {
-        case "sum":
-          dureeToUse = group.reduce((sum, item) => sum + item.duree, 0);
-          break;
-        case "max":
-          dureeToUse = Math.max(...group.map((item) => item.duree));
-          break;
-        case "deduplicate":
-          dureeToUse = group[0].duree;
-          break;
-      }
-    }
-
-    const student = groupedAbsences[CODE_APPRENANT];
-    const isJustifie = IS_JUSTIFIE === 1 || IS_JUSTIFIE === "1";
-    const isRetard = IS_RETARD === 1 || IS_RETARD === "1";
-    const isInjustifie =
-      (IS_JUSTIFIE === 0 || IS_JUSTIFIE === "0") && (IS_RETARD === 0 || IS_RETARD === "0");
-
-    if (group.length > 1) {
-      console.log(
-        `📝 ${CODE_ABSENCE}: Durée utilisée = ${dureeToUse}min (méthode: ${handleDuplicates}${isSplitOverMultipleLines ? " + multi-jour" : ""
-        })`
-      );
-    }
-
-    if (isRetard) {
-      const prev = parseTimeToMinutes(student.RETARDS);
-      student.RETARDS = formatTime(prev + dureeToUse);
-      totalRetards += dureeToUse;
-    } else if (isJustifie) {
-      const prev = parseTimeToMinutes(student.ABSENCES_JUSTIFIEES);
-      student.ABSENCES_JUSTIFIEES = formatTime(prev + dureeToUse);
-      totalJustifiees += dureeToUse;
-    } else if (isInjustifie) {
-      const prev = parseTimeToMinutes(student.ABSENCES_INJUSTIFIEES);
-      student.ABSENCES_INJUSTIFIEES = formatTime(prev + dureeToUse);
-      totalInjustifiees += dureeToUse;
-    }
-  });
-
-  console.log("\n====== STATISTIQUES GLOBALES ======");
-  console.log(`📊 CODE_ABSENCE uniques traités: ${Object.keys(duplicateGroups).length}`);
-  console.log(`📊 Groupes avec doublons: ${totalDuplicatesFound}`);
-  console.log(`📊 Total justifiées: ${formatTime(totalJustifiees)} (${totalJustifiees} min)`);
-  console.log(`📊 Total injustifiées: ${formatTime(totalInjustifiees)} (${totalInjustifiees} min)`);
-  console.log(`📊 Total retards: ${formatTime(totalRetards)} (${totalRetards} min)`);
-
-  return {
-    students: Object.values(groupedAbsences),
-    globalTotals: {
-      justifiees: totalJustifiees,
-      injustifiees: totalInjustifiees,
-      retards: totalRetards,
-      justifieesFormatted: formatTime(totalJustifiees),
-      injustifieesFormatted: formatTime(totalInjustifiees),
-      retardsFormatted: formatTime(totalRetards),
-    },
-    duplicatesInfo: {
-      duplicateGroups: duplicateStats,
-      totalDuplicates: totalDuplicatesFound,
-    },
-  };
+interface PreloadedAssets {
+  logoBytes: Buffer;
+  poppinsRegularBytes: Buffer | null;
+  poppinsBoldBytes: Buffer | null;
+  signatureCache: Map<string, Buffer>;
 }
 
-// Fonctions utilitaires (inchangées)
+const SIGNATURE_MAP: Record<string, string> = {
+  "460": "christine.jpg",
+  "482": "ludivinelaunay.png",
+  "500": "estelle.jpg",
+  "517": "signYoussefSAKER.jpg",
+  "2239": "marionsoustelle.png",
+  "306975": "lebon.png",
+  "89152": "magali.png",
+  "650429": "Anne-Lise.png",
+};
+
+function preloadAssets(): PreloadedAssets {
+  // Logo
+  const logoPath = path.join(process.cwd(), "public", "logo", "espi.jpg");
+  const logoBytes = fs.readFileSync(logoPath);
+
+  // Fonts
+  let poppinsRegularBytes: Buffer | null = null;
+  let poppinsBoldBytes: Buffer | null = null;
+  try {
+    poppinsRegularBytes = fs.readFileSync(path.join(process.cwd(), "public", "fonts", "Poppins-Regular.ttf"));
+    poppinsBoldBytes = fs.readFileSync(path.join(process.cwd(), "public", "fonts", "Poppins-Bold.ttf"));
+  } catch {
+    console.warn("⚠️ Polices Poppins non trouvées, utilisation des polices standard");
+  }
+
+  // Signatures
+  const signatureCache = new Map<string, Buffer>();
+  for (const [code, filename] of Object.entries(SIGNATURE_MAP)) {
+    const sigPath = path.join(process.cwd(), "public", "signatures", filename);
+    if (fs.existsSync(sigPath)) {
+      signatureCache.set(code, fs.readFileSync(sigPath));
+      signatureCache.set(filename, fs.readFileSync(sigPath)); // aussi par nom de fichier
+    }
+  }
+
+  return { logoBytes, poppinsRegularBytes, poppinsBoldBytes, signatureCache };
+}
+
+// ============================================================
+// UTILITAIRES
+// ============================================================
+
 function parseTimeToMinutes(timeStr: string): number {
   if (!timeStr || timeStr === "00h00") return 0;
   const parts = timeStr.match(/(\d+)h(\d+)/);
@@ -303,156 +171,181 @@ function formatTime(minutes: number): string {
   return `${hours.toString().padStart(2, "0")}h${mins.toString().padStart(2, "0")}`;
 }
 
-// Fonction pour convertir un texte "hhmm" en minutes
+const isUEByName = (x: { NOM_MATIERE?: string | null }) => {
+  const n = String(x.NOM_MATIERE ?? "").trim().toUpperCase();
+  return n.startsWith("UE") || n === "INTERNATIONAL";
+};
+
+const norm = (x: any) => String(x ?? "").trim().toUpperCase();
+const toOrder = (v?: string | number | null) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 999;
+};
+
+function getSignatureFilename(codePersonnel: string): string | null {
+  return SIGNATURE_MAP[codePersonnel] || null;
+}
+
+function isTPGroup(groupInfo: GroupInfo[]): boolean {
+  return groupInfo.length > 0 && !!groupInfo[0].NOM_GROUPE?.includes("none");
+}
+
+function isUE4RelatedSubject(subject: any, ueMap: Map<string, { ue: any; matieres: any[] }>): boolean {
+  if (subject.NOM_MATIERE && subject.NOM_MATIERE.includes("UE 4")) return true;
+  for (const [, { ue, matieres }] of ueMap) {
+    if (ue.NOM_MATIERE && ue.NOM_MATIERE.includes("UE 4")) {
+      if (matieres.some((m) => m.CODE_MATIERE === subject.CODE_MATIERE)) return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================
+// TRAITEMENT DES ABSENCES
+// ============================================================
+
+function processAbsences(
+  absences: Absence[],
+  startDate = "2025-08-25 00:00:00",
+  endDate = "2026-08-23 00:00:00",
+  handleDuplicates: "sum" | "max" | "deduplicate" = "sum"
+): {
+  students: ProcessedAbsence[];
+  globalTotals: { justifiees: number; injustifiees: number; retards: number; justifieesFormatted: string; injustifieesFormatted: string; retardsFormatted: string; };
+  duplicatesInfo: { duplicateGroups: any[]; totalDuplicates: number; };
+} {
+  const groupedAbsences: Record<string, ProcessedAbsence> = {};
+  const filterStartDate = new Date(startDate);
+  const filterEndDate = new Date(endDate);
+  const duplicateGroups: Record<string, any[]> = {};
+
+  absences.forEach((absence, index) => {
+    const { CODE_ABSENCE, DATE_DEB, DUREE } = absence;
+    if (DATE_DEB) {
+      try {
+        const absenceDate = new Date(DATE_DEB.replace(" ", "T"));
+        if (absenceDate < filterStartDate || absenceDate > filterEndDate) return;
+      } catch { return; }
+    }
+    const duree = parseInt(DUREE?.toString() || "0", 10);
+    if (duree <= 0) return;
+    if (!duplicateGroups[CODE_ABSENCE]) duplicateGroups[CODE_ABSENCE] = [];
+    duplicateGroups[CODE_ABSENCE].push({ ...absence, originalIndex: index, duree });
+  });
+
+  const duplicateStats: DuplicateStat[] = [];
+  let totalDuplicatesFound = 0;
+
+  Object.keys(duplicateGroups).forEach((codeAbsence) => {
+    const group = duplicateGroups[codeAbsence];
+    if (group.length > 1) {
+      totalDuplicatesFound++;
+      duplicateStats.push({
+        codeAbsence,
+        count: group.length,
+        durees: group.map((item) => item.duree),
+        totalDuree: group.reduce((sum, item) => sum + item.duree, 0),
+        maxDuree: Math.max(...group.map((item) => item.duree)),
+        dates: group[0].DATE_DEB + " → " + group[0].DATE_FIN,
+      });
+    }
+  });
+
+  let totalJustifiees = 0;
+  let totalInjustifiees = 0;
+  let totalRetards = 0;
+
+  Object.values(duplicateGroups).forEach((group) => {
+    const representative = group[0];
+    const { CODE_APPRENANT, NOM_APPRENANT, PRENOM_APPRENANT, IS_JUSTIFIE, IS_RETARD, DATE_DEB, DATE_FIN } = representative;
+
+    if (!groupedAbsences[CODE_APPRENANT]) {
+      groupedAbsences[CODE_APPRENANT] = {
+        CODE_APPRENANT, NOM_APPRENANT, PRENOM_APPRENANT,
+        ABSENCES_JUSTIFIEES: "00h00", ABSENCES_INJUSTIFIEES: "00h00", RETARDS: "00h00",
+      };
+    }
+
+    const hasMultipleEntries = group.length > 1;
+    const uniqueDurations = new Set(group.map((item) => item.duree)).size;
+    const sameDates = group.every((item) => item.DATE_DEB === DATE_DEB && item.DATE_FIN === DATE_FIN);
+    const isSplitOverMultipleLines = hasMultipleEntries && sameDates && uniqueDurations >= 1;
+
+    let dureeToUse = 0;
+    if (isSplitOverMultipleLines) {
+      dureeToUse = group.reduce((sum, item) => sum + item.duree, 0);
+    } else {
+      switch (handleDuplicates) {
+        case "sum": dureeToUse = group.reduce((sum, item) => sum + item.duree, 0); break;
+        case "max": dureeToUse = Math.max(...group.map((item) => item.duree)); break;
+        case "deduplicate": dureeToUse = group[0].duree; break;
+      }
+    }
+
+    const student = groupedAbsences[CODE_APPRENANT];
+    const isJustifie = IS_JUSTIFIE === 1 || IS_JUSTIFIE === "1";
+    const isRetard = IS_RETARD === 1 || IS_RETARD === "1";
+    const isInjustifie = (IS_JUSTIFIE === 0 || IS_JUSTIFIE === "0") && (IS_RETARD === 0 || IS_RETARD === "0");
+
+    if (isRetard) {
+      student.RETARDS = formatTime(parseTimeToMinutes(student.RETARDS) + dureeToUse);
+      totalRetards += dureeToUse;
+    } else if (isJustifie) {
+      student.ABSENCES_JUSTIFIEES = formatTime(parseTimeToMinutes(student.ABSENCES_JUSTIFIEES) + dureeToUse);
+      totalJustifiees += dureeToUse;
+    } else if (isInjustifie) {
+      student.ABSENCES_INJUSTIFIEES = formatTime(parseTimeToMinutes(student.ABSENCES_INJUSTIFIEES) + dureeToUse);
+      totalInjustifiees += dureeToUse;
+    }
+  });
+
+  return {
+    students: Object.values(groupedAbsences),
+    globalTotals: {
+      justifiees: totalJustifiees, injustifiees: totalInjustifiees, retards: totalRetards,
+      justifieesFormatted: formatTime(totalJustifiees),
+      injustifieesFormatted: formatTime(totalInjustifiees),
+      retardsFormatted: formatTime(totalRetards),
+    },
+    duplicatesInfo: { duplicateGroups: duplicateStats, totalDuplicates: totalDuplicatesFound },
+  };
+}
+
+// ============================================================
+// MISE À JOUR DES CRÉDITS UE
+// ============================================================
 
 function updateUECredits(subjects: any[]): any[] {
-  // 1. Cloner les sujets pour ne pas modifier les originaux
   const result = subjects.map((subject) => ({ ...subject }));
-
-  // 2. Éliminer les doublons
   const uniqueSubjectsMap = new Map<string, any>();
 
   result.forEach((subject) => {
     const key = `${subject.CODE_APPRENANT}_${subject.CODE_MATIERE}`;
-    // Conversion des crédits ECTS en nombre pour assurer des calculs corrects
-    if (subject.CREDIT_ECTS !== undefined) {
-      subject.CREDIT_ECTS = Number(subject.CREDIT_ECTS) || 0;
-    }
-
-    // Si la clé n'existe pas encore ou si cette entrée a plus d'informations
-    if (!uniqueSubjectsMap.has(key)) {
-      uniqueSubjectsMap.set(key, { ...subject });
-    }
+    if (subject.CREDIT_ECTS !== undefined) subject.CREDIT_ECTS = Number(subject.CREDIT_ECTS) || 0;
+    if (!uniqueSubjectsMap.has(key)) uniqueSubjectsMap.set(key, { ...subject });
   });
 
-  // 3. Regrouper par étudiant pour traitement individuel
   const studentSubjects = new Map<string, any[]>();
-
   [...uniqueSubjectsMap.values()].forEach((subject) => {
     const studentId = subject.CODE_APPRENANT;
-    if (!studentSubjects.has(studentId)) {
-      studentSubjects.set(studentId, []);
-    }
+    if (!studentSubjects.has(studentId)) studentSubjects.set(studentId, []);
     studentSubjects.get(studentId)?.push({ ...subject });
   });
 
-  // 4. Traiter les matières par étudiant
   const finalResult: any[] = [];
-
-  studentSubjects.forEach((studentSubjectList, studentId) => {
-    console.log(`\n🔍 Traitement des matières pour l'étudiant ${studentId}`);
-
-    // Trier les matières par NUM_ORDRE
+  studentSubjects.forEach((studentSubjectList) => {
     const sortedSubjects = studentSubjectList.sort((a, b) => {
-      const orderA = parseInt(a.NUM_ORDRE || "0", 10);
-      const orderB = parseInt(b.NUM_ORDRE || "0", 10);
-      return orderA - orderB;
+      return parseInt(a.NUM_ORDRE || "0", 10) - parseInt(b.NUM_ORDRE || "0", 10);
     });
-
-    // Ne pas recalculer les ECTS des UEs, mais les préserver
-    sortedSubjects.forEach((subject) => {
-      if (subject.NOM_MATIERE && isUEByName(subject)) {
-        console.log(`UE trouvée: ${subject.NOM_MATIERE} avec ${subject.CREDIT_ECTS} ECTS`);
-        // Conserver les ECTS déjà assignés
-      }
-    });
-
-    // Ajouter toutes les matières de cet étudiant au résultat final
     finalResult.push(...sortedSubjects);
   });
 
   return finalResult;
 }
 
-function logUEWithSubjects(subjects: any[]) {
-  // Éliminer les doublons d'abord
-  const uniqueSubjects = new Map<string, any>();
-
-  subjects.forEach((subject) => {
-    const key = `${subject.CODE_APPRENANT}_${subject.CODE_MATIERE}`;
-    if (!uniqueSubjects.has(key)) {
-      uniqueSubjects.set(key, subject);
-    }
-  });
-
-  let currentUE: any = null;
-  let ueSubjects: any[] = [];
-  let currentStudent: string = "";
-
-  console.log("📌 Début du log des matières et des UE associées.");
-
-  // Trier par étudiant, puis par ordre
-  const sortedSubjects = [...uniqueSubjects.values()].sort((a, b) => {
-    if (a.CODE_APPRENANT !== b.CODE_APPRENANT) {
-      return a.CODE_APPRENANT.localeCompare(b.CODE_APPRENANT);
-    }
-    return parseInt(a.NUM_ORDRE, 10) - parseInt(b.NUM_ORDRE, 10);
-  });
-
-  for (const subject of sortedSubjects) {
-    // Si on change d'étudiant, réinitialiser
-    if (subject.CODE_APPRENANT !== currentStudent) {
-      // Afficher les dernières UE de l'étudiant précédent
-      if (currentUE) {
-        console.log(`✅ UE Trouvée : ${currentUE.NOM_MATIERE} pour ${currentStudent}`);
-        console.log(
-          `📌 Matières associées :`,
-          ueSubjects.map((s) => s.NOM_MATIERE)
-        );
-      }
-
-      currentStudent = subject.CODE_APPRENANT;
-      currentUE = null;
-      ueSubjects = [];
-      console.log(`\n👤 Nouvel étudiant: ${subject.NOM_APPRENANT} ${subject.PRENOM_APPRENANT}`);
-    }
-
-    if (subject.CODE_TYPE_MATIERE === "2") {
-      // Nouvelle UE trouvée, afficher les logs pour l'UE précédente
-      if (currentUE) {
-        console.log(`✅ UE Trouvée : ${currentUE.NOM_MATIERE}`);
-        console.log(
-          `📌 Matières associées :`,
-          ueSubjects.map((s) => s.NOM_MATIERE)
-        );
-      }
-      // Mettre à jour l'UE courante et réinitialiser les matières associées
-      currentUE = subject;
-      ueSubjects = [];
-    } else if (currentUE && subject.CODE_TYPE_MATIERE === "3") {
-      // Associer la matière courante à l'UE actuelle
-      ueSubjects.push(subject);
-    }
-  }
-
-  // Afficher les logs de la dernière UE trouvée
-  if (currentUE) {
-    console.log(`✅ UE Trouvée : ${currentUE.NOM_MATIERE} pour ${currentStudent}`);
-    console.log(
-      `📌 Matières associées :`,
-      ueSubjects.map((s) => s.NOM_MATIERE)
-    );
-  }
-
-  console.log("📌 Fin du log des matières et des UE associées.");
-}
-
-// déjà dans ton code, garde-le tel quel :
-const isUEByName = (x: { NOM_MATIERE?: string | null }) => {
-  const n = String(x.NOM_MATIERE ?? "")
-    .trim()
-    .toUpperCase();
-  return n.startsWith("UE") || n === "INTERNATIONAL";
-};
-
-const norm = (x: any) =>
-  String(x ?? "")
-    .trim()
-    .toUpperCase();
-const toOrder = (v?: string | number | null) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 999;
-};
+// ============================================================
+// ASSOCIATION MATIÈRES AUX UE
+// ============================================================
 
 function associerMatieresAuxUE(
   grades: StudentGrade[],
@@ -460,14 +353,9 @@ function associerMatieresAuxUE(
 ): Map<string, { ue: StudentGrade; matieres: StudentGrade[] }> {
   const ueMap = new Map<string, { ue: StudentGrade; matieres: StudentGrade[] }>();
 
-  // 1) UEs vues dans grades
   for (const g of grades) {
-    if (isUEByName(g)) {
-      ueMap.set(norm(g.CODE_MATIERE), { ue: g, matieres: [] });
-    }
+    if (isUEByName(g)) ueMap.set(norm(g.CODE_MATIERE), { ue: g, matieres: [] });
   }
-
-  // 1-bis) UEs présentes seulement dans subjects (ex: “International”)
   for (const s of subjects) {
     if (isUEByName(s) && !ueMap.has(norm(s.CODE_MATIERE))) {
       ueMap.set(norm(s.CODE_MATIERE), { ue: s as unknown as StudentGrade, matieres: [] });
@@ -476,29 +364,24 @@ function associerMatieresAuxUE(
 
   const uesList = Array.from(ueMap.values()).map((x) => x.ue);
 
-  // Helper d’association (par parent sinon par ordre)
   const attach = (item: any) => {
     if (isUEByName(item)) return;
 
-    // 1) Rattachement direct par parent (existant)
     const parent = norm(item.CODE_UE_PARENT);
     if (parent && ueMap.has(parent)) {
       ueMap.get(parent)!.matieres.push(item);
       return;
     }
 
-    // 1-bis) NOUVEAU : Forcer le rattachement des matières UE4 par leur nom
-    // Si la matière contient "English", "Career", "Voltaire", etc.
-    if (isUE4RelatedSubject(item, ueMap)) {
+    if (isUE4RelatedSubject(item, ueMap as any)) {
       for (const [code, { ue }] of ueMap) {
-        if (norm(ue.NOM_MATIERE).includes("UE 4")) {
+        if (norm((ue as any).NOM_MATIERE).includes("UE 4")) {
           ueMap.get(code)!.matieres.push(item);
           return;
         }
       }
     }
 
-    // 1-bis) Spécial "International" : rattachement par nom
     for (const [code, { ue }] of ueMap) {
       const ueName = norm((ue as any).NOM_MATIERE);
       const itemName = norm(item.NOM_MATIERE);
@@ -508,254 +391,87 @@ function associerMatieresAuxUE(
       }
     }
 
-    // 2) Fallback par proximité de NUM_ORDRE
     const ord = toOrder(item.NUM_ORDRE);
-    let best: any = null,
-      bestDiff = Infinity;
+    let best: any = null, bestDiff = Infinity;
     for (const ue of uesList) {
       const diff = ord - toOrder((ue as any).NUM_ORDRE ?? 0);
-      if (diff > 0 && diff < bestDiff) {
-        bestDiff = diff;
-        best = ue;
-      }
+      if (diff > 0 && diff < bestDiff) { bestDiff = diff; best = ue; }
     }
     if (best) ueMap.get(norm((best as any).CODE_MATIERE))!.matieres.push(item);
   };
 
-  // 2) Associer les non-UE depuis grades…
   for (const g of grades) if (!isUEByName(g)) attach(g);
-  //    …et depuis subjects (si absents de grades)
   const knownGradeCodes = new Set(grades.map((g) => norm(g.CODE_MATIERE)));
   for (const s of subjects) {
-    if (!isUEByName(s) && !knownGradeCodes.has(norm(s.CODE_MATIERE))) {
-      attach(s);
-    }
+    if (!isUEByName(s) && !knownGradeCodes.has(norm(s.CODE_MATIERE))) attach(s);
   }
 
   return ueMap;
 }
 
-// Fonction d'aide pour obtenir le nom du fichier de signature en fonction du code personnel
-function getSignatureFilename(codePersonnel: string): string | null {
-  // Mapping entre les codes personnels gestionnaires et les noms de fichiers de signature
-  const signatureMap: Record<string, string> = {
-    "460": "christine.jpg",
-    "482": "ludivinelaunay.png",
-    "500": "estelle.jpg",
-    "517": "signYoussefSAKER.jpg",
-    "2239": "marionsoustelle.png",
-    "306975": "lebon.png",
-    "89152": "magali.png",
-    "650429": "Anne-Lise.png", // Ajout pour le CODE_PERSONNEL
-    // You can add more mappings as needed
-  };
-
-  return signatureMap[codePersonnel] || null;
-}
-
-// Function to create a PDF for a student
-// Ajouter ces fonctions avant createStudentPDF
-function isTPGroup(groupInfo: GroupInfo[]): boolean {
-  return groupInfo.length > 0 && !!groupInfo[0].NOM_GROUPE?.includes("none");
-}
+// ============================================================
+// EN-TÊTE DU TABLEAU
+// ============================================================
 
 function drawTableHeader(
-  page: any,
-  currentY: number,
-  col1X: number,
-  col2X: number,
-  col3X: number,
-  col4X: number,
-  col1Width: number,
-  col2Width: number,
-  col3Width: number,
-  col4Width: number,
-  tableWidth: number,
-  rowHeight: number,
-  fontSize: number,
-  boldFont: any,
-  espiGray: any,
-  espiBlue: any,
-  rgb: any
+  page: any, currentY: number,
+  col1X: number, col2X: number, col3X: number, col4X: number,
+  col1Width: number, col2Width: number, col3Width: number, col4Width: number,
+  tableWidth: number, rowHeight: number, fontSize: number,
+  boldFont: any, espiGray: any, espiBlue: any, rgb: any
 ): number {
-  // Dessiner l'en-tête du tableau
-  page.drawRectangle({
-    x: col1X,
-    y: currentY - rowHeight,
-    width: tableWidth,
-    height: rowHeight,
-    borderColor: espiGray,
-    borderWidth: 1,
-    color: espiBlue,
-  });
+  page.drawRectangle({ x: col1X, y: currentY - rowHeight, width: tableWidth, height: rowHeight, borderColor: espiGray, borderWidth: 1, color: espiBlue });
+  page.drawLine({ start: { x: col2X, y: currentY }, end: { x: col2X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
+  page.drawLine({ start: { x: col3X, y: currentY }, end: { x: col3X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
+  page.drawLine({ start: { x: col4X, y: currentY }, end: { x: col4X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
 
-  // Colonnes de l'en-tête
-  page.drawLine({
-    start: { x: col2X, y: currentY },
-    end: { x: col2X, y: currentY - rowHeight },
-    thickness: 1,
-    color: espiGray,
-  });
+  const texts = [
+    { text: "Enseignements", x: col1X, width: col1Width },
+    { text: "Moyenne", x: col2X, width: col2Width },
+    { text: "Total ECTS", x: col3X, width: col3Width },
+    { text: "État", x: col4X, width: col4Width },
+  ];
 
-  page.drawLine({
-    start: { x: col3X, y: currentY },
-    end: { x: col3X, y: currentY - rowHeight },
-    thickness: 1,
-    color: espiGray,
-  });
-
-  page.drawLine({
-    start: { x: col4X, y: currentY },
-    end: { x: col4X, y: currentY - rowHeight },
-    thickness: 1,
-    color: espiGray,
-  });
-
-  // Texte de l'en-tête
-  const enseignementsText = "Enseignements";
-  const enseignementsWidth = boldFont.widthOfTextAtSize(enseignementsText, fontSize);
-  const col1Center = col1X + col1Width / 2 - enseignementsWidth / 2;
-
-  page.drawText(enseignementsText, {
-    x: col1Center,
-    y: currentY - 15,
-    size: fontSize,
-    font: boldFont,
-    color: rgb(1, 1, 1),
-  });
-
-  const moyenneText = "Moyenne";
-  const moyenneWidth = boldFont.widthOfTextAtSize(moyenneText, fontSize);
-  const col2Center = col2X + col2Width / 2 - moyenneWidth / 2;
-
-  page.drawText(moyenneText, {
-    x: col2Center,
-    y: currentY - 15,
-    size: fontSize,
-    font: boldFont,
-    color: rgb(1, 1, 1),
-  });
-
-  const ectsText = "Total ECTS";
-  const ectsWidth = boldFont.widthOfTextAtSize(ectsText, fontSize);
-  const col3Center = col3X + col3Width / 2 - ectsWidth / 2;
-
-  page.drawText(ectsText, {
-    x: col3Center,
-    y: currentY - 15,
-    size: fontSize,
-    font: boldFont,
-    color: rgb(1, 1, 1),
-  });
-
-  const etatText = "État";
-  const etatWidth = boldFont.widthOfTextAtSize(etatText, fontSize);
-  const col4Center = col4X + col4Width / 2 - etatWidth / 2;
-
-  page.drawText(etatText, {
-    x: col4Center,
-    y: currentY - 15,
-    size: fontSize,
-    font: boldFont,
-    color: rgb(1, 1, 1),
-  });
+  for (const { text, x, width } of texts) {
+    const tw = boldFont.widthOfTextAtSize(text, fontSize);
+    page.drawText(text, { x: x + width / 2 - tw / 2, y: currentY - 15, size: fontSize, font: boldFont, color: rgb(1, 1, 1) });
+  }
 
   return currentY - rowHeight;
 }
 
+// ============================================================
+// SAUT DE PAGE GROUPES TP
+// ============================================================
+
 function handleTPPageBreak(
-  isTPGroupFlag: boolean,
-  currentSubject: any,
-  ue4MatiereCounter: number,
-  shouldBreakForUE4: boolean, // ✅ Paramètre renommé et simplifié
-  currentY: number,
-  pdfDoc: any,
-  pageHeight: number,
-  margin: number,
-  col1X: number,
-  col2X: number,
-  col3X: number,
-  col4X: number,
-  col1Width: number,
-  col2Width: number,
-  col3Width: number,
-  col4Width: number,
-  tableWidth: number,
-  rowHeight: number,
-  fontSize: number,
-  boldFont: any,
-  espiGray: any,
-  espiBlue: any,
-  rgb: any
+  isTPGroupFlag: boolean, currentSubject: any, ue4MatiereCounter: number,
+  shouldBreakForUE4: boolean, currentY: number, pdfDoc: any,
+  pageHeight: number, margin: number,
+  col1X: number, col2X: number, col3X: number, col4X: number,
+  col1Width: number, col2Width: number, col3Width: number, col4Width: number,
+  tableWidth: number, rowHeight: number, fontSize: number,
+  boldFont: any, espiGray: any, espiBlue: any, rgb: any
 ): { shouldBreak: boolean; newPage?: any; newCurrentY?: number } {
-  // Pour les groupes TP : saut de page à partir de la 3ème matière de l'UE 4
-  const needsPageBreak =
-    isTPGroupFlag &&
-    (shouldBreakForUE4 || // Saut contrôlé pour la 4ème UE 4
-      currentY < margin + 3 * rowHeight); // Espace insuffisant seulement
+  const needsPageBreak = isTPGroupFlag && (shouldBreakForUE4 || currentY < margin + 3 * rowHeight);
 
   if (needsPageBreak) {
-    const reason = shouldBreakForUE4
-      ? `4ème matière UE 4: ${currentSubject.NOM_MATIERE}`
-      : "Espace insuffisant";
-
-    console.log(`🔄 Saut de page forcé pour groupe TP - Raison: ${reason}`);
-
     const newPage = pdfDoc.addPage([595.28, 841.89]);
     let newCurrentY = pageHeight - margin;
-
-    // Redessiner l'en-tête du tableau sur la nouvelle page
-    newCurrentY = drawTableHeader(
-      newPage,
-      newCurrentY,
-      col1X,
-      col2X,
-      col3X,
-      col4X,
-      col1Width,
-      col2Width,
-      col3Width,
-      col4Width,
-      tableWidth,
-      rowHeight,
-      fontSize,
-      boldFont,
-      espiGray,
-      espiBlue,
-      rgb
-    );
-
+    newCurrentY = drawTableHeader(newPage, newCurrentY, col1X, col2X, col3X, col4X, col1Width, col2Width, col3Width, col4Width, tableWidth, rowHeight, fontSize, boldFont, espiGray, espiBlue, rgb);
     return { shouldBreak: true, newPage, newCurrentY };
   }
   return { shouldBreak: false };
 }
 
-function isUE4RelatedSubject(
-  subject: any,
-  ueMap: Map<string, { ue: any; matieres: any[] }>
-): boolean {
-  // Vérifier si c'est directement l'UE 4
-  if (subject.NOM_MATIERE && subject.NOM_MATIERE.includes("UE 4")) {
-    return true;
-  }
-
-  // Vérifier si c'est une matière appartenant à l'UE 4
-  for (const [, { ue, matieres }] of ueMap) {
-    if (ue.NOM_MATIERE && ue.NOM_MATIERE.includes("UE 4")) {
-      if (matieres.some((m) => m.CODE_MATIERE === subject.CODE_MATIERE)) {
-        return true;
-      }
-    }
-  }
-
-  // Vérifier également avec la liste des matières typiques de l'UE 4
-  return false;
-}
+// ============================================================
+// CRÉATION DU PDF PAR ÉTUDIANT
+// ============================================================
 
 async function createStudentPDF(
   student: StudentData,
-  grades: StudentGrade[], // ← MOYENNES_UE (lignes UE)
-  ueAverages: any[], // ← MOYENNES_UE (source des moyennes d’UE)
+  grades: StudentGrade[],
+  ueAverages: any[],
   observations: Observation[],
   subjects: SubjectECTS[],
   groupInfo: GroupInfo[],
@@ -763,1154 +479,403 @@ async function createStudentPDF(
   period: string,
   absence: Absence[],
   processedABS: ProcessedAbsence[],
+  assets: PreloadedAssets,        // ✅ Assets préchargés passés en paramètre
   personnelData?: any[],
   notes?: any[],
-  generalAverages?: StudentAverage[] // ← MOYENNE_GENERALE (affichage bas)
+  generalAverages?: StudentAverage[]
 ): Promise<Uint8Array> {
   try {
-    // Create a new PDF document
     const pdfDoc = await PDFDocument.create();
-    let page = pdfDoc.addPage([595.28, 841.89]); // Format A4
+    let page = pdfDoc.addPage([595.28, 841.89]);
 
-    // Charger les polices Poppins (s'ils sont disponibles)
-    let poppinsRegular;
-    let poppinsBold;
-
-    try {
-      // Chemins vers les fichiers de police (ajustez selon l'emplacement de vos fichiers)
-      const poppinsRegularPath = path.join(process.cwd(), "public", "fonts", "Poppins-Regular.ttf");
-      const poppinsBoldPath = path.join(process.cwd(), "public", "fonts", "Poppins-Bold.ttf");
-
-      // Lire les fichiers de police
-      const poppinsRegularBytes = fs.readFileSync(poppinsRegularPath);
-      const poppinsBoldBytes = fs.readFileSync(poppinsBoldPath);
-
+    // ✅ Utiliser les assets préchargés au lieu de les lire depuis le disque
+    let poppinsRegular, poppinsBold;
+    if (assets.poppinsRegularBytes && assets.poppinsBoldBytes) {
       pdfDoc.registerFontkit(fontkit);
-
-      // Incorporer les polices dans le document PDF
-      poppinsRegular = await pdfDoc.embedFont(poppinsRegularBytes);
-      poppinsBold = await pdfDoc.embedFont(poppinsBoldBytes);
-
-      console.log("✅ Polices Poppins chargées avec succès");
-    } catch (error) {
-      console.error("❌ Erreur lors du chargement des polices Poppins:", error);
-      console.log("Utilisation des polices standard comme fallback");
+      poppinsRegular = await pdfDoc.embedFont(assets.poppinsRegularBytes);
+      poppinsBold = await pdfDoc.embedFont(assets.poppinsBoldBytes);
     }
 
-    // Définir les polices à utiliser (avec fallback sur des polices standard si Poppins n'est pas disponible)
     const mainFont = poppinsRegular || (await pdfDoc.embedFont(StandardFonts.Helvetica));
     const boldFont = poppinsBold || (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
 
-    // Définir une taille de police plus petite par défaut
     const fontSize = 8;
     const fontSizeBold = 8;
     const fontSizeTitle = 11;
-    // const fontSizeHeader = 10;
-
-    // Set up margins
     const margin = 44;
     const pageWidth = page.getWidth();
     const pageHeight = page.getHeight();
     let currentY = pageHeight - margin;
 
-    // Associer les matières à leurs UE respectives
-    // --- 1. FILTRAGE ET INITIALISATION ---
+    const espiBlue = rgb(0.04, 0.36, 0.51);
+    const espiGray = rgb(0.925, 0.925, 0.925);
+
+    // Filtrage des données propres à cet étudiant
     const studentGrades = grades.filter((g) => g.CODE_APPRENANT === student.CODE_APPRENANT);
     const studentSubjects = subjects.filter((s) => s.CODE_APPRENANT === student.CODE_APPRENANT);
 
     const matiereEtats = new Map<string, string>();
     const ueEtats = new Map<string, Etat>();
-
-    // Association propre des matières aux UE
     const ueMap = associerMatieresAuxUE(studentGrades, studentSubjects);
 
-    // --- 2. CALCUL DES ÉTATS INDIVIDUELS DES MATIÈRES (Source Unique) ---
+    // Calcul des états des matières
     for (const { matieres } of ueMap.values()) {
       for (const m of matieres) {
         let finalEtat: string = "NV";
-
         const gradeInfo = grades.find(g => g.CODE_APPRENANT === student.CODE_APPRENANT && g.CODE_MATIERE === m.CODE_MATIERE);
         const noteInfo = notes?.find(n => n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === m.CODE_MATIERE);
-
         const evalText = gradeInfo?.NOM_EVALUATION_NOTE || "";
         const moyenneRaw = gradeInfo?.MOYENNE;
 
-        // RÈGLE A : Texte "Validé" (priorité haute)
         if (evalText === "Validé" || String(moyenneRaw).toUpperCase() === "VA") {
           finalEtat = "VA";
-        }
-        // RÈGLE B : Moyenne numérique
-        else if (moyenneRaw !== null && moyenneRaw !== undefined && !isNaN(parseFloat(String(moyenneRaw).replace(",", ".")))) {
+        } else if (moyenneRaw !== null && moyenneRaw !== undefined && !isNaN(parseFloat(String(moyenneRaw).replace(",", ".")))) {
           const n = parseFloat(String(moyenneRaw).replace(",", "."));
-          if (n >= 10) finalEtat = "VA";
-          else if (n >= 8) finalEtat = "TEMP_8_10"; // Marqueur pour compensation
-          else finalEtat = "NV";
-        }
-        // RÈGLE C : Table des notes (CODE 1 = Validé)
-        else if (noteInfo && Number(noteInfo.CODE_EVALUATION_NOTE) === 1) {
+          finalEtat = n >= 10 ? "VA" : n >= 8 ? "TEMP_8_10" : "NV";
+        } else if (noteInfo && Number(noteInfo.CODE_EVALUATION_NOTE) === 1) {
           finalEtat = "VA";
         }
-
         matiereEtats.set(m.CODE_MATIERE, finalEtat);
       }
     }
 
-    // --- 3. LOGIQUE DE COMPENSATION AU SEIN DE L'UE ---
-
-    for (const [ueCode, { matieres }] of ueMap) {
+    // Logique de compensation
+    for (const [, { matieres }] of ueMap) {
       const etatsUe = matieres.map(m => matiereEtats.get(m.CODE_MATIERE));
       const hasNV = etatsUe.includes("NV");
       const hasVA = etatsUe.includes("VA");
-
       for (const m of matieres) {
         if (matiereEtats.get(m.CODE_MATIERE) === "TEMP_8_10") {
-          // On transforme en "C" (Compensé) si pas d'échec strict (NV) et présence d'un succès (VA)
-          if (!hasNV && hasVA) {
-            matiereEtats.set(m.CODE_MATIERE, "C");
-          } else {
-            matiereEtats.set(m.CODE_MATIERE, "NV");
-          }
+          matiereEtats.set(m.CODE_MATIERE, (!hasNV && hasVA) ? "C" : "NV");
         }
       }
     }
 
-    // --- 4. CALCUL DE L'ÉTAT FINAL DE CHAQUE UE ---
+    // État final de chaque UE
     for (const [ueCode, { ue, matieres }] of ueMap) {
       const etatsFinaux = matieres.map(m => normalizeEtat(matiereEtats.get(m.CODE_MATIERE)));
-
-      // Récupération de la moyenne de l'UE
       const avgFromRow = parseUeAverage((ue as any)?.MOYENNE_UE ?? (ue as any)?.MOYENNE);
       const ueAvg = avgFromRow ?? getUeAverage(ueAverages, ueCode, student.CODE_APPRENANT);
-
-      // Application de votre règle : si pas de NV et moyenne >= 10 (ou pas de moyenne), alors VA
       const finalUEStatus = getEtatUE(etatsFinaux, ueAvg);
       ueEtats.set(ueCode, finalUEStatus);
-
-      console.log(`UE ${ueCode} : ${finalUEStatus} (Matières: ${etatsFinaux.join(', ')})`);
     }
 
-    // --- 5. SYNCHRONISATION DES ECTS DES MATIÈRES ---
+    // Sync ECTS matières NV
     for (const subject of studentSubjects) {
-      const etat = matiereEtats.get(subject.CODE_MATIERE);
-      if (etat === "NV" && !isUEByName(subject)) {
+      if (matiereEtats.get(subject.CODE_MATIERE) === "NV" && !isUEByName(subject)) {
         subject.CREDIT_ECTS = 0;
       }
     }
-    // ESPI Logo and header section
-    const logoOffsetLeft = 20; // Vous pouvez ajuster cette valeur selon le décalage souhaité
 
+    // ✅ Logo depuis assets préchargés
+    const logoOffsetLeft = 20;
+    currentY = pageHeight - margin / 2;
     try {
-      const logoPath = path.join(process.cwd(), "public", "logo", "espi.jpg");
-      const logoBytes = fs.readFileSync(logoPath);
-      const logoImage = await pdfDoc.embedJpg(logoBytes);
-
-      // Obtenir les dimensions de l'image
-      const logoDims = logoImage.scale(0.25); // Ajustez l'échelle selon vos besoins
-
-      // Positionner le logo plus haut
-      currentY = pageHeight - margin / 2; // Ajuster pour positionner plus haut
-
-      page.drawImage(logoImage, {
-        x: margin - logoOffsetLeft, // Décaler vers la gauche par rapport à la marge standard
-        y: currentY - logoDims.height,
-        width: logoDims.width,
-        height: logoDims.height,
-      });
-
-      // Ajuster currentY pour compenser la hauteur du logo
+      const logoImage = await pdfDoc.embedJpg(assets.logoBytes);
+      const logoDims = logoImage.scale(0.25);
+      page.drawImage(logoImage, { x: margin - logoOffsetLeft, y: currentY - logoDims.height, width: logoDims.width, height: logoDims.height });
       currentY -= logoDims.height;
-    } catch (error) {
-      console.error("Erreur lors du chargement du logo ESPI:", error);
-      // Fallback au texte si l'image ne peut pas être chargée
-      page.drawText("ESPI", {
-        x: margin - logoOffsetLeft, // Appliquer le même décalage au texte de secours
-        y: currentY,
-        size: 24,
-        font: mainFont,
-        color: rgb(0.2, 0.6, 0.6),
-      });
+    } catch {
+      page.drawText("ESPI", { x: margin - logoOffsetLeft, y: currentY, size: 24, font: mainFont, color: rgb(0.2, 0.6, 0.6) });
     }
 
-    // Couleur corporative ESPI
-    const espiBlue = rgb(0.04, 0.36, 0.51);
-    const espiGray = rgb(0.925, 0.925, 0.925);
-
-    // Identifiant de l'étudiant
+    // Identifiant étudiant (invisible - taille 4)
     currentY -= 10;
-    page.drawText(`Identifiant : ${student.CODE_APPRENANT}`, {
-      x: pageWidth - margin - 150,
-      y: currentY,
-      size: 4,
-      font: mainFont,
-      color: rgb(1, 1, 1),
-    });
+    page.drawText(`Identifiant : ${student.CODE_APPRENANT}`, { x: pageWidth - margin - 150, y: currentY, size: 4, font: mainFont, color: rgb(1, 1, 1) });
 
-    // Titre du bulletin
+    // Titre
     currentY -= 10;
     const bulletinTitle = "Bulletin de notes 2025-2026";
     const bulletinTitleWidth = boldFont.widthOfTextAtSize(bulletinTitle, fontSizeTitle);
-    page.drawText(bulletinTitle, {
-      x: (pageWidth - bulletinTitleWidth) / 2,
-      y: currentY,
-      size: fontSizeTitle,
-      font: boldFont,
-      color: espiBlue,
-    });
+    page.drawText(bulletinTitle, { x: (pageWidth - bulletinTitleWidth) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
 
     const group = groupInfo.length > 0 ? groupInfo[0] : null;
-    const etenduGroupe = group && group.ETENDU_GROUPE ? group.ETENDU_GROUPE : "";
-
-    // On cherche l'index du mot "spécialité"
+    const etenduGroupe = group?.ETENDU_GROUPE || "";
     const keyword = "spécialité";
     const indexSpecialite = etenduGroupe.indexOf(keyword);
 
     if (indexSpecialite !== -1) {
-      // --- CAS OÙ ON TROUVE "SPÉCIALITÉ" : ON COUPE EN DEUX ---
-
-      // ligne 1 : du début jusqu'à "spécialité" inclus
       const line1 = etenduGroupe.substring(0, indexSpecialite + keyword.length);
-      // ligne 2 : le reste + la période (Semestre)
       const line2 = etenduGroupe.substring(indexSpecialite + keyword.length).trim() + " " + period;
-
-      // Dessin Ligne 1
       currentY -= 20;
-      const l1Width = boldFont.widthOfTextAtSize(line1, fontSizeTitle);
-      page.drawText(line1, {
-        x: (pageWidth - l1Width) / 2,
-        y: currentY,
-        size: fontSizeTitle,
-        font: boldFont,
-        color: espiBlue,
-      });
-
-      // Dessin Ligne 2
+      page.drawText(line1, { x: (pageWidth - boldFont.widthOfTextAtSize(line1, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
       currentY -= 15;
-      const l2Width = boldFont.widthOfTextAtSize(line2, fontSizeTitle);
-      page.drawText(line2, {
-        x: (pageWidth - l2Width) / 2,
-        y: currentY,
-        size: fontSizeTitle,
-        font: boldFont,
-        color: espiBlue,
-      });
-
+      page.drawText(line2, { x: (pageWidth - boldFont.widthOfTextAtSize(line2, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
     } else {
-      // --- CAS CLASSIQUE : ON GARDE TOUT SUR UNE LIGNE (si pas de "spécialité") ---
       currentY -= 20;
       const periodeText = `${etenduGroupe} ${period}`;
-      const periodeTextWidth = boldFont.widthOfTextAtSize(periodeText, fontSizeTitle);
-      page.drawText(periodeText, {
-        x: (pageWidth - periodeTextWidth) / 2,
-        y: currentY,
-        size: fontSizeTitle,
-        font: boldFont,
-        color: espiBlue,
-      });
+      page.drawText(periodeText, { x: (pageWidth - boldFont.widthOfTextAtSize(periodeText, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
     }
 
     currentY -= 20;
 
-    // Cadre d'informations étudiant et groupe
+    // Cadre infos étudiant/groupe
     const boxWidth = pageWidth - 2 * margin;
     const boxHeight = 40;
+    page.drawRectangle({ x: margin, y: currentY - boxHeight, width: boxWidth, height: boxHeight, borderColor: espiBlue, borderWidth: 1 });
+    page.drawLine({ start: { x: margin + boxWidth / 2, y: currentY }, end: { x: margin + boxWidth / 2, y: currentY - boxHeight }, thickness: 1, color: espiBlue });
 
-    // Dessiner le rectangle
-    page.drawRectangle({
-      x: margin,
-      y: currentY - boxHeight,
-      width: boxWidth,
-      height: boxHeight,
-      borderColor: espiBlue,
-      borderWidth: 1,
-    });
-
-    // Ligne verticale au milieu
-    page.drawLine({
-      start: { x: margin + boxWidth / 2, y: currentY },
-      end: { x: margin + boxWidth / 2, y: currentY - boxHeight },
-      thickness: 1,
-      color: espiBlue,
-    });
-
-    // Informations étudiant côté gauche
-    page.drawText(`Apprenant : ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`, {
-      x: margin + 5,
-      y: currentY - 15,
-      size: fontSizeBold,
-      font: mainFont,
-      color: espiBlue,
-    });
-
+    page.drawText(`Apprenant : ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`, { x: margin + 5, y: currentY - 15, size: fontSizeBold, font: mainFont, color: espiBlue });
     if (student.DATE_NAISSANCE) {
-      page.drawText(
-        `Date de naissance : ${new Date(student.DATE_NAISSANCE).toLocaleDateString("fr-FR")}`,
-        {
-          x: margin + 5,
-          y: currentY - 30,
-          size: fontSize,
-          font: mainFont,
-          color: espiBlue,
-        }
-      );
+      page.drawText(`Date de naissance : ${new Date(student.DATE_NAISSANCE).toLocaleDateString("fr-FR")}`, { x: margin + 5, y: currentY - 30, size: fontSize, font: mainFont, color: espiBlue });
     }
 
-    // Groupe et campus côté droit
     const campus = campusInfo.length > 0 ? campusInfo[0] : null;
-
-    page.drawText(`Groupe : ${group ? group.NOM_GROUPE : "Non spécifié"}`, {
-      x: margin + boxWidth / 2 + 5,
-      y: currentY - 15,
-      size: fontSize,
-      font: mainFont,
-      color: espiBlue,
-    });
-
-    page.drawText(`Campus : ${campus ? campus.NOM_SITE : "Non spécifié"}`, {
-      x: margin + boxWidth / 2 + 5,
-      y: currentY - 30,
-      size: fontSize,
-      font: mainFont,
-      color: espiBlue,
-    });
+    page.drawText(`Groupe : ${group ? group.NOM_GROUPE : "Non spécifié"}`, { x: margin + boxWidth / 2 + 5, y: currentY - 15, size: fontSize, font: mainFont, color: espiBlue });
+    page.drawText(`Campus : ${campus ? campus.NOM_SITE : "Non spécifié"}`, { x: margin + boxWidth / 2 + 5, y: currentY - 30, size: fontSize, font: mainFont, color: espiBlue });
 
     currentY -= boxHeight + 10;
 
     // Tableau des notes
-    // En-têtes
     const rowHeight = 16;
-    // 1. Calculate the center of the page
-
-    // 2. Define the table width - make it slightly narrower than the full width
-    const tableWidth = boxWidth; // 90% of the available width between margins
-
-    // 3. Calculate table position to center it
+    const tableWidth = boxWidth;
     const tableLeftMargin = margin + (boxWidth - tableWidth) / 2;
-
-    // 4. Update column positions based on the centered table
-    const col1Width = tableWidth * 0.55; // 55% for the subjects (increased for better text display)
-    const col2Width = tableWidth * 0.15; // 15% for the average
-    const col3Width = tableWidth * 0.15; // 15% for the ECTS
-    const col4Width = tableWidth * 0.15; // 15% for the status
-
+    const col1Width = tableWidth * 0.55;
+    const col2Width = tableWidth * 0.15;
+    const col3Width = tableWidth * 0.15;
+    const col4Width = tableWidth * 0.15;
     const col1X = tableLeftMargin;
     const col2X = col1X + col1Width;
     const col3X = col2X + col2Width;
     const col4X = col3X + col3Width;
 
-    // Dessiner l'en-tête du tableau
-    page.drawRectangle({
-      x: col1X,
-      y: currentY - rowHeight,
-      width: tableWidth,
-      height: rowHeight,
-      borderColor: espiGray,
-      borderWidth: 1,
-      color: espiBlue, // Blue for header
-    });
+    // En-tête tableau
+    page.drawRectangle({ x: col1X, y: currentY - rowHeight, width: tableWidth, height: rowHeight, borderColor: espiGray, borderWidth: 1, color: espiBlue });
+    page.drawLine({ start: { x: col2X, y: currentY }, end: { x: col2X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
+    page.drawLine({ start: { x: col3X, y: currentY }, end: { x: col3X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
+    page.drawLine({ start: { x: col4X, y: currentY }, end: { x: col4X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
 
-    // Colonnes de l'en-tête
-    // Update the column dividers
-    page.drawLine({
-      start: { x: col2X, y: currentY },
-      end: { x: col2X, y: currentY - rowHeight },
-      thickness: 1,
-      color: espiGray,
-    });
-
-    page.drawLine({
-      start: { x: col3X, y: currentY },
-      end: { x: col3X, y: currentY - rowHeight },
-      thickness: 1,
-      color: espiGray,
-    });
-
-    page.drawLine({
-      start: { x: col4X, y: currentY },
-      end: { x: col4X, y: currentY - rowHeight },
-      thickness: 1,
-      color: espiGray,
-    });
-
-    // Texte de l'en-tête
-    const enseignementsText = "Enseignements";
-    const enseignementsWidth = boldFont.widthOfTextAtSize(enseignementsText, fontSize);
-    const col1Center = col1X + col1Width / 2 - enseignementsWidth / 2;
-
-    page.drawText(enseignementsText, {
-      x: col1Center,
-      y: currentY - 10,
-      size: fontSize,
-      font: boldFont,
-      color: rgb(1, 1, 1),
-    });
-
-    const moyenneText = "Moyenne";
-    const moyenneWidth = boldFont.widthOfTextAtSize(moyenneText, fontSize);
-    const col2Center = col2X + col2Width / 2 - moyenneWidth / 2;
-
-    page.drawText(moyenneText, {
-      x: col2Center,
-      y: currentY - 10,
-      size: fontSize,
-      font: boldFont,
-      color: rgb(1, 1, 1),
-    });
-
-    const ectsText = "Total ECTS";
-    const ectsWidth = boldFont.widthOfTextAtSize(ectsText, fontSize);
-    const col3Center = col3X + col3Width / 2 - ectsWidth / 2;
-
-    page.drawText(ectsText, {
-      x: col3Center,
-      y: currentY - 10,
-      size: fontSize,
-      font: boldFont,
-      color: rgb(1, 1, 1),
-    });
-
-    const etatText = "État";
-    const etatWidth = boldFont.widthOfTextAtSize(etatText, fontSize);
-    const col4Center = col4X + col4Width / 2 - etatWidth / 2;
-
-    page.drawText(etatText, {
-      x: col4Center,
-      y: currentY - 10,
-      size: fontSize,
-      font: boldFont,
-      color: rgb(1, 1, 1),
-    });
+    for (const { text, x, w } of [
+      { text: "Enseignements", x: col1X, w: col1Width },
+      { text: "Moyenne", x: col2X, w: col2Width },
+      { text: "Total ECTS", x: col3X, w: col3Width },
+      { text: "État", x: col4X, w: col4Width },
+    ]) {
+      const tw = boldFont.widthOfTextAtSize(text, fontSize);
+      page.drawText(text, { x: x + w / 2 - tw / 2, y: currentY - 10, size: fontSize, font: boldFont, color: rgb(1, 1, 1) });
+    }
 
     currentY -= rowHeight;
 
-    // Lignes pour chaque matière
-    // ✅ Construction complète des matières à afficher (avec ou sans note)
-    const allSubjects: Array<{
-      NOM_EVALUATION_NOTE: string;
-      CODE_MATIERE: string;
-      NOM_MATIERE: string;
-      MOYENNE?: number;
-      CREDIT_ECTS: number;
-      NUM_ORDRE: string;
-    }> = subjects
-      .filter((subject) => subject.CODE_APPRENANT === student.CODE_APPRENANT)
+    // Construction des matières à afficher
+    const allSubjects = subjects
+      .filter((s) => s.CODE_APPRENANT === student.CODE_APPRENANT)
       .map((subject) => {
-        const note = grades.find(
-          (g) =>
-            g.CODE_APPRENANT === student.CODE_APPRENANT && g.CODE_MATIERE === subject.CODE_MATIERE
-        );
-
+        const note = grades.find((g) => g.CODE_APPRENANT === student.CODE_APPRENANT && g.CODE_MATIERE === subject.CODE_MATIERE);
         return {
           CODE_MATIERE: subject.CODE_MATIERE,
           NOM_MATIERE: subject.NOM_MATIERE,
           MOYENNE: note ? note.MOYENNE : undefined,
-          // AJOUT DE LA PROPRIÉTÉ MANQUANTE :
-          // On récupère NOM_EVALUATION_NOTE depuis la note, ou une chaîne vide par défaut
           NOM_EVALUATION_NOTE: note?.NOM_EVALUATION_NOTE || "",
           CREDIT_ECTS: subject.CREDIT_ECTS || 0,
-          NUM_ORDRE: String(subject.NUM_ORDRE || "999"), // On s'assure que c'est un string pour le type
+          NUM_ORDRE: String(subject.NUM_ORDRE || "999"),
         };
       })
       .sort((a, b) => parseInt(a.NUM_ORDRE, 10) - parseInt(b.NUM_ORDRE, 10));
 
-    const isTPGroupFlag = isTPGroup(groupInfo);
-    let matiereCounter = 0;
-    let ue4MatiereCounter = 0;
-    let hasAlreadyBrokenPage = false; // ✅ NOUVEAU FLAG
-
-    // Puis utilisez allSubjects pour mettre à jour les ECTS
+    // Mise à 0 des ECTS matières sans note
     for (const subject of allSubjects) {
-      // Mettre à 0 les ECTS des matières sans note/état
-      if (
-        !isUEByName(subject) &&
-        subject.MOYENNE === undefined &&
-        !matiereEtats.has(subject.CODE_MATIERE)
-      ) {
+      if (!isUEByName(subject) && subject.MOYENNE === undefined && !matiereEtats.has(subject.CODE_MATIERE)) {
         subject.CREDIT_ECTS = 0;
-        console.log(`Mise à jour ECTS à 0 pour matière sans note/état: ${subject.NOM_MATIERE}`);
       }
     }
 
-    // Recalculer les ECTS des UEs en fonction des matières
-    const ueEctsMap = new Map<string, number>();
-
-    // Initialiser les totaux à 0
-    for (const [ueCode] of ueMap) {
-      ueEctsMap.set(ueCode, 0);
-    }
-    // Le ueCode EST utilisé dans ueEctsMap.set(), donc l'erreur pourrait être ailleurs
-
-    // Calculer la somme des ECTS pour chaque UE
-    // Remplacez votre bloc de recalcul ECTS par celui-ci
-
-    // --- 1. CRÉATION DU DICTIONNAIRE DE CORRESPONDANCE ---
-    // Ce bloc permet de savoir instantanément à quelle UE appartient une matière
+    // Dictionnaire matière → UE
     const matiereToUeMap = new Map<string, string>();
     for (const [ueCode, { matieres }] of ueMap) {
-      for (const matiere of matieres) {
-        matiereToUeMap.set(matiere.CODE_MATIERE, ueCode);
-      }
+      for (const matiere of matieres) matiereToUeMap.set(matiere.CODE_MATIERE, ueCode);
     }
 
-    // --- 3. MISE À JOUR DES ECTS DANS L'OBJET SUBJECT (Pour l'affichage ligne par ligne) ---
-    // ⚠️ IMPORTANT : FAIRE CECI EN PREMIER pour que ueEctsMap utilise les bonnes valeurs
+    // Mise à 0 ECTS NV
     for (const subject of studentSubjects) {
-      const etat = matiereEtats.get(subject.CODE_MATIERE);
-      // Si la matière est en rattrapage (NV), on affiche 0 ECTS sur sa ligne
-      if (etat === "NV" && !isUEByName(subject)) {
-        subject.CREDIT_ECTS = 0;
-        console.log(`⚠️ ECTS mis à 0 pour ${subject.NOM_MATIERE} (État: NV)`);
-      }
+      if (matiereEtats.get(subject.CODE_MATIERE) === "NV" && !isUEByName(subject)) subject.CREDIT_ECTS = 0;
     }
 
-    // --- 4. CALCUL DES TOTAUX UE (après mise à jour des ECTS) ---
+    // Calcul totaux ECTS par UE
+    const ueEctsMap = new Map<string, number>();
+    for (const [ueCode] of ueMap) ueEctsMap.set(ueCode, 0);
+
     for (const subject of studentSubjects) {
-      // On ignore les lignes qui sont des en-têtes d'UE pour ne pas doubler les points
       if (!isUEByName(subject)) {
         const ueCode = matiereToUeMap.get(subject.CODE_MATIERE);
         const etat = matiereEtats.get(subject.CODE_MATIERE);
-
-        // RÈGLE : On n'ajoute les ECTS au total de l'UE que si la matière est validée ou compensée
         if (ueCode && (etat === "VA" || etat === "C")) {
-          const ects = Number(subject.CREDIT_ECTS) || 0;
-          const currentTotal = ueEctsMap.get(ueCode) || 0;
-          ueEctsMap.set(ueCode, currentTotal + ects);
-
-          console.log(`✅ ECTS validés : ${subject.NOM_MATIERE} (${ects}) ajouté à l'UE ${ueCode} → Total: ${currentTotal + ects}`);
-        } else {
-          console.log(`❌ ${subject.NOM_MATIERE} non ajouté (État: ${etat})`);
+          ueEctsMap.set(ueCode, (ueEctsMap.get(ueCode) || 0) + (Number(subject.CREDIT_ECTS) || 0));
         }
       }
     }
 
-    // Mettre à jour les ECTS des UEs
+    // Mise à jour ECTS des UEs dans allSubjects
     for (const subject of allSubjects) {
       if (isUEByName(subject)) {
         for (const [ueCode] of ueMap) {
           if (subject.CODE_MATIERE === ueCode) {
-            const newEcts = ueEctsMap.get(ueCode) || 0;
-            console.log(
-              `Mise à jour des ECTS pour UE ${subject.NOM_MATIERE}: ancien=${subject.CREDIT_ECTS}, nouveau=${newEcts}`
-            );
-            subject.CREDIT_ECTS = newEcts;
+            subject.CREDIT_ECTS = ueEctsMap.get(ueCode) || 0;
             break;
           }
         }
       }
     }
 
+    // Boucle d'affichage des matières
+    const isTPGroupFlag = isTPGroup(groupInfo);
+    let ue4MatiereCounter = 0;
+    let hasAlreadyBrokenPage = false;
+
     for (const subject of allSubjects) {
       const isUE = isUEByName(subject);
-      // ✅ Incrémenter le compteur UE 4 si nécessaire
-      if (isUE4RelatedSubject(subject, ueMap)) {
-        ue4MatiereCounter++;
-        console.log(
-          `📊 Matière UE 4 détectée: ${subject.NOM_MATIERE} (compteur: ${ue4MatiereCounter})`
-        );
-      }
 
-      const shouldBreakForUE4 =
-        isTPGroupFlag &&
-        isUE4RelatedSubject(subject, ueMap) &&
-        ue4MatiereCounter === 4 &&
-        !hasAlreadyBrokenPage;
+      if (isUE4RelatedSubject(subject, ueMap as any)) ue4MatiereCounter++;
 
-      // Éviter plusieurs sauts de page
-      const pageBreakResult = handleTPPageBreak(
-        isTPGroupFlag,
-        subject,
-        ue4MatiereCounter,
-        shouldBreakForUE4, // ✅ Paramètre modifié
-        currentY,
-        pdfDoc,
-        pageHeight,
-        margin,
-        col1X,
-        col2X,
-        col3X,
-        col4X,
-        col1Width,
-        col2Width,
-        col3Width,
-        col4Width,
-        tableWidth,
-        rowHeight,
-        fontSize,
-        boldFont,
-        espiGray,
-        espiBlue,
-        rgb
-      );
+      const shouldBreakForUE4 = isTPGroupFlag && isUE4RelatedSubject(subject, ueMap as any) && ue4MatiereCounter === 4 && !hasAlreadyBrokenPage;
 
-      // ✅ Marquer que le saut a été fait
+      const pageBreakResult = handleTPPageBreak(isTPGroupFlag, subject, ue4MatiereCounter, shouldBreakForUE4, currentY, pdfDoc, pageHeight, margin, col1X, col2X, col3X, col4X, col1Width, col2Width, col3Width, col4Width, tableWidth, rowHeight, fontSize, boldFont, espiGray, espiBlue, rgb);
+
       if (pageBreakResult.shouldBreak) {
         page = pageBreakResult.newPage!;
         currentY = pageBreakResult.newCurrentY!;
-        hasAlreadyBrokenPage = true; // ✅ IMPORTANT
-        console.log(`✅ Saut de page effectué pour groupe TP à la matière: ${subject.NOM_MATIERE}`);
+        hasAlreadyBrokenPage = true;
       }
 
-      // Incrémenter le compteur de matières
-      matiereCounter++;
-      console.log(`Matière ${matiereCounter}: ${subject.NOM_MATIERE}`);
-
-      // Définir la couleur de fond
       const backgroundColor = isUE ? espiGray : undefined;
+      page.drawRectangle({ x: col1X, y: currentY - rowHeight, width: tableWidth, height: rowHeight, borderColor: espiGray, borderWidth: 1, color: backgroundColor });
+      page.drawLine({ start: { x: col2X, y: currentY }, end: { x: col2X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
+      page.drawLine({ start: { x: col3X, y: currentY }, end: { x: col3X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
+      page.drawLine({ start: { x: col4X, y: currentY }, end: { x: col4X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
 
-      // Nouvelle ligne (avec ou sans fond)
-      page.drawRectangle({
-        x: col1X,
-        y: currentY - rowHeight,
-        width: tableWidth,
-        height: rowHeight,
-        borderColor: espiGray,
-        borderWidth: 1,
-        color: backgroundColor, // 👉 Applique le fond si c'est une UE
-      });
+      page.drawText(subject.NOM_MATIERE, { x: col1X + 5, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: rgb(0, 0, 0) });
 
-      // Lignes verticales
-      page.drawLine({
-        start: { x: col2X, y: currentY },
-        end: { x: col2X, y: currentY - rowHeight },
-        thickness: 1,
-        color: espiGray,
-      });
-      page.drawLine({
-        start: { x: col3X, y: currentY },
-        end: { x: col3X, y: currentY - rowHeight },
-        thickness: 1,
-        color: espiGray,
-      });
-      page.drawLine({
-        start: { x: col4X, y: currentY },
-        end: { x: col4X, y: currentY - rowHeight },
-        thickness: 1,
-        color: espiGray,
-      });
-
-      // Texte matière
-      page.drawText(subject.NOM_MATIERE, {
-        x: col1X + 5,
-        y: currentY - 10,
-        size: fontSize,
-        font: isUE ? boldFont : mainFont, // 👉 Texte en gras si UE
-        color: rgb(0, 0, 0),
-      });
-
-      // Moyenne (ou "-" si vide)
-      // Moyenne (ou "-" si vide)
-      // Moyenne (ou "-" si vide)
-      let moyenne;
-
+      // Moyenne
+      let moyenne = "-";
       if (subject.MOYENNE !== undefined && subject.MOYENNE !== null) {
         const moyenneStr = String(subject.MOYENNE);
-        // ... (votre logique actuelle pour traiter les nombres ou VA/NV déjà présents dans MOYENNE)
         if (moyenneStr === "VA" || moyenneStr === "NV") {
           moyenne = moyenneStr;
         } else {
-          try {
-            moyenne = parseFloat(moyenneStr.replace(",", ".")).toFixed(2).replace(".", ",");
-          } catch {
-            moyenne = "-";
-          }
+          try { moyenne = parseFloat(moyenneStr.replace(",", ".")).toFixed(2).replace(".", ","); } catch { moyenne = "-"; }
         }
       } else {
-        // GESTION DU TEXTE "Validé" / "Non Validé"
-        if (subject.NOM_EVALUATION_NOTE === "Validé") {
-          moyenne = "Validé";
-          matiereEtats.set(subject.CODE_MATIERE, "VA");
-        } else if (subject.NOM_EVALUATION_NOTE === "Non Validé") {
-          moyenne = "Non Validé";
-          matiereEtats.set(subject.CODE_MATIERE, "NV");
-        } else {
-          moyenne = "-";
-          if (!matiereEtats.has(subject.CODE_MATIERE)) matiereEtats.set(subject.CODE_MATIERE, "NV");
-        }
+        if (subject.NOM_EVALUATION_NOTE === "Validé") { moyenne = "Validé"; matiereEtats.set(subject.CODE_MATIERE, "VA"); }
+        else if (subject.NOM_EVALUATION_NOTE === "Non Validé") { moyenne = "Non Validé"; matiereEtats.set(subject.CODE_MATIERE, "NV"); }
+        else { moyenne = "-"; if (!matiereEtats.has(subject.CODE_MATIERE)) matiereEtats.set(subject.CODE_MATIERE, "NV"); }
       }
 
-      const moyenneWidth = mainFont.widthOfTextAtSize(moyenne, fontSize);
-      page.drawText(moyenne, {
-        x: col2X + col2Width / 2 - moyenneWidth / 2,
-        y: currentY - 10,
-        size: fontSize,
-        font: isUE ? boldFont : mainFont,
-        color: rgb(0, 0, 0),
-      });
+      const moyW = mainFont.widthOfTextAtSize(moyenne, fontSize);
+      page.drawText(moyenne, { x: col2X + col2Width / 2 - moyW / 2, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: rgb(0, 0, 0) });
 
       // État
       let etat = "-";
-
-      // Si c'est une UE, on utilise l'état calculé depuis ueEtats
       if (isUEByName(subject)) {
-        const ueCode = subject.CODE_MATIERE; // ou votre logique de clé UE
-        // On récupère l'état calculé à l'étape 4 du bloc précédent
-        etat = ueEtats.get(ueCode) || "NV";
+        etat = ueEtats.get(subject.CODE_MATIERE) || "NV";
       } else {
         const etatCalculé = matiereEtats.get(subject.CODE_MATIERE);
-
         if (etatCalculé !== undefined) {
           etat = etatCalculé;
         } else {
-          // Convertir la moyenne en chaîne pour faciliter les comparaisons
-          const moyenneStr =
-            subject.MOYENNE !== undefined && subject.MOYENNE !== null
-              ? String(subject.MOYENNE)
-              : "-";
-
-          // Si aucun état n'a été calculé, vérifier d'abord si la moyenne est "VA" ou "NV" directement
-          if (moyenneStr === "VA") {
-            etat = "VA";
-          } else if (moyenneStr === "NV") {
-            etat = "NV";
-          } else if (moyenneStr === "-") {
-            etat = "-";
-          } else {
-            // Ensuite chercher dans les notes
-            let note = notes?.find(
-              (n) =>
-                n.CODE_APPRENANT === student.CODE_APPRENANT &&
-                n.CODE_MATIERE === subject.CODE_MATIERE
-            );
-
-            // Si aucune note trouvée par CODE_MATIERE, essayer par NOM_MATIERE
-            if (!note) {
-              note = notes?.find(
-                (n) =>
-                  n.CODE_APPRENANT === student.CODE_APPRENANT &&
-                  n.NOM_MATIERE === subject.NOM_MATIERE
-              );
-            }
-
-            if (note) {
-              if (Number(note.CODE_EVALUATION_NOTE) === 1) {
-                etat = "VA";
-              } else if (Number(note.CODE_EVALUATION_NOTE) === 2) {
-                etat = "NV";
-              }
-            } else {
-              // Si aucune note n'est trouvée, vérifier si une moyenne existe et est numérique
-              try {
-                const moyenneValue = parseFloat(moyenneStr.replace(",", "."));
-                if (!isNaN(moyenneValue)) {
-                  etat = moyenneValue >= 10 ? "VA" : "NV";
-                } else {
-                  etat = "NV"; // Si la moyenne existe mais n'est pas numérique
-                }
-              } catch (error) {
-                etat = "NV"; // En cas d'erreur de conversion
-                console.log(
-                  `Erreur lors de la conversion de la moyenne pour ${subject.NOM_MATIERE}:`,
-                  error
-                );
-              }
-            }
+          const moyenneStr = subject.MOYENNE !== undefined && subject.MOYENNE !== null ? String(subject.MOYENNE) : "-";
+          if (moyenneStr === "VA") etat = "VA";
+          else if (moyenneStr === "NV") etat = "NV";
+          else if (moyenneStr === "-") etat = "-";
+          else {
+            try {
+              const v = parseFloat(moyenneStr.replace(",", "."));
+              etat = !isNaN(v) ? (v >= 10 ? "VA" : "NV") : "NV";
+            } catch { etat = "NV"; }
           }
-
-          // Ajout d'un log de sécurité
-          console.warn(
-            `⚠️ Aucun état trouvé pour ${subject.NOM_MATIERE} (${subject.CODE_MATIERE}), valeur par défaut: ${etat}.`
-          );
         }
       }
 
-      // Mettre à jour les ECTS à 0 si état est "NV" ou "NV" et ce n'est pas une UE
-      if ((etat === "NV" || etat === "NV") && !isUEByName(subject)) {
-        subject.CREDIT_ECTS = 0;
-        console.log(`Mise à jour ECTS à 0 pour matière avec état ${etat}: ${subject.NOM_MATIERE}`);
-      }
+      if (etat === "NV" && !isUEByName(subject)) subject.CREDIT_ECTS = 0;
 
-      // ECTS - Utilisez directement subject.CREDIT_ECTS qui peut avoir été mis à jour
       const ects = subject.CREDIT_ECTS.toString();
-      const ectsWidth = mainFont.widthOfTextAtSize(ects, fontSize);
-      page.drawText(ects, {
-        x: col3X + col3Width / 2 - ectsWidth / 2,
-        y: currentY - 10,
-        size: fontSize,
-        font: isUE ? boldFont : mainFont,
-        color: rgb(0, 0, 0),
-      });
+      const ectsW = mainFont.widthOfTextAtSize(ects, fontSize);
+      page.drawText(ects, { x: col3X + col3Width / 2 - ectsW / 2, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: rgb(0, 0, 0) });
 
-      // Sélectionner la police en fonction de l'état
       const etatFont = isUE ? boldFont : etat === "C" ? boldFont : mainFont;
+      const etatColor = etat === "C" ? rgb(0.04, 0.36, 0.51) : rgb(0, 0, 0);
+      const etatW = mainFont.widthOfTextAtSize(etat, fontSize);
+      page.drawText(etat, { x: col4X + col4Width / 2 - etatW / 2, y: currentY - 10, size: fontSize, font: etatFont, color: etatColor });
 
-      // Déterminer la couleur selon l'état
-      let etatColor;
-      if (etat === "C") {
-        etatColor = rgb(0.04, 0.36, 0.51); // #156082 en RGB pour "C"
-      } else {
-        etatColor = rgb(0, 0, 0); // Noir pour les autres états
-      }
-
-      const etatWidth = mainFont.widthOfTextAtSize(etat, fontSize);
-      page.drawText(etat, {
-        x: col4X + col4Width / 2 - etatWidth / 2,
-        y: currentY - 10,
-        size: fontSize,
-        font: etatFont, // Utiliser etatFont au lieu de mainFont
-        color: etatColor, // Utiliser etatColor au lieu de rgb(0, 0, 0)
-      });
       currentY -= rowHeight;
 
-      // Saut de page si nécessaire
       if (currentY < margin + rowHeight) {
         page = pdfDoc.addPage([595.28, 841.89]);
         currentY = pageHeight - margin;
       }
     }
 
-    // Ligne pour la moyenne générale
-    page.drawRectangle({
-      x: col1X,
-      y: currentY - rowHeight,
-      width: tableWidth,
-      height: rowHeight,
-      borderColor: espiBlue,
-      borderWidth: 1,
-      color: espiBlue,
-    });
+    // Ligne moyenne générale
+    page.drawRectangle({ x: col1X, y: currentY - rowHeight, width: tableWidth, height: rowHeight, borderColor: espiBlue, borderWidth: 1, color: espiBlue });
+    page.drawLine({ start: { x: col2X, y: currentY }, end: { x: col2X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
+    page.drawLine({ start: { x: col3X, y: currentY }, end: { x: col3X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
+    page.drawLine({ start: { x: col4X, y: currentY }, end: { x: col4X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
+    page.drawText("Moyenne générale", { x: col1X + 5, y: currentY - 10, size: fontSize, font: boldFont, color: rgb(1, 1, 1) });
 
-    // Vertical lines
-    page.drawLine({
-      start: { x: col2X, y: currentY },
-      end: { x: col2X, y: currentY - rowHeight },
-      thickness: 1,
-      color: espiGray,
-    });
-
-    page.drawLine({
-      start: { x: col3X, y: currentY },
-      end: { x: col3X, y: currentY - rowHeight },
-      thickness: 1,
-      color: espiGray,
-    });
-
-    page.drawLine({
-      start: { x: col4X, y: currentY },
-      end: { x: col4X, y: currentY - rowHeight },
-      thickness: 1,
-      color: espiGray,
-    });
-
-    // Text "Moyenne générale"
-    page.drawText("Moyenne générale", {
-      x: col1X + 5,
-      y: currentY - 10,
-      size: fontSize,
-      font: boldFont,
-      color: rgb(1, 1, 1),
-    });
-
-    // Valeur de la moyenne générale
-    const studentAverage = generalAverages?.find(
-      (avg: any) => avg.CODE_APPRENANT === student.CODE_APPRENANT
-    );
-
+    const studentAverage = generalAverages?.find((avg: any) => avg.CODE_APPRENANT === student.CODE_APPRENANT);
     let moyenneGenerale = "N/A";
-
     if (studentAverage) {
       try {
-        const moyenneGeneraleRaw = studentAverage.MOYENNE_GENERALE as any;
-        const moyenneGeneraleValue =
-          typeof moyenneGeneraleRaw === "string"
-            ? parseFloat(moyenneGeneraleRaw.replace(",", "."))
-            : moyenneGeneraleRaw;
-
-        if (moyenneGeneraleValue !== null && !isNaN(moyenneGeneraleValue)) {
-          moyenneGenerale =
-            typeof moyenneGeneraleValue.toFixed === "function"
-              ? moyenneGeneraleValue.toFixed(2).replace(".", ",") // ← Ajout du .replace(".", ",")
-              : moyenneGeneraleValue.toString();
-        }
-      } catch (error) {
-        console.log("Erreur lors du formatage de la moyenne générale:", error);
-      }
+        const raw = studentAverage.MOYENNE_GENERALE as any;
+        const val = typeof raw === "string" ? parseFloat(raw.replace(",", ".")) : raw;
+        if (val !== null && !isNaN(val)) moyenneGenerale = typeof val.toFixed === "function" ? val.toFixed(2).replace(".", ",") : val.toString();
+      } catch {}
     }
 
-    // Center the general average
-    const moyenneGeneraleWidth = mainFont.widthOfTextAtSize(moyenneGenerale, fontSize);
-    const moyenneGeneraleCenterX = col2X + col2Width / 2 - moyenneGeneraleWidth / 2;
+    const mgW = mainFont.widthOfTextAtSize(moyenneGenerale, fontSize);
+    page.drawText(moyenneGenerale, { x: col2X + col2Width / 2 - mgW / 2, y: currentY - 10, size: fontSize, font: boldFont, color: rgb(1, 1, 1) });
 
-    page.drawText(moyenneGenerale, {
-      x: moyenneGeneraleCenterX,
-      y: currentY - 10,
-      size: fontSize,
-      font: boldFont,
-      color: rgb(1, 1, 1),
-    });
-
-    // ✅ Correction : Calcul du total des ECTS basé uniquement sur les UE
-
-    // ✅ Vérification et correction du calcul du total des ECTS
-    // On utilise directement ueEctsMap qui contient les ECTS validés de chaque UE
-    const totalECTS = Array.from(ueEctsMap.values()).reduce((acc, ects) => acc + ects, 0);
-    console.log("Total ECTS (somme des UE validées) :", totalECTS);
-
-    // Log détaillé pour le débogage
-    console.log("Détail des UE pour l'étudiant " + student.CODE_APPRENANT + ":");
-    for (const [ueCode, ectsTotal] of ueEctsMap) {
-      const ueSubject = allSubjects.find(s => s.CODE_MATIERE === ueCode && isUEByName(s));
-      if (ueSubject) {
-        console.log(`${ueSubject.NOM_MATIERE}: ${ectsTotal} ECTS`);
-      }
-    }
-
+    const totalECTS = Array.from(ueEctsMap.values()).reduce((acc, e) => acc + e, 0);
     const totalECTSText = String(Number(totalECTS) || 0);
-    const totalECTSWidth = mainFont.widthOfTextAtSize(totalECTSText, fontSize);
-    const totalECTSCenterX = col3X + col3Width / 2 - totalECTSWidth / 2;
+    const totalECTSW = mainFont.widthOfTextAtSize(totalECTSText, fontSize);
+    page.drawText(totalECTSText, { x: col3X + col3Width / 2 - totalECTSW / 2, y: currentY - 10, size: fontSize, font: boldFont, color: rgb(1, 1, 1) });
 
-    // ✅ Ajout du texte proprement
-    page.drawText(totalECTSText, {
-      x: totalECTSCenterX,
-      y: currentY - 10,
-      size: fontSize,
-      font: boldFont,
-      color: rgb(1, 1, 1),
-    });
-
-    const getEtatGeneral = (
-      subjects: SubjectECTS[],
-      studentId: string,
-      ueEtats: Map<string, string>
-    ): string => {
-      const ueSubjects = subjects.filter(
-        (subject) =>
-          subject.CODE_APPRENANT === studentId && subject.NOM_MATIERE && isUEByName(subject)
-      );
-
+    const getEtatGeneral = (subjects: SubjectECTS[], studentId: string, ueEtats: Map<string, string>): string => {
+      const ueSubjects = subjects.filter((s) => s.CODE_APPRENANT === studentId && isUEByName(s));
       if (ueSubjects.length === 0) return "NV";
-
-      // Si au moins une UE est en NV → état général = NV
-      for (const ue of ueSubjects) {
-        const etatUE = ueEtats.get(ue.CODE_MATIERE);
-        if (etatUE !== "VA") {
-          return "NV";
-        }
-      }
-
       return ueSubjects.every((ue) => ueEtats.get(ue.CODE_MATIERE) === "VA") ? "VA" : "NV";
     };
 
-    // État général (Validé ou Non Validé)
     const etatGeneral = getEtatGeneral(subjects, student.CODE_APPRENANT, ueEtats);
-    const etatGeneralWidth = mainFont.widthOfTextAtSize(etatGeneral, fontSize);
-    const etatGeneralCenterX = col4X + col4Width / 2 - etatGeneralWidth / 2;
-
-    page.drawText(etatGeneral, {
-      x: etatGeneralCenterX,
-      y: currentY - 10,
-      size: fontSize,
-      font: boldFont,
-      color: rgb(1, 1, 1),
-    });
+    const egW = mainFont.widthOfTextAtSize(etatGeneral, fontSize);
+    page.drawText(etatGeneral, { x: col4X + col4Width / 2 - egW / 2, y: currentY - 10, size: fontSize, font: boldFont, color: rgb(1, 1, 1) });
 
     currentY -= rowHeight + 10;
 
-    // Section absences et observations
+    // Section absences
     const boxWidthABS = pageWidth - 2 * margin;
     const boxHeightABS = 36;
+    page.drawRectangle({ x: margin, y: currentY - boxHeightABS, width: boxWidthABS, height: boxHeightABS, borderColor: espiBlue, borderWidth: 1 });
+    page.drawLine({ start: { x: margin + boxWidthABS / 3, y: currentY }, end: { x: margin + boxWidthABS / 3, y: currentY - boxHeightABS }, thickness: 1, color: espiBlue });
+    page.drawLine({ start: { x: margin + (2 * boxWidthABS) / 3, y: currentY }, end: { x: margin + (2 * boxWidthABS) / 3, y: currentY - boxHeightABS }, thickness: 1, color: espiBlue });
 
-    // Dessiner le rectangle principal
-    page.drawRectangle({
-      x: margin,
-      y: currentY - boxHeightABS,
-      width: boxWidthABS,
-      height: boxHeightABS,
-      borderColor: espiBlue,
-      borderWidth: 1,
+    const studentAbsence = processedABS.find((abs) => abs.CODE_APPRENANT === student.CODE_APPRENANT);
+    const colWidth = boxWidthABS / 3;
+    const absData = studentAbsence
+      ? [studentAbsence.ABSENCES_JUSTIFIEES, studentAbsence.ABSENCES_INJUSTIFIEES, studentAbsence.RETARDS]
+      : ["00h00", "00h00", "00h00"];
+    const absTitles = ["Absences justifiées", "Absences injustifiées", "Retards"];
+
+    absTitles.forEach((title, i) => {
+      const titleW = mainFont.widthOfTextAtSize(title, fontSize);
+      const valueW = mainFont.widthOfTextAtSize(absData[i], fontSize);
+      const colCenter = margin + i * colWidth + colWidth / 2;
+      page.drawText(title, { x: colCenter - titleW / 2, y: currentY - 15, size: fontSize, font: mainFont, color: espiBlue });
+      page.drawText(absData[i], { x: colCenter - valueW / 2, y: currentY - 30, size: fontSize, font: mainFont, color: espiBlue });
     });
-
-    // Lignes verticales pour diviser en trois colonnes
-    page.drawLine({
-      start: { x: margin + boxWidthABS / 3, y: currentY },
-      end: { x: margin + boxWidthABS / 3, y: currentY - boxHeightABS },
-      thickness: 1,
-      color: espiBlue,
-    });
-
-    page.drawLine({
-      start: { x: margin + (2 * boxWidthABS) / 3, y: currentY },
-      end: { x: margin + (2 * boxWidthABS) / 3, y: currentY - boxHeightABS },
-      thickness: 1,
-      color: espiBlue,
-    });
-
-    // Filtrer les absences de l'étudiant en cours
-    const studentAbsence = processedABS.find(
-      (abs) => abs.CODE_APPRENANT === student.CODE_APPRENANT
-    );
-
-    // Si on trouve des absences, on les affiche
-    if (studentAbsence) {
-      const absJustText = "Absences justifiées";
-      const absJustWidth = mainFont.widthOfTextAtSize(absJustText, fontSize);
-      const colWidth = boxWidthABS / 3;
-
-      page.drawText(absJustText, {
-        x: margin + colWidth / 2 - absJustWidth / 2, // Centré dans la colonne
-        y: currentY - 15,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Valeur Absences justifiées
-      const absJustValue = studentAbsence.ABSENCES_JUSTIFIEES;
-      const absJustValueWidth = mainFont.widthOfTextAtSize(absJustValue, fontSize);
-
-      page.drawText(absJustValue, {
-        x: margin + colWidth / 2 - absJustValueWidth / 2, // Centré dans la colonne
-        y: currentY - 30,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Titre "Absences injustifiées" dans la deuxième colonne
-      const absInjText = "Absences injustifiées";
-      const absInjWidth = mainFont.widthOfTextAtSize(absInjText, fontSize);
-
-      page.drawText(absInjText, {
-        x: margin + colWidth + colWidth / 2 - absInjWidth / 2, // Centré dans la colonne
-        y: currentY - 15,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Valeur Absences injustifiées
-      const absInjValue = studentAbsence.ABSENCES_INJUSTIFIEES;
-      const absInjValueWidth = mainFont.widthOfTextAtSize(absInjValue, fontSize);
-
-      page.drawText(absInjValue, {
-        x: margin + colWidth + colWidth / 2 - absInjValueWidth / 2, // Centré dans la colonne
-        y: currentY - 30,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Titre "Retards" dans la troisième colonne
-      const retardsText = "Retards";
-      const retardsWidth = mainFont.widthOfTextAtSize(retardsText, fontSize);
-
-      page.drawText(retardsText, {
-        x: margin + 2 * colWidth + colWidth / 2 - retardsWidth / 2, // Centré dans la colonne
-        y: currentY - 15,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Valeur Retards
-      const retardsValue = studentAbsence.RETARDS;
-      const retardsValueWidth = mainFont.widthOfTextAtSize(retardsValue, fontSize);
-
-      page.drawText(retardsValue, {
-        x: margin + 2 * colWidth + colWidth / 2 - retardsValueWidth / 2, // Centré dans la colonne
-        y: currentY - 30,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-    } else {
-      // SI AUCUNE ABSENCE N'EST TROUVÉE, AFFICHER LES VALEURS PAR DÉFAUT
-      // Titre "Absences justifiées" dans la première colonne
-      const absJustText = "Absences justifiées";
-      const absJustWidth = mainFont.widthOfTextAtSize(absJustText, fontSize);
-      const colWidth = boxWidthABS / 3;
-
-      page.drawText(absJustText, {
-        x: margin + colWidth / 2 - absJustWidth / 2, // Centré dans la colonne
-        y: currentY - 15,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Valeur par défaut
-      const defaultValue = "00h00";
-      const defaultValueWidth = mainFont.widthOfTextAtSize(defaultValue, fontSize);
-
-      page.drawText(defaultValue, {
-        x: margin + colWidth / 2 - defaultValueWidth / 2, // Centré dans la colonne
-        y: currentY - 30,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Titre "Absences injustifiées" dans la deuxième colonne
-      const absInjText = "Absences injustifiées";
-      const absInjWidth = mainFont.widthOfTextAtSize(absInjText, fontSize);
-
-      page.drawText(absInjText, {
-        x: margin + colWidth + colWidth / 2 - absInjWidth / 2, // Centré dans la colonne
-        y: currentY - 15,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Valeur par défaut
-      page.drawText(defaultValue, {
-        x: margin + colWidth + colWidth / 2 - defaultValueWidth / 2, // Centré dans la colonne
-        y: currentY - 30,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Titre "Retards" dans la troisième colonne
-      const retardsText = "Retards";
-      const retardsWidth = mainFont.widthOfTextAtSize(retardsText, fontSize);
-
-      page.drawText(retardsText, {
-        x: margin + 2 * colWidth + colWidth / 2 - retardsWidth / 2, // Centré dans la colonne
-        y: currentY - 15,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
-      // Valeur par défaut
-      page.drawText(defaultValue, {
-        x: margin + 2 * colWidth + colWidth / 2 - defaultValueWidth / 2, // Centré dans la colonne
-        y: currentY - 30,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-    }
 
     currentY -= boxHeightABS + 15;
 
     // Observations
-    const studentObservation = observations.find(
-      (obs) => obs.CODE_APPRENANT === student.CODE_APPRENANT
-    );
-
+    const studentObservation = observations.find((obs) => obs.CODE_APPRENANT === student.CODE_APPRENANT);
     if (studentObservation) {
-      page.drawText("Appréciations :", {
-        x: col1X,
-        y: currentY,
-        size: fontSize,
-        font: mainFont,
-        color: espiBlue,
-      });
-
+      page.drawText("Appréciations :", { x: col1X, y: currentY, size: fontSize, font: mainFont, color: espiBlue });
       currentY -= 15;
 
-      // Nettoyer et normaliser le texte d'observation
       let observationText = "";
       try {
-        observationText = studentObservation.MEMO_OBSERVATION || "";
-        observationText = observationText.replace(/\r/g, " ");
-        observationText = observationText.replace(/[^\x20-\x7E\xA0-\xFF]/g, " ");
-      } catch (error) {
-        console.log("Erreur lors du nettoyage du texte d'observation:", error);
-        observationText = "Observations non disponibles en raison d'un problème d'encodage.";
-      }
+        observationText = (studentObservation.MEMO_OBSERVATION || "").replace(/\r/g, " ").replace(/[^\x20-\x7E\xA0-\xFF]/g, " ");
+      } catch { observationText = "Observations non disponibles."; }
 
-      // Découper le texte en lignes
       const maxWidth = pageWidth - 2 * margin;
       const words = observationText.split(" ");
       let line = "";
@@ -1918,550 +883,222 @@ async function createStudentPDF(
       for (const word of words) {
         try {
           const testLine = line + (line ? " " : "") + word;
-          const textWidth = mainFont.widthOfTextAtSize(testLine, fontSize);
-
-          if (textWidth > maxWidth) {
-            page.drawText(line, {
-              x: col1X,
-              y: currentY,
-              size: fontSize,
-              font: mainFont,
-              color: espiBlue,
-            });
-
+          if (mainFont.widthOfTextAtSize(testLine, fontSize) > maxWidth) {
+            page.drawText(line, { x: col1X, y: currentY, size: fontSize, font: mainFont, color: espiBlue });
             line = word;
             currentY -= 12;
-
-            if (currentY < margin) {
-              // Ajouter une nouvelle page - CORRIGÉ
-              page = pdfDoc.addPage([595.28, 841.89]);
-              currentY = pageHeight - margin;
-            }
-          } else {
-            line = testLine;
-          }
-        } catch (error) {
-          console.log(`Erreur lors du traitement du mot "${word}":`, error);
-          continue;
-        }
+            if (currentY < margin) { page = pdfDoc.addPage([595.28, 841.89]); currentY = pageHeight - margin; }
+          } else { line = testLine; }
+        } catch { continue; }
       }
-
-      // Dessiner la dernière ligne
-      if (line) {
-        page.drawText(line, {
-          x: col1X,
-          y: currentY,
-          size: fontSize,
-          font: mainFont,
-          color: espiBlue,
-        });
-      }
+      if (line) page.drawText(line, { x: col1X, y: currentY, size: fontSize, font: mainFont, color: espiBlue });
     }
 
-    currentY -= 15; // Espace additionnel
+    currentY -= 15;
 
-    // Vérifier s'il reste assez d'espace pour la signature
-    const MIN_SPACE_FOR_SIGNATURE = 60;
-    if (currentY < margin + MIN_SPACE_FOR_SIGNATURE) {
-      // Pas assez d'espace, créer une nouvelle page
-      page = pdfDoc.addPage([595.28, 841.89]);
-      currentY = pageHeight - margin;
-    }
-
-    // Placer la signature à la position courante
+    // Signature
+    if (currentY < margin + 60) { page = pdfDoc.addPage([595.28, 841.89]); currentY = pageHeight - margin; }
     const signatureY = currentY - 5;
 
-    // Texte du lieu et de la date
-    page.drawText(
-      `Fait à ${campus ? campus.NOM_SITE : "Paris"}, le ${new Date().toLocaleDateString("fr-FR")}`,
-      {
-        x: pageWidth - margin - 200,
-        y: signatureY,
-        size: 7,
-        font: mainFont,
-      }
-    );
+    page.drawText(`Fait à ${campus ? campus.NOM_SITE : "Paris"}, le ${new Date().toLocaleDateString("fr-FR")}`, { x: pageWidth - margin - 200, y: signatureY, size: 7, font: mainFont });
 
-    // Récupérer le code personnel du gestionnaire à partir du groupe si disponible
-    let codePersonnel = "";
-    let nomPersonnel = "";
-    let prenomPersonnel = "";
-    let nomFonctionPersonnel = "";
+    let codePersonnel = groupInfo[0]?.CODE_PERSONNEL || "";
+    let nomPersonnel = groupInfo[0]?.NOM_PERSONNEL || "";
+    let prenomPersonnel = groupInfo[0]?.PRENOM_PERSONNEL || "";
+    let nomFonctionPersonnel = groupInfo[0]?.NOM_FONCTION_PERSONNEL || "";
 
-    // Vérifier si les données PERSONNEL sont disponibles
-    console.log("PERSONNEL data:", personnelData);
-    console.log("groupInfo:", groupInfo);
-
-    // Vérifier d'abord si les données sont disponibles directement dans groupInfo
-    if (groupInfo.length > 0) {
-      codePersonnel = groupInfo[0].CODE_PERSONNEL || "";
-      nomPersonnel = groupInfo[0].NOM_PERSONNEL || "";
-      prenomPersonnel = groupInfo[0].PRENOM_PERSONNEL || "";
-      nomFonctionPersonnel = groupInfo[0].NOM_FONCTION_PERSONNEL || "";
-
-      console.log("From groupInfo:", {
-        code: codePersonnel,
-        nom: nomPersonnel,
-        prenom: prenomPersonnel,
-        fonction: nomFonctionPersonnel,
-      });
-    }
-
-    // Si aucune donnée n'est disponible dans groupInfo, vérifier si PERSONNEL est disponible
     if ((!nomPersonnel || !prenomPersonnel) && personnelData && personnelData.length > 0) {
       const personnel = personnelData[0];
-      codePersonnel = personnel.CODE_PERSONNEL || "";
-      nomPersonnel = personnel.NOM_PERSONNEL || "";
-      prenomPersonnel = personnel.PRENOM_PERSONNEL || "";
-      nomFonctionPersonnel = personnel.NOM_FONCTION_PERSONNEL || "";
-
-      console.log("From PERSONNEL data:", {
-        code: codePersonnel,
-        nom: nomPersonnel,
-        prenom: prenomPersonnel,
-        fonction: nomFonctionPersonnel,
-      });
+      codePersonnel = personnel.CODE_PERSONNEL || codePersonnel;
+      nomPersonnel = personnel.NOM_PERSONNEL || nomPersonnel;
+      prenomPersonnel = personnel.PRENOM_PERSONNEL || prenomPersonnel;
+      nomFonctionPersonnel = personnel.NOM_FONCTION_PERSONNEL || nomFonctionPersonnel;
     }
 
-    // Fallback si toujours aucune donnée
     if (!nomPersonnel) nomPersonnel = "Responsable";
     if (!prenomPersonnel) prenomPersonnel = "Pédagogique";
     if (!nomFonctionPersonnel) nomFonctionPersonnel = "Responsable Pédagogique";
-    if (!codePersonnel && campus && campus.CODE_PERSONNEL) {
-      codePersonnel = campus.CODE_PERSONNEL;
-    }
+    if (!codePersonnel && campus?.CODE_PERSONNEL) codePersonnel = campus.CODE_PERSONNEL;
 
-    // Debug log
-    console.log("Final signature data:", {
-      code: codePersonnel,
-      nom: nomPersonnel,
-      prenom: prenomPersonnel,
-      fonction: nomFonctionPersonnel,
-    });
-
-    // Obtenir le nom du fichier de signature correspondant au code personnel
     const signatureFilename = getSignatureFilename(codePersonnel);
-    console.log(`Searching signature for code ${codePersonnel}, found: ${signatureFilename}`);
 
-    // Si un fichier de signature est disponible pour ce code personnel
-    // Si un fichier de signature est disponible pour ce code personnel
-    if (signatureFilename) {
+    // ✅ Signature depuis le cache préchargé
+    if (signatureFilename && assets.signatureCache.has(codePersonnel)) {
       try {
-        // Déterminer l'extension du fichier pour choisir la méthode d'intégration appropriée
-        const isJpg =
-          signatureFilename.toLowerCase().endsWith(".jpg") ||
-          signatureFilename.toLowerCase().endsWith(".jpeg");
+        const sigBytes = assets.signatureCache.get(codePersonnel)!;
+        const isJpg = signatureFilename.toLowerCase().endsWith(".jpg") || signatureFilename.toLowerCase().endsWith(".jpeg");
+        const signatureImage = isJpg ? await pdfDoc.embedJpg(sigBytes) : await pdfDoc.embedPng(sigBytes);
 
-        // Chemin vers l'image de signature
-        const signaturePath = path.join(process.cwd(), "public", "signatures", signatureFilename);
-        console.log(`Looking for signature at: ${signaturePath}`);
-        const signatureBytes = fs.readFileSync(signaturePath);
-
-        // Intégrer l'image selon son format
-        let signatureImage;
-        if (isJpg) {
-          signatureImage = await pdfDoc.embedJpg(signatureBytes);
-        } else {
-          signatureImage = await pdfDoc.embedPng(signatureBytes);
-        }
-
-        // Obtenir les dimensions de l'image et la redimensionner si nécessaire
         const personnelCode = groupInfo[0]?.CODE_PERSONNEL || "";
-        const originalWidth = signatureImage.width;
-        let scale = 0.2; // Échelle par défaut
-
-        // --- MODIFICATION POUR LUDIVINE LAUNAY ---
-        // On définit la largeur max par défaut
+        let scale = 0.2;
         let currentMaxWidth = 120;
 
-        // Ajuster l'échelle en fonction de la largeur de l'image
-        if (String(personnelCode) === "482") {
-          scale = 0.45;         // Échelle plus grande (au lieu de 0.2)
-          currentMaxWidth = 220; // Largeur max plus grande (au lieu de 120)
-        } else if(String(personnelCode) === "2239") {
-          scale = 0.65;         // Échelle plus grande (au lieu de 0.2)
-          currentMaxWidth = 360; 
-        } else {
-          // Logique d'ajustement standard pour les autres signatures
-          if (originalWidth > 400) scale = 0.15;
-          else if (originalWidth < 200) scale = 0.35;
+        if (String(personnelCode) === "482") { scale = 0.45; currentMaxWidth = 220; }
+        else if (String(personnelCode) === "2239") { scale = 0.65; currentMaxWidth = 360; }
+        else {
+          const ow = signatureImage.width;
+          if (ow > 400) scale = 0.15;
+          else if (ow < 200) scale = 0.35;
         }
 
         const scaleByWidth = signatureImage.scale(scale);
-        let finalScale = scale;
+        if (scaleByWidth.width > currentMaxWidth) scale = scale * (currentMaxWidth / scaleByWidth.width);
+        const signatureDims = signatureImage.scale(scale);
 
-        // On utilise currentMaxWidth (qui vaut 220 pour le code 482)
-        if (scaleByWidth.width > currentMaxWidth) {
-          finalScale = scale * (currentMaxWidth / scaleByWidth.width);
-        }
-
-        const signatureDims = signatureImage.scale(finalScale);
-
-        // D'abord dessiner l'image de signature
-        // D'abord dessiner l'image de signature
-        page.drawText(`Signature du ${nomFonctionPersonnel}`, {
-          x: pageWidth - margin - 200,
-          y: signatureY - 15,
-          size: 7,
-          font: mainFont,
-        });
-
-        // Afficher le prénom et nom inversés en gras après le texte fonction, mais avant l'image
-        page.drawText(`${prenomPersonnel} ${nomPersonnel}`, {
-          x: pageWidth - margin - 200,
-          y: signatureY - 27,
-          size: 7,
-          font: boldFont,
-        });
-
-        // Puis dessiner l'image de signature sous les textes
-        page.drawImage(signatureImage, {
-          x: pageWidth - margin - 200,
-          y: signatureY - 40 - signatureDims.height,
-          width: signatureDims.width,
-          height: signatureDims.height,
-        });
-      } catch (error) {
-        console.error(
-          `Erreur lors du chargement de l'image de signature ${signatureFilename}:`,
-          error
-        );
-
-        // En cas d'erreur, revenir à la signature textuelle
-        page.drawText(`Signature du : ${nomFonctionPersonnel}`, {
-          x: pageWidth - margin - 200,
-          y: signatureY - 10,
-          size: 7,
-          font: mainFont,
-        });
-
-        page.drawText(`${prenomPersonnel} ${nomPersonnel}`, {
-          // Inverser nom et prénom
-          x: pageWidth - margin - 200,
-          y: signatureY - 22,
-          size: 7,
-          font: boldFont,
-        });
+        page.drawText(`Signature du ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 15, size: 7, font: mainFont });
+        page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 27, size: 7, font: boldFont });
+        page.drawImage(signatureImage, { x: pageWidth - margin - 200, y: signatureY - 40 - signatureDims.height, width: signatureDims.width, height: signatureDims.height });
+      } catch {
+        page.drawText(`Signature du : ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 10, size: 7, font: mainFont });
+        page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 22, size: 7, font: boldFont });
       }
     } else {
-      // Pour les codes personnels sans signature, afficher uniquement le texte
-      page.drawText(`Signature du : ${nomFonctionPersonnel}`, {
-        x: pageWidth - margin - 200,
-        y: signatureY - 10,
-        size: fontSize,
-        font: mainFont,
-      });
-
-      page.drawText(`${prenomPersonnel} ${nomPersonnel}`, {
-        // Inverser nom et prénom
-        x: pageWidth - margin - 200,
-        y: signatureY - 22,
-        size: fontSize,
-        font: boldFont,
-      });
+      page.drawText(`Signature du : ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 10, size: fontSize, font: mainFont });
+      page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 22, size: fontSize, font: boldFont });
     }
 
-    // Déplacer la légende en pied de page
-    const footerY = 25; // Position plus basse pour la légende
-    page.drawText("VA : Validé / NV : Non Validé / C : Compensation", {
-      // Ajout d'espaces avant les deux points
-      x: margin,
-      y: footerY,
-      size: 7,
-      font: mainFont,
-      color: rgb(0.5, 0.5, 0.5),
-    });
+    // Légende
+    page.drawText("VA : Validé / NV : Non Validé / C : Compensation", { x: margin, y: 25, size: 7, font: mainFont, color: rgb(0.5, 0.5, 0.5) });
 
-    // Serialize the PDF document
-    const pdfBytes = await pdfDoc.save();
-    return pdfBytes;
+    return await pdfDoc.save();
   } catch (error) {
     console.error("Erreur lors de la création du PDF:", error);
     throw error;
   }
 }
 
+// ============================================================
+// HANDLER POST
+// ============================================================
+
 export async function POST(req: NextRequest) {
   try {
-    // Parse the request body
     const body = await req.json();
-    console.log("Génération de PDF - Corps de la requête reçue:", body);
 
-    if (body.data) {
-      console.log("Structure des données:");
-      console.log("APPRENANT:", body.data.APPRENANT?.length || 0);
-      console.log("MOYENNES_UE:", body.data.MOYENNES_UE?.length || 0);
-      console.log("MOYENNE_GENERALE:", body.data.MOYENNE_GENERALE?.length || 0);
-      console.log("OBSERVATIONS:", body.data.OBSERVATIONS?.length || 0);
-      console.log("ECTS_PAR_MATIERE:", body.data.ECTS_PAR_MATIERE?.length || 0);
-      console.log("MATIERE:", body.data.MATIERE?.length || 0);
-      console.log("GROUPE:", body.data.GROUPE?.length || 0);
-      console.log("SITE:", body.data.SITE?.length || 0);
-
-      // Log the UE and associated subjects if MATIERE data is available
-      if (body.data.MATIERE && body.data.MATIERE.length > 0) {
-        console.log("Analyse des relations UE-Matières avant traitement:");
-        logUEWithSubjects(body.data.MATIERE);
-      } else {
-        console.log("⚠️ Aucune donnée MATIERE disponible pour le log UE/Matières.");
-      }
-    } else {
-      console.log("Aucune donnée reçue!");
-    }
-
-    // Extract data from the request
-    // Vérifie si les données sont bien présentes
     if (!body?.data || !body?.periodeEvaluation || !body?.groupName) {
-      return NextResponse.json(
-        { error: "Données manquantes pour la génération PDF" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Données manquantes pour la génération PDF" }, { status: 400 });
     }
 
     const { data, periodeEvaluation, groupName } = body;
+    console.log(`📥 Requête PDF - Groupe: ${groupName} | Période: ${periodeEvaluation} | Étudiants: ${data.APPRENANT?.length || 0}`);
 
-    if (!data || !periodeEvaluation || !groupName) {
-      return NextResponse.json(
-        { error: "Certains paramètres sont manquants (data, periodeEvaluation ou groupName)" },
-        { status: 400 }
-      );
+    // ✅ CORRECTION 1 : Préchargement des assets UNE SEULE FOIS avant la boucle
+    const assets = preloadAssets();
+    console.log("✅ Assets préchargés (logo, fonts, signatures)");
+
+    // ✅ CORRECTION 2 : updateUECredits calculé UNE SEULE FOIS
+    const updatedSubjects = updateUECredits(data.ECTS_PAR_MATIERE || []);
+    console.log(`✅ Crédits UE calculés (${updatedSubjects.length} matières)`);
+
+    // ✅ CORRECTION 3 : processAbsences calculé UNE SEULE FOIS
+    const processedAbsences = processAbsences(data.ABSENCE || [], "2025-08-25T00:00:00", "2026-08-23T00:00:00").students;
+    console.log(`✅ Absences traitées (${processedAbsences.length} étudiants)`);
+
+    // Log UE/Matières
+    if (data.MATIERE && data.MATIERE.length > 0) {
+      const uniqueSubjects = new Map<string, any>();
+      data.MATIERE.forEach((subject: any) => {
+        const key = `${subject.CODE_APPRENANT}_${subject.CODE_MATIERE}`;
+        if (!uniqueSubjects.has(key)) uniqueSubjects.set(key, subject);
+      });
     }
 
-    console.log("📥 Requête reçue pour génération PDF");
-    console.log("🧠 Groupe :", groupName);
-    console.log("📅 Période :", periodeEvaluation);
-
-    // Check if we have student data
-    // Examiner la structure des données
-    if (data.APPRENANT && data.APPRENANT.length > 0) {
-      console.log("Structure détaillée du premier étudiant:");
-      console.log(JSON.stringify(data.APPRENANT[0], null, 2));
-    }
-
-    if (data.MOYENNES_UE && data.MOYENNES_UE.length > 0) {
-      console.log("Structure détaillée de la première moyenne UE:");
-      console.log(JSON.stringify(data.MOYENNES_UE[0], null, 2));
-      console.log("Type de MOYENNE:", typeof data.MOYENNES_UE[0].MOYENNE);
-      console.log("Valeur de MOYENNE:", data.MOYENNES_UE[0].MOYENNE);
-    }
-
-    if (data.MOYENNE_GENERALE && data.MOYENNE_GENERALE.length > 0) {
-      console.log("Structure détaillée de la première moyenne générale:");
-      console.log(JSON.stringify(data.MOYENNE_GENERALE[0], null, 2));
-      console.log("Type de MOYENNE_GENERALE:", typeof data.MOYENNE_GENERALE[0].MOYENNE_GENERALE);
-      console.log("Valeur de MOYENNE_GENERALE:", data.MOYENNE_GENERALE[0].MOYENNE_GENERALE);
-    }
-
-    if (data.ECTS_PAR_MATIERE && data.ECTS_PAR_MATIERE.length > 0) {
-      const uniqueCount = new Set(
-        data.ECTS_PAR_MATIERE.map((item: any) => `${item.CODE_APPRENANT}_${item.CODE_MATIERE}`)
-      ).size;
-      console.log(
-        `📊 ECTS_PAR_MATIERE: ${data.ECTS_PAR_MATIERE.length} éléments, ${uniqueCount} uniques`
-      );
-      console.log(`Nombre de matières avant traitement: ${data.ECTS_PAR_MATIERE.length}`);
-      console.log(
-        `📌 Ratio de duplication: ${(data.ECTS_PAR_MATIERE.length / uniqueCount).toFixed(2)}x`
-      );
-    }
-
-    // Initialize ZIP archive in memory
     const zip = new JSZip();
-
-    // Track failures
     let successCount = 0;
     let failureCount = 0;
 
-    // Utiliser les données MATIERE si disponibles, sinon ECTS_PAR_MATIERE
-    const sourceMatieres = data.MATIERE || data.ECTS_PAR_MATIERE || [];
-    // Appliquer la règle : si une matière avec CODE_TYPE_MATIERE "3" a un état "NV", ses ECTS passent à 0
-    sourceMatieres.forEach((matiere: any) => {
-      // Vérifier si la matière est en rattrapage
-      if (matiere.CODE_TYPE_MATIERE !== "2" && matiere.ETAT === "NV") {
-        matiere.CREDIT_ECTS = 0; // Annuler les crédits si la matière est en rattrapage
-        console.log(
-          `Matière en rattrapage: ${matiere.NOM_MATIERE}, État: ${matiere.ETAT}, ECTS mis à 0`
-        );
-      } else {
-        console.log(
-          `Matière non affectée: ${matiere.NOM_MATIERE}, CODE_TYPE_MATIERE: ${matiere.CODE_TYPE_MATIERE}, ETAT: ${matiere.ETAT}, ECTS: ${matiere.CREDIT_ECTS}`
-        );
-      }
-    });
+    // Récupérer infos pour le nom de fichier
+    let nomFormation = "FORMATION";
+    if (data.GROUPE?.[0]?.NOM_FORMATION) {
+      nomFormation = data.GROUPE[0].NOM_FORMATION.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+    }
 
-    // Mise à jour des crédits UE avec la nouvelle fonction
-    const updatedSubjects = updateUECredits(sourceMatieres);
-    console.log(`✅ Crédits UE mis à jour (${updatedSubjects.length} matières traitées)`);
+    let nomAnnee = "ANNEE";
+    const matiereWithAnnee = data.MATIERE?.find((m: any) => m.NOM_ANNEE);
+    if (matiereWithAnnee?.NOM_ANNEE) {
+      nomAnnee = matiereWithAnnee.NOM_ANNEE.replace(/\s+/g, "_").replace(/[\/\\:*?"<>|]/g, "");
+    }
 
-    // Par ceci:
-    const startDateFromPeriod = "2025-08-25T00:00:00";
-    const endDateFromPeriod = "2026-08-23T00:00:00";
+    const periodClean = periodeEvaluation.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
 
-    console.log(`Traitement des absences de ${startDateFromPeriod} à ${endDateFromPeriod}`);
+    // ✅ CORRECTION 4 : Génération parallèle de tous les PDFs
+    console.log(`⚡ Génération parallèle de ${data.APPRENANT.length} PDFs...`);
 
-    // Générer PDFs pour chaque étudiant
-    for (const studentObj of data.APPRENANT) {
-      try {
-        // Extraire les données nécessaires de l'objet étudiant
-        const student = {
+    const pdfResults = await Promise.all(
+      data.APPRENANT.map(async (studentObj: any) => {
+        const student: StudentData = {
           CODE_APPRENANT: studentObj.CODE_APPRENANT || "",
           NOM_APPRENANT: studentObj.NOM_APPRENANT || "",
           PRENOM_APPRENANT: studentObj.PRENOM_APPRENANT || "",
           DATE_NAISSANCE: studentObj.DATE_NAISSANCE || null,
         };
 
-        console.log(`Création du PDF pour ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`);
-
-        const updatedSubjects = updateUECredits(data.ECTS_PAR_MATIERE || []);
-        console.log(`Nombre de matières après traitement: ${updatedSubjects.length}`);
-
-        const pdfBytes = await createStudentPDF(
-          student,
-          data.MOYENNES_UE || [], // grades
-          data.MOYENNES_UE || [], // ueAverages ✅
-          data.OBSERVATIONS || [],
-          updatedSubjects,
-          data.GROUPE || [],
-          data.SITE || [],
-          periodeEvaluation,
-          data.ABSENCE || [],
-          processAbsences(data.ABSENCE || [], startDateFromPeriod, endDateFromPeriod).students, // ✅ Ajouter .students
-          data.PERSONNEL || [],
-          data.NOTES || [],
-          data.MOYENNE_GENERALE || []
-        );
-
-        console.log("📌 Matières brutes reçues :", data.ECTS_PAR_MATIERE);
-
-        // Par le code suivant:
-        // Récupérer le nom de la formation à partir des données du groupe
-        let nomFormation = "FORMATION";
-        if (data.GROUPE && data.GROUPE.length > 0 && data.GROUPE[0].NOM_FORMATION) {
-          nomFormation = data.GROUPE[0].NOM_FORMATION.replace(/\s+/g, "_").replace(
-            /[^a-zA-Z0-9_-]/g,
-            ""
+        try {
+          const pdfBytes = await createStudentPDF(
+            student,
+            data.MOYENNES_UE || [],
+            data.MOYENNES_UE || [],
+            data.OBSERVATIONS || [],
+            updatedSubjects,          // ✅ Réutilisé, pas recalculé
+            data.GROUPE || [],
+            data.SITE || [],
+            periodeEvaluation,
+            data.ABSENCE || [],
+            processedAbsences,        // ✅ Réutilisé, pas recalculé
+            assets,                   // ✅ Assets préchargés partagés
+            data.PERSONNEL || [],
+            data.NOTES || [],
+            data.MOYENNE_GENERALE || []
           );
+
+          const filename = `2025-2026_${nomFormation}_${nomAnnee}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
+          return { success: true, pdfBytes, filename, student };
+        } catch (error) {
+          console.error(`❌ Erreur PDF pour ${student.NOM_APPRENANT}:`, error);
+          return { success: false, pdfBytes: null, filename: "", student };
         }
+      })
+    );
 
-        let nomAnnee = "ANNEE";
-        if (data.MATIERE && data.MATIERE.length > 0) {
-          // Chercher la première occurrence de MATIERE qui contient NOM_ANNEE
-          const matiereWithAnnee = data.MATIERE.find((matiere: any) => matiere.NOM_ANNEE);
-          if (matiereWithAnnee && matiereWithAnnee.NOM_ANNEE) {
-            nomAnnee = matiereWithAnnee.NOM_ANNEE.replace(/\s+/g, "_").replace(
-              /[\/\\:*?"<>|]/g,
-              ""
-            );
-            console.log(`NOM_ANNEE trouvé dans MATIERE: "${nomAnnee}"`);
-          }
-        }
-
-        // Nettoyer la période d'évaluation
-        const periodClean = periodeEvaluation.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
-
-        // Générer le nom de fichier au format demandé
-        const filename = `2025-2026_${nomFormation}_${nomAnnee}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
-
-        // Add PDF to the zip file (in memory)
-        zip.file(filename, pdfBytes);
-        console.log(`Fichier ${filename} ajouté au ZIP`);
-
+    // Ajout des PDFs au ZIP
+    for (const result of pdfResults) {
+      if (result.success && result.pdfBytes) {
+        zip.file(result.filename, result.pdfBytes);
         successCount++;
-        console.log(`📄 PDF généré pour ${student.NOM_APPRENANT} ${student.PRENOM_APPRENANT}`);
-      } catch (error) {
+        console.log(`📄 PDF ajouté: ${result.filename}`);
+      } else {
         failureCount++;
-        console.error(`❌ Erreur lors de la génération du PDF pour l'étudiant:`, error);
       }
     }
+
+    console.log(`✅ ${successCount} PDFs générés, ${failureCount} échecs`);
 
     if (successCount === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Aucun PDF n'a pu être généré",
-          details: `${failureCount} bulletins ont échoué`,
-        },
-        { status: 500 }
-      );
+      return NextResponse.json({ success: false, error: "Aucun PDF n'a pu être généré", details: `${failureCount} bulletins ont échoué` }, { status: 500 });
     }
 
-    // Generate ZIP in memory
-    console.log(`Génération du ZIP pour ${successCount} PDFs`);
     const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
-    console.log("ZIP généré avec succès");
 
-    let groupNameForFilename = groupName; // Valeur par défaut
-    let periodNameForFilename = periodeEvaluation;
-    // Valeur par défaut
+    let groupNameForFilename = data.GROUPE?.[0]?.NOM_GROUPE || groupName;
+    let periodNameForFilename = data.MOYENNES_UE?.[0]?.NOM_PERIODE_EVALUATION || periodeEvaluation;
 
-    // Essayer de récupérer NOM_PERIODE_EVALUATION depuis les données des notes
-    if (data.MOYENNES_UE && data.MOYENNES_UE.length > 0) {
-      // Vérifier si le champ existe dans les données
-      const sampleGrade = data.MOYENNES_UE[0];
-      console.log("Exemple de données MOYENNES_UE:", sampleGrade);
-
-      if (sampleGrade.NOM_PERIODE_EVALUATION) {
-        periodNameForFilename = sampleGrade.NOM_PERIODE_EVALUATION;
-        console.log(`NOM_PERIODE_EVALUATION trouvé: "${periodNameForFilename}"`);
-      } else {
-        console.log("NOM_PERIODE_EVALUATION non trouvé dans les données MOYENNES_UE");
-        // Lister toutes les clés disponibles pour aider au débogage
-        console.log("Clés disponibles:", Object.keys(sampleGrade));
-      }
-    }
-
-    // 2. Récupérer le nom du groupe depuis les données
-    if (data.GROUPE && data.GROUPE.length > 0) {
-      groupNameForFilename = data.GROUPE[0].NOM_GROUPE || groupName;
-      console.log(`NOM_GROUPE trouvé: "${groupNameForFilename}"`);
-    }
-
-    // Nettoyer et formater les variables du nom de groupe et de période
-    // 3. Nettoyer et formater les valeurs pour le nom du fichier
-    const sanitizedGroupName = groupNameForFilename
-      .replace(/\s+/g, "_")
-      .replace(/[^a-zA-Z0-9_-]/g, "");
-    const sanitizedPeriod = periodNameForFilename
-      .replace(/\s+/g, "_")
-      .replace(/[^a-zA-Z0-9_-]/g, "");
-
-    // Créer le nom du fichier ZIP avec le format demandé: bulletins_NOM_GROUPE_NOM_PERIODE_EVALUATION.zip
+    const sanitizedGroupName = groupNameForFilename.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+    const sanitizedPeriod = periodNameForFilename.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
     const zipId = `bulletins_${sanitizedGroupName}_${sanitizedPeriod}.zip`;
 
-    console.log(`ID du fichier ZIP généré: ${zipId}`);
-
-    // Stocker le contenu dans notre système de stockage sur disque
     fileStorage.storeFile(zipId, Buffer.from(zipBuffer), "application/zip");
-    console.log(`Fichier temporaire stocké: ${zipId}, taille: ${zipBuffer.byteLength} octets`);
 
-    // Vérifier que le fichier est bien dans le store
-    if (fileStorage.hasFile(zipId)) {
-      console.log(`✅ Confirmation: le fichier ${zipId} existe dans le fileStorage`);
-    } else {
-      console.log(`❌ Erreur: le fichier ${zipId} n'existe PAS dans le fileStorage`);
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Erreur lors du stockage du fichier ZIP",
-        },
-        { status: 500 }
-      );
+    if (!fileStorage.hasFile(zipId)) {
+      return NextResponse.json({ success: false, error: "Erreur lors du stockage du fichier ZIP" }, { status: 500 });
     }
 
-    // Afficher tous les fichiers disponibles
-    console.log(`Fichiers disponibles dans le store: ${fileStorage.getAllFileIds().join(", ")}`);
+    return NextResponse.json({
+      path: `/api/download?id=${zipId}`,
+      studentCount: data.APPRENANT?.length || 0,
+    });
 
-    const result = {
-      path: `/api/download?id=${zipId}`, // le lien de téléchargement
-      studentCount: body.data.APPRENANT?.length || 0,
-    };
-
-    return NextResponse.json(result);
   } catch (error: any) {
     console.error("❌ Erreur génération PDF :", error);
-    return NextResponse.json(
-      { error: error.message || "Erreur inattendue lors de la génération des bulletins" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || "Erreur inattendue lors de la génération des bulletins" }, { status: 500 });
   }
 }

@@ -1,5 +1,3 @@
-"use client";
-
 import { ArrowUp } from "lucide-react";
 import Link from "next/link";
 import { Button } from "./ui/button";
@@ -12,7 +10,7 @@ export default function Support() {
           <h2 className="text-sm font-medium tracking-wider text-primary-50 uppercase mb-3">
             Support
           </h2>
-          <h3 className="text-4xl font-bold text-gray-900">Vous avez des questions ? </h3>
+          <h3 className="text-4xl font-bold text-gray-900">Vous avez des questions ?</h3>
         </div>
 
         <div className="relative text-center lg:w-[360px] max-w-md mx-auto">

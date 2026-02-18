@@ -1,11 +1,12 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ReactNode } from "react";
-
-const client = new QueryClient();
+import { ReactNode, useState } from "react";
 
 const Providers = ({ children }: { children: ReactNode }) => {
+  // ✅ Instance créée par utilisateur, pas partagée globalement
+  const [client] = useState(() => new QueryClient());
+
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 };
 

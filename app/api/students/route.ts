@@ -1,3 +1,4 @@
+import { fetchWithRetry } from "@/lib/fetchWithRetry";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -6,13 +7,12 @@ export async function GET() {
     const apiToken = process.env.YPAERO_API_TOKEN;
 
     if (!baseUrl || !apiToken) {
-      throw new Error("Variables d'environnement manquantes");
+      throw new Error("Variables d'environnement YPAERO_BASE_URL ou YPAERO_API_TOKEN manquantes");
     }
 
     const url = `${baseUrl}/r/v1/formation-longue/apprenants?codesPeriode=5`;
 
-    console.log("Calling API with URL:", url);
-    const response = await fetch(url, {
+    const data = await fetchWithRetry(url, {
       method: "GET",
       headers: {
         "X-Auth-Token": apiToken,
@@ -21,18 +21,9 @@ export async function GET() {
       cache: "no-store",
     });
 
-    console.log("Response status:", response.status);
-    // Si la réponse n'est pas JSON, essayez de lire le texte
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Error response:", errorText);
-      throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error("Erreur détaillée:", error);
+    console.error("Erreur récupération étudiants:", error);
     return NextResponse.json(
       { error: "Erreur lors de la récupération des données", details: (error as Error).message },
       { status: 500 }

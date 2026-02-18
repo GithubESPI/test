@@ -23,8 +23,8 @@ export const stepsData = [
     title: "Télécharger les bulletins générés",
     description:
       "Une fois la génération terminée, téléchargez tous les bulletins sous forme de fichier ZIP. Cela vous permet de récupérer l'ensemble des bulletins d'un groupe, en un seul fichier compressé.",
-    imageSrc:
-      "https://assets.dewatermark.ai/images/watermark-remover/new/featureComparison/before_2.webp",
+    // ✅ Remplacez par votre propre image dans /public/images/
+    imageSrc: "/images/step-download.png",
   },
   {
     id: 4,
@@ -32,8 +32,8 @@ export const stepsData = [
     title: "Importer les bulletins dans Yparéo",
     description:
       "Cliquez sur le bouton Envoyer sur Yparéo pour importer les bulletins générés directement dans le dossier de chaque apprenant. Le système associe chaque bulletin à l'apprenant concerné grâce à un identifiant unique.",
-    imageSrc:
-      "https://assets.dewatermark.ai/images/watermark-remover/new/featureComparison/before_2.webp",
+    // ✅ Remplacez par votre propre image dans /public/images/
+    imageSrc: "/images/step-import.png",
   },
 ];
 
@@ -56,6 +56,6 @@ export const faqItems = [
   {
     question: "Que faire en cas d'erreurs lors de la génération ou de l'importation ?",
     answer:
-      "Si une erreur se produit, un message d&apos;erreur apparaîtra avec des détails. Pour résoudre le problème, contactez le support technique.",
+      "Si une erreur se produit, un message d'erreur apparaîtra avec des détails. Pour résoudre le problème, contactez le support technique.",
   },
 ];

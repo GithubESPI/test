@@ -24,46 +24,37 @@ export const authOptions: NextAuthOptions = {
       }
 
       try {
-        // Find existing user by email
-        const existingUser = await prisma.user.findUnique({
+        // ✅ upsert user : 1 seule requête au lieu de findUnique + create séparés
+        const user = await prisma.user.upsert({
           where: { email: profile.email as string },
-        });
-
-        if (existingUser) {
-          // Update the existing account
-          await prisma.account.update({
-            where: {
-              provider_providerAccountId: {
-                provider: account.provider,
-                providerAccountId: account.providerAccountId,
-              },
-            },
-            data: {
-              access_token: account.access_token,
-              token_type: account.token_type,
-              refresh_token: account.refresh_token,
-              expires_at: account.expires_at,
-              scope: account.scope,
-              id_token: account.id_token,
-              session_state: account.session_state,
-            },
-          });
-
-          return true; // Explicitly return true for success
-        }
-
-        // Create a new user if none exists
-        const newUser = await prisma.user.create({
-          data: {
+          update: {
+            name: profile.name as string,
+          },
+          create: {
             email: profile.email as string,
             name: profile.name as string,
           },
         });
 
-        // Create a new account for the user
-        await prisma.account.create({
-          data: {
-            userId: newUser.id,
+        // ✅ upsert account : 1 seule requête au lieu de update + create séparés
+        await prisma.account.upsert({
+          where: {
+            provider_providerAccountId: {
+              provider: account.provider,
+              providerAccountId: account.providerAccountId,
+            },
+          },
+          update: {
+            access_token: account.access_token,
+            token_type: account.token_type,
+            refresh_token: account.refresh_token,
+            expires_at: account.expires_at,
+            scope: account.scope,
+            id_token: account.id_token,
+            session_state: account.session_state,
+          },
+          create: {
+            userId: user.id,
             provider: account.provider,
             providerAccountId: account.providerAccountId,
             access_token: account.access_token,
@@ -73,18 +64,18 @@ export const authOptions: NextAuthOptions = {
             scope: account.scope,
             id_token: account.id_token,
             session_state: account.session_state,
-            type: "oauth", // Specify the account type here
+            type: "oauth",
           },
         });
 
-        return true; // Indicate successful sign-in
+        return true;
       } catch (error) {
         console.error("Sign-in error:", error);
-        return false; // Return false on error
+        return false;
       }
     },
+
     async session({ session, user }) {
-      // Ajoutez l'ID de l'utilisateur à la session
       session.user.id = user.id;
       return session;
     },
@@ -92,9 +83,8 @@ export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === "development",
   pages: {
     signIn: "/",
-    error: "/auth/error", // Ajoutez une page d'erreur personnalisée
+    error: "/auth/error",
   },
-  // Ajoutez une gestion des erreurs
   events: {
     signIn: async ({ user }) => {
       if (!user) {
@@ -102,7 +92,6 @@ export const authOptions: NextAuthOptions = {
       }
     },
   },
-  // Add error handling for NextAuth
   logger: {
     error(code, metadata) {
       console.error("NextAuth error:", code, metadata);

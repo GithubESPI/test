@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { FileDown, FileText, School } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const steps = [
   {
@@ -27,30 +27,47 @@ const steps = [
 
 const videos = ["/videos/video-2.mp4", "/videos/video-3.mp4", "/videos/video-4.mp4"];
 
+const STEP_DURATION = 5000; // 5 secondes par étape
+const TICK = 50;            // intervalle en ms
+
 export default function HowItWorks() {
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startTimer = (step: number) => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setProgress(0);
+
+    const increment = (TICK / STEP_DURATION) * 100;
+
+    intervalRef.current = setInterval(() => {
+      setProgress((prev) => {
+        if (prev + increment >= 100) {
+          // ✅ Passer à l'étape suivante proprement
+          clearInterval(intervalRef.current!);
+          const next = (step + 1) % steps.length;
+          setCurrentStep(next);
+          // Démarrer le timer pour l'étape suivante dans un setTimeout pour éviter les conflits d'état
+          setTimeout(() => startTimer(next), 0);
+          return 100;
+        }
+        return prev + increment;
+      });
+    }, TICK);
+  };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (progress < 100) {
-        setProgress((prev) => Math.min(prev + 1, 100));
-      } else {
-        const nextStepTimer = setTimeout(() => {
-          setCurrentStep((prev) => (prev + 1) % steps.length);
-          setProgress(0);
-        }, 500);
-
-        return () => clearTimeout(nextStepTimer);
-      }
-    }, 50);
-
-    return () => clearTimeout(timer);
-  }, [progress, currentStep]);
+    startTimer(0);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleStepClick = (index: number) => {
     setCurrentStep(index);
-    setProgress(0);
+    startTimer(index);
   };
 
   return (
@@ -80,14 +97,12 @@ export default function HowItWorks() {
                 <div className="shrink-0">
                   <div
                     className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors duration-300 ${
-                      index === currentStep
-                        ? "bg-destructive-50 text-white"
-                        : index < currentStep
+                      index <= currentStep
                         ? "bg-destructive-50 text-white"
                         : "bg-rose-50 text-destructive-50"
                     } group-hover:bg-destructive-50 group-hover:text-white`}
                   >
-                    <div>{step.icon}</div>
+                    {step.icon}
                   </div>
                   {index < steps.length - 1 && (
                     <div className="relative w-px h-12 bg-white/20 mx-auto mt-4">
