@@ -1,259 +1,274 @@
-# 📄 Cahier des Charges – Application de Génération de Bulletins PDF (Next.js)
+# 📋 UploadsBulletins — Cahier des charges
 
-## Introduction
-
-Développer une application web permettant de générer automatiquement des **bulletins scolaires au format PDF** à partir d’un formulaire de sélection (campus, groupe, période évaluation), via une interface simple, rapide et sécurisée.
-🔗 **URL de production** : [https://bulletin.groupe-espi.fr](https://bulletin.groupe-espi.fr)
-
-## 🎯 Objectifs du Projet
-
-- Développer une application web réactive et dynamique.
-- Utiliser les fonctionnalités avancées de Next.js pour optimiser les performances.
-- Assurer une bonne expérience utilisateur grâce à une interface intuitive.
-- Le traitement des données pour chaque élève,
-- La génération des bulletins PDF,
-- Le téléchargement d’un `.zip` contenant tous les documents.
-
-## 🔧 Technologies utilisées
-
-| Côté                      | Technologie                      | Rôle                                     |
-| ------------------------- | -------------------------------- | ---------------------------------------- |
-| Frontend                  | **Next.js**                      | Framework React (SSR + API routes)       |
-| UI                        | **TailwindCSS**                  | Framework CSS utilitaire                 |
-| Authentification          | **NextAuth.js**                  | Authentification OAuth sécurisée         |
-| Base de données           | **Prisma + PostgreSQL**          | ORM pour la gestion des données          |
-| Intégration données (API) | **Yparéo API + Requêteur SQL**   | Récupération des données élèves et notes |
-| Backend                   | **API Routes Next.js et Python** | Traitement et génération serveur         |
-| Génération PDF            | **pdf-lib**                      | Création et modification d'un PDF        |
-| Déploiement               | **Vercel**                       | Hébergement frontend + backend           |
-| Stockage                  | MySQL / Azure                    | Hébergement temporaire des fichiers      |
-
-## ⚙️ Fonctionnalités principales
-
-## 🔐 4. Authentification
-
-- Basée sur Azure AD (via `NextAuth.js`)
-- Sessions persistantes
-- Stockage sécurisé via Prisma + PostgreSQL
-- 
-### 🎓 Utilisateur
-
-- Authentification à son espace utilisateur via Azure AD
-- Formulaire de sélection avec les données de l'API Yparéo.
-- Génération des bulletins au format PDF
-- Téléchargement d’un `.zip` avec les bulletins.
-
-### 🧠 Côté serveur
-
-- Extraction et récupération des données (requêteur Yparéo).
-- Création et modification des PDF.
-- Génération et enregistrement du `.zip`.
-- Génération PDF (`pdf-lib`)
-- Réponse avec lien de téléchargement.
-- Traitement des notes et états (VA, NV, C)
-
-
-### 🔐 Intégration Yparéo
-
-Utilisation des endpoints et tokens suivants :
-
-```env
-YPAERO_BASE_URL=https://groupe-espi.ymag.cloud/index.php
-YPAERO_API_TOKEN=<token secret>
-URL_REQUETEUR=https://groupe-espi.ymag.cloud/index.php/r/v1/sql/requêteur
-TOKEN_REQUETEUR=<token secret>
-```
-
-## 🗂️ Structure du projet
-
-```bash
-.
-├── app/                           # Dossier principal Next.js (App Router)
-│   ├── api/                       # API Routes (traitement serveur)
-│   │   ├── auth/[...nextauth]     # Authentification NextAuth
-│   │   ├── download/              # Génération & téléchargement de fichiers ZIP
-│   │   ├── groups/                # Récupération des groupes Yparéo
-│   │   ├── pdf/                   # Génération des bulletins PDF
-│   │   ├── periods/               # Récupération des périodes d’évaluation
-│   │   ├── sql/                   # Requêteur SQL Yparéo
-│   │   ├── students/              # Données des étudiants
-│   │   └── user/                  # Informations utilisateur connecté
-│   ├── configure/form/            # Formulaire principal de sélection
-│   └── home/                      # Page d’accueil
-│       ├── layout.tsx
-│       └── page.tsx
-│
-├── components/                    # Composants réutilisables
-│   ├── magicui/                   # Composants UI personnalisés ou externes
-│   └── ui/                        # Composants UI globaux (Navbar, Footer, etc.)
-│       ├── ButtonProvider.tsx
-│       ├── CallToAction.tsx
-│       ├── Footer.tsx
-│       ├── Hero.tsx
-│       ├── MaxWidthWrapper.tsx
-│       ├── Navbar.tsx
-│       ├── Providers.tsx
-│       ├── Templates.tsx
-│       └── support.tsx
-│
-├── constants/                     # Constantes globales
-│   └── index.ts
-│
-├── hooks/                         # Hooks React personnalisés
-│   └── use-toast.ts
-│
-├── lib/                           # Fonctions utilitaires backend/frontend
-│   ├── auth-options.ts            # Options de configuration NextAuth
-│   ├── db.ts                      # Connexion à la base de données
-│   ├── fileStorage.ts             # Gestion de stockage de fichiers
-│   ├── memoryStore.ts             # Store en mémoire
-│   ├── SessionWrapper.tsx         # Wrapper pour les sessions NextAuth
-│   └── utils.ts                   # Fonctions utilitaires
-│
-├── prisma/                        # Modèle de base de données
-│   └── schema.prisma
-│
-├── public/                        # Fichiers publics accessibles
-│   ├── fonts/
-│   ├── images/
-│   ├── logo/
-│   ├── signatures/                # Signatures pour bulletins
-│   └── videos/                    # Vidéos (optionnelles)
-│
-├── temp/                          # Dossier temporaire pour génération (si utilisé)
-│
-├── .env                           # Variables d’environnement (locale)
-├── .gitignore
-├── components.json                # Config externe composants (MagicUI ?)
-├── data.json                      # Données statiques
-├── middleware.ts                  # Middleware NextAuth
-├── next.config.ts                 # Configuration Next.js
-├── tailwind.config.ts             # Configuration TailwindCSS
-├── tsconfig.json                  # Configuration TypeScript
-├── vercel.json                    # Configuration du déploiement Vercel
-└── README.md                      # Cahier des charges / documentation projet
-```
-
-## 💾 Modèle de base de données (Prisma)
-
-```prisma
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-model User {
-  id            String          @id @default(cuid())
-  name          String?
-  email         String          @unique
-  emailVerified DateTime?
-  image         String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  accounts      Account[]
-  Authenticator Authenticator[]
-  sessions      Session[]
-}
-
-model Account {
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([provider, providerAccountId])
-}
-
-model Session {
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VerificationToken {
-  identifier String
-  token      String
-  expires    DateTime
-
-  @@id([identifier, token])
-}
-
-model Authenticator {
-  credentialID         String  @unique
-  userId               String
-  providerAccountId    String
-  credentialPublicKey  String
-  counter              Int
-  credentialDeviceType String
-  credentialBackedUp   Boolean
-  transports           String?
-  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([userId, credentialID])
-}
-```
-
-## ✅ Livrables attendus
-
-- Application web déployée sur Vercel
-- Fichiers PDF + fichier ZIP téléchargeable
-- Documentation technique dans le dépôt
-- Exemple de fichiers : PDF, ZIP
-
-## 🛠️ Évolutions possibles
-
-- Envoi automatique des bulletins vers Yparéo
-- Dashboard administrateur
-- Statistiques d’émission (connexion des utilisateurs, nombre de téléchargements effectués)
-
-## 📌 Contraintes techniques
-
-- Le traitement des données doit se faire uniquement côté serveur (jamais côté client).
-- Les fichiers temporaires (PDF, ZIP) ne doivent pas être conservés plus de 24h.
-- L’application doit pouvoir gérer la génération de bulletins pour une classe entière (jusqu’à 100 étudiants) sans crash.
-- Respect du RGPD : les données personnelles (noms, notes, commentaires) doivent être sécurisées et inaccessibles aux personnes non autorisées.
-
-## 🆘 12. Que faire si le site retourne une erreur 404 ?
-
-### ✅ Étapes de vérification (Vercel)
-
-1. Accéder au dashboard : https://vercel.com/espi1 ( Se connecter avec le compte Github de GithubESPI )
-2. Projet : test / bulletin.groupe-espi.fr
-3. Vérifier :
-   - Le dernier déploiement est vert ✅
-   - Pas d’erreur `build failed`
-4. Cliquer sur `Deploy` > `Redeploy production`
-5. Vérifier que `app/page.tsx` existe
-6. Vérifier les routes d’API :
-   - `/api/pdf`, `/api/auth/session`, etc.
-7. Vérifier l’onglet **Domains** > reconnecter `bulletin.groupe-espi.fr` si besoin
+Application web de génération automatique de bulletins de notes scolaires pour le **Groupe ESPI**, développée avec Next.js et déployée sur Azure App Service.
 
 ---
 
-## ✉️ Contact en cas d’urgence
+## 🎯 Objectif
 
-> Responsable technique : **Andy Vespuce**  
-> Mail : **a.vespuce@groupe-espi.fr**  
+Permettre aux responsables pédagogiques de générer automatiquement des bulletins de notes au format PDF pour l'ensemble des apprenants d'un groupe, en récupérant les données directement depuis l'API Yparéo (ERP scolaire du Groupe ESPI).
 
+---
+
+## 🏗️ Stack technique
+
+| Couche | Technologie |
+|---|---|
+| Framework | Next.js 15 (App Router) |
+| Langage | TypeScript |
+| Authentification | NextAuth.js + Azure AD (SSO ESPI) |
+| Base de données | SQL Server via Prisma ORM |
+| Génération PDF | pdf-lib + @pdf-lib/fontkit |
+| Compression ZIP | JSZip |
+| UI | Tailwind CSS + shadcn/ui |
+| Animations | Framer Motion |
+| State management | TanStack Query (React Query) |
+| Déploiement | Azure App Service (8GB RAM) |
+| CI/CD | GitHub Actions |
+
+---
+
+## 🔐 Authentification
+
+- Connexion via **SSO Azure Active Directory** (compte ESPI uniquement)
+- Gestion des sessions via **NextAuth.js**
+- Création automatique du compte utilisateur en base lors de la première connexion
+- Mise à jour automatique des tokens OAuth à chaque reconnexion
+- Redirection vers la page de connexion si non authentifié
+- Page d'erreur d'authentification personnalisée (`/auth/error`)
+
+---
+
+## 📌 Fonctionnalités principales
+
+### 1. Sélection des paramètres de génération
+
+L'utilisateur choisit sur un formulaire :
+
+- **Campus** — liste générée dynamiquement depuis l'API Yparéo, filtrée par site
+- **Groupe** — filtré selon le campus sélectionné, avec exclusion automatique des groupes BTS, Césure, RP et DDS
+- **Période d'évaluation** — filtrée sur l'année scolaire 2025-2026, avec exclusion des périodes BTS
+
+Validation de cohérence entre le groupe et la période :
+- Un groupe **ALT** (alternance) ne peut pas être associé à une période **TP** (temps plein)
+- Un groupe **TP** ne peut pas être associé à une période **ALT**
+
+---
+
+### 2. Récupération des données Yparéo
+
+Lors de la soumission du formulaire, l'application interroge l'API Yparéo pour récupérer en **parallèle** les données nécessaires à la génération des bulletins :
+
+| Données | Description |
+|---|---|
+| `APPRENANT` | Identité des étudiants du groupe |
+| `MOYENNES_UE` | Moyennes par Unité d'Enseignement |
+| `MOYENNE_GENERALE` | Moyenne générale de chaque étudiant |
+| `MATIERE` / `ECTS_PAR_MATIERE` | Matières, crédits ECTS, ordre d'affichage |
+| `OBSERVATIONS` | Appréciations du responsable pédagogique |
+| `ABSENCE` | Absences justifiées, injustifiées et retards |
+| `GROUPE` | Informations du groupe (formation, étendu) |
+| `SITE` | Informations du campus |
+| `PERSONNEL` | Responsable pédagogique et signature |
+| `NOTES` | Notes détaillées par matière |
+
+Toutes les requêtes SQL sont exécutées en **parallèle** via `Promise.all` pour minimiser le temps de réponse.
+
+---
+
+### 3. Génération des bulletins PDF
+
+Après validation des données, l'utilisateur lance la génération des bulletins. Pour chaque étudiant, le bulletin PDF contient :
+
+**En-tête**
+- Logo ESPI
+- Titre : "Bulletin de notes 2025-2026"
+- Formation et période d'évaluation
+- Encadré : nom de l'apprenant, date de naissance, groupe, campus
+
+**Tableau des notes**
+- Liste des UE (Unités d'Enseignement) et matières associées, ordonnées
+- Colonne Moyenne (numérique, ou "Validé" / "Non Validé")
+- Colonne Total ECTS
+- Colonne État : **VA** (Validé), **NV** (Non Validé), **C** (Compensé)
+
+**Logique de validation automatique**
+- Une matière avec moyenne ≥ 10 → **VA**
+- Une matière avec moyenne entre 8 et 10, compensée par une VA dans la même UE → **C**
+- Une matière avec moyenne < 8 → **NV**
+- Une UE est **VA** si aucune matière n'est NV et la moyenne UE ≥ 10
+- Les crédits ECTS ne sont comptabilisés que pour les matières VA ou C
+
+**Absences**
+- Absences justifiées, injustifiées et retards calculés sur la période sélectionnée
+- Déduplication automatique des absences en double dans Yparéo
+
+**Appréciations**
+- Texte libre saisi dans Yparéo, affiché avec retour à la ligne automatique
+
+**Signature**
+- Date et lieu de signature
+- Nom et fonction du responsable pédagogique
+- Image de signature (correspondance par code personnel)
+
+**Légende**
+- VA : Validé / NV : Non Validé / C : Compensation
+
+**Gestion multi-pages**
+- Saut de page automatique si le contenu dépasse la hauteur de la page
+- Gestion spécifique des groupes TP (saut de page à l'UE 4)
+
+**Optimisations de génération**
+- Assets partagés préchargés **une seule fois** (logo, polices Poppins, signatures)
+- Génération de tous les PDFs en **parallèle** via `Promise.all`
+- Police Poppins embarquée (Regular et Bold), fallback Helvetica si absente
+
+---
+
+### 4. Export ZIP et téléchargement
+
+- Tous les bulletins sont packagés dans une **archive ZIP**
+- Nommage automatique des fichiers : `2025-2026_[Formation]_[Année]_[Période]_[NOM]_[Prénom].pdf`
+- Stockage temporaire sur le système de fichiers du serveur (`os.tmpdir()`)
+- Nettoyage automatique des fichiers temporaires toutes les heures
+- Téléchargement via un lien sécurisé avec identifiant unique
+
+---
+
+### 5. Interface utilisateur
+
+**Page d'accueil** (`/home`)
+- Présentation de l'application
+- Section "Comment ça marche" avec vidéos démo et navigation par étapes animée
+- Section support avec lien vers le portail de tickets
+
+**Page de génération** (`/configure/form`)
+- Formulaire de sélection avec validation Zod
+- Barre de progression pendant le chargement initial
+- Modales de succès/erreur pour chaque étape
+
+**Navbar**
+- Logo ESPI cliquable
+- Bouton "Générer vos bulletins" (visible uniquement si connecté)
+- Lien Support
+- Bouton Déconnexion
+
+---
+
+## 🔄 Architecture des APIs
+
+| Route | Méthode | Description |
+|---|---|---|
+| `/api/auth/[...nextauth]` | GET/POST | Authentification Azure AD |
+| `/api/sql` | POST | Récupération données Yparéo (11 requêtes parallèles) |
+| `/api/pdf` | POST | Génération des bulletins PDF + ZIP |
+| `/api/download` | GET | Téléchargement du ZIP généré |
+| `/api/groups` | GET | Liste des groupes Yparéo |
+| `/api/students` | GET | Liste des apprenants Yparéo |
+| `/api/periods` | GET | Périodes d'évaluation |
+| `/api/user` | GET | Données utilisateur connecté |
+
+---
+
+## ⚙️ Variables d'environnement requises
+
+```env
+# Azure AD
+AZURE_AD_CLIENT_ID=
+AZURE_AD_CLIENT_SECRET=
+AZURE_AD_TENANT_ID=
+
+# NextAuth
+NEXTAUTH_SECRET=
+NEXTAUTH_URL=
+
+# Base de données
+DATABASE_URL=
+
+# API Yparéo
+YPAERO_BASE_URL=
+YPAERO_API_TOKEN=
+TOKEN_REQUETEUR=
+URL_REQUETEUR=
 ```
 
+---
 
+## 🚀 Installation et démarrage
+
+```bash
+# Installer les dépendances
+npm install
+
+# Générer le client Prisma
+npx prisma generate
+
+# Appliquer les migrations
+npx prisma migrate deploy
+
+# Démarrer en développement
+npm run dev
+
+# Build production
+npm run build
+npm start
+```
+
+---
+
+## 📁 Structure du projet
 
 ```
+├── app/
+│   ├── api/
+│   │   ├── auth/[...nextauth]/   # Authentification
+│   │   ├── sql/                  # Requêtes Yparéo
+│   │   ├── pdf/                  # Génération PDF
+│   │   ├── download/             # Téléchargement ZIP
+│   │   ├── groups/               # Groupes
+│   │   ├── students/             # Apprenants
+│   │   ├── periods/              # Périodes
+│   │   └── user/                 # Utilisateur
+│   ├── configure/form/           # Page génération bulletins
+│   ├── home/                     # Page d'accueil
+│   └── page.tsx                  # Page de connexion
+├── components/                   # Composants React
+├── constants/                    # Données statiques
+├── hooks/                        # Hooks personnalisés
+├── lib/
+│   ├── auth-options.ts           # Config NextAuth
+│   ├── bulletin/ue.ts            # Logique UE/ECTS
+│   ├── db.ts                     # Singleton Prisma
+│   ├── fetchWithRetry.ts         # Utilitaire HTTP
+│   └── fileStorage.ts            # Stockage fichiers temp
+├── middleware.ts                 # CORS
+└── prisma/                       # Schéma base de données
+```
+
+---
+
+## 🛡️ Sécurité
+
+- Authentification obligatoire sur toutes les pages via NextAuth
+- CORS restreint au domaine de l'application
+- Variables d'environnement pour tous les tokens et secrets
+- Tokens API Yparéo jamais exposés côté client
+
+---
+
+## 📊 Performances
+
+| Opération | Avant optimisation | Après optimisation |
+|---|---|---|
+| Requêtes SQL (`/api/sql`) | ~30 secondes (séquentiel) | ~3-5 secondes (parallèle) |
+| Génération PDF 22 étudiants | ~66 secondes (séquentiel) | ~5-10 secondes (parallèle) |
+| Chargement initial formulaire | 3× le temps d'un appel | 1× le temps du plus lent |
+
+---
+
+## ☁️ Déploiement Azure
+
+- **Plan** : App Service avec 8GB RAM
+- **Always On** : activé (évite les cold starts)
+- **CI/CD** : GitHub Actions sur push `main`
+- **Timeout proxy** : 230 secondes (largement suffisant après optimisations)
