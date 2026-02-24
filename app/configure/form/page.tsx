@@ -33,6 +33,7 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 
+// Ajout du champ name dans le schéma
 const formSchema = z.object({
   name: z.string().optional(),
   campus: z.string().min(1, "Veuillez sélectionner un campus"),
@@ -78,14 +79,6 @@ interface Group {
   label: string;
 }
 
-const EXCLUDED_PREFIXES = [
-  "P-BTS1", "P-BTS2", "M-BTS1", "M-BTS2", "N-BTS1", "N-BTS2",
-  "L-BTS1", "LI-BTS1", "LI-BTS2", "B-BTS1", "MP-BTS1", "MP-BTS2", "B-BTS2",
-];
-
-const PERIOD_START = new Date("2025-08-25 00:00:00");
-const PERIOD_END = new Date("2026-08-23 00:00:00");
-
 export default function Home() {
   const { data: session } = useSession();
   const [campuses, setCampuses] = useState<Campus[]>([]);
@@ -119,67 +112,58 @@ export default function Home() {
     },
   });
 
-  // Récupération du nom utilisateur
   useEffect(() => {
-    if (!session?.user?.email) return;
-
-    const getUserData = async () => {
-      try {
-        const response = await fetch(`/api/user?email=${encodeURIComponent(session.user!.email!)}`);
-        const data = await response.json();
-        if (data?.name) form.setValue("name", data.name);
-      } catch (error) {
-        console.error("Erreur récupération nom utilisateur:", error);
-      }
-    };
-
-    getUserData();
+    if (session?.user?.email) {
+      const getUserData = async () => {
+        try {
+          const email = session?.user?.email;
+          if (email) {
+            const response = await fetch(`/api/user?email=${encodeURIComponent(email)}`);
+            const data = await response.json();
+            if (data?.name) {
+              form.setValue("name", data.name);
+            }
+          }
+        } catch (error) {
+          console.error("Erreur lors de la récupération du nom:", error);
+        }
+      };
+      getUserData();
+    }
   }, [session, form]);
 
-  // ✅ Chargement initial avec fetch parallèle
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
+        const periodsResponse = await fetch("/api/periods");
+        if (!periodsResponse.ok) throw new Error("Erreur périodes");
+        const periodsData = await periodsResponse.json();
 
-        // ✅ Les 3 appels API en parallèle au lieu de séquentiels
-        const [periodsResponse, studentsResponse, groupsResponse] = await Promise.all([
-          fetch("/api/periods"),
-          fetch("/api/students"),
-          fetch("/api/groups"),
-        ]);
-
-        if (!periodsResponse.ok) throw new Error("Erreur récupération périodes");
-        if (!studentsResponse.ok) throw new Error("Erreur récupération étudiants");
-        if (!groupsResponse.ok) throw new Error("Erreur récupération groupes");
-
-        const [periodsData, studentsData, groupsData] = await Promise.all([
-          periodsResponse.json(),
-          studentsResponse.json(),
-          groupsResponse.json(),
-        ]);
-
-        // Filtrage des périodes
         if (periodsData.success && Array.isArray(periodsData.data)) {
+          const startDate = new Date("2025-08-25 00:00:00");
+          const endDate = new Date("2026-08-23 00:00:00");
           const filteredPeriods = periodsData.data.filter((period: PeriodeEvaluation) => {
             const periodStartDate = new Date(period.DATE_DEB);
             const periodEndDate = new Date(period.DATE_FIN);
             return (
-              (periodStartDate.getTime() === PERIOD_START.getTime() &&
-                periodEndDate.getTime() === PERIOD_END.getTime()) ||
-              (periodStartDate >= PERIOD_START && periodEndDate <= PERIOD_END)
+              (periodStartDate.getTime() === startDate.getTime() &&
+                periodEndDate.getTime() === endDate.getTime()) ||
+              (periodStartDate >= startDate && periodEndDate <= endDate)
             );
           });
           setPeriods(filteredPeriods);
-        } else {
-          setPeriods([]);
         }
+
+        const studentsResponse = await fetch("/api/students");
+        const groupsResponse = await fetch("/api/groups");
+        const studentsData = await studentsResponse.json();
+        const groupsData = await groupsResponse.json();
 
         const studentsArray = Object.values(studentsData) as YpareoStudent[];
         const groupsArray = Object.values(groupsData) as YpareoGroup[];
         setAllGroups(groupsArray);
 
-        // Construction de la liste des campus
         const uniqueCampusMap = new Map<number, string>();
         studentsArray.forEach((student) => {
           student.inscriptions.forEach((inscription) => {
@@ -192,77 +176,77 @@ export default function Home() {
         const uniqueCampuses: Campus[] = Array.from(uniqueCampusMap).map(
           ([codeSite, nomSite], index) => ({
             id: `campus-${codeSite}-${index}`,
-            codeSite,
+            codeSite: codeSite,
             label: nomSite,
           })
         );
-
         setCampuses(uniqueCampuses);
       } catch (error) {
-        console.error("Erreur chargement initial:", error);
-        setErrorMessage("Erreur lors du chargement des données initiales");
+        console.error(error);
+        setErrorMessage("Erreur lors du chargement des données");
         setShowErrorModal(true);
-        setPeriods([]);
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchData();
   }, []);
 
-  // Barre de progression
   useEffect(() => {
-    if (!isLoading) return;
-    setProgress(0);
-    const interval = setInterval(() => {
-      setProgress((prev) => (prev >= 98 ? prev : prev + 1));
-    }, 50);
+    let interval: NodeJS.Timeout;
+    if (isLoading) {
+      setProgress(0);
+      interval = setInterval(() => {
+        setProgress((prev) => (prev >= 98 ? prev : prev + 1));
+      }, 50);
+    }
     return () => clearInterval(interval);
   }, [isLoading]);
 
+  // 1. Modifiez updateGroups pour qu'il puisse être appelé avec le reset du formulaire
   const updateGroups = (campusId: string) => {
     const selectedCampus = campuses.find((campus) => campus.id === campusId);
-    if (!selectedCampus) return;
+    if (!selectedCampus) {
+      setGroups([]);
+      return;
+    }
 
     const filteredGroups = allGroups
       .filter((group) => group.codeSite === selectedCampus.codeSite)
-      .map((group) => ({ id: group.codeGroupe, label: group.nomGroupe }));
+      .map((group) => ({
+        id: group.codeGroupe,
+        label: group.nomGroupe,
+      }));
 
     setGroups(filteredGroups);
+
+    // IMPORTANT : On vide la sélection du groupe dès que le campus change
+    form.setValue("group", "");
   };
 
   const onSubmit = async (values: FormValues) => {
     try {
       setIsSubmitting(true);
-
       const selectedCampus = campuses.find((campus) => campus.id === values.campus);
       if (!selectedCampus) throw new Error("Campus non trouvé");
 
       const selectedPeriod = periods.find((p) => p.CODE_PERIODE_EVALUATION === values.semester);
-      if (!selectedPeriod) throw new Error("Période d'évaluation non trouvée");
+      if (!selectedPeriod) throw new Error("Période non trouvée");
 
-      if (!values.periodeEvaluationCode || !values.periodeEvaluation) {
-        values.periodeEvaluationCode = values.semester;
-        values.periodeEvaluation = selectedPeriod.NOM_PERIODE_EVALUATION;
-      }
+      values.periodeEvaluationCode = values.semester;
+      values.periodeEvaluation = selectedPeriod.NOM_PERIODE_EVALUATION;
 
       const selectedGroup = groups.find((group) => group.id.toString() === values.group);
       if (selectedGroup) setSelectedGroupName(selectedGroup.label);
 
-      // Vérification cohérence groupe / période
+      // Logique de vérification ALT/TP
       const groupName = selectedGroup?.label.toUpperCase() || "";
       const periodName = selectedPeriod.NOM_PERIODE_EVALUATION.toUpperCase();
-
       if (groupName.includes("ALT") && periodName.includes("TP")) {
-        throw new Error(
-          `Le groupe "${selectedGroup?.label}" est en alternance, mais la période "${selectedPeriod.NOM_PERIODE_EVALUATION}" est réservée aux temps pleins.`
-        );
+        throw new Error(`Incohérence : Groupe Alternance avec période Temps Plein.`);
       }
       if (groupName.includes("TP") && periodName.includes("ALT")) {
-        throw new Error(
-          `Le groupe "${selectedGroup?.label}" est en temps plein, mais la période "${selectedPeriod.NOM_PERIODE_EVALUATION}" est réservée à l'alternance.`
-        );
+        throw new Error(`Incohérence : Groupe Temps Plein avec période Alternance.`);
       }
 
       const response = await fetch("/api/sql", {
@@ -284,7 +268,7 @@ export default function Home() {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Erreur lors de la récupération des données");
+      if (!response.ok) throw new Error(data.error);
 
       responseDataRef.current = data.data;
       setRetrievedData(data.data);
@@ -299,8 +283,7 @@ export default function Home() {
 
   const handleGeneratePDFs = async () => {
     const dataToUse = responseDataRef.current || retrievedData;
-
-    if (!dataToUse || !dataToUse.APPRENANT || dataToUse.APPRENANT.length === 0) {
+    if (!dataToUse || !dataToUse.APPRENANT?.length) {
       setErrorMessage("Données insuffisantes pour générer les PDFs.");
       setShowErrorModal(true);
       return;
@@ -308,11 +291,6 @@ export default function Home() {
 
     try {
       setIsGeneratingPDF(true);
-
-      const selectedPeriod = form.getValues("periodeEvaluation") || "";
-      if (!selectedPeriod) throw new Error("Période d'évaluation non définie");
-      if (!selectedGroupName) throw new Error("Nom du groupe non défini");
-
       const selectedPeriodCode = form.getValues("semester");
       const periodWithDates = periods.find((p) => p.CODE_PERIODE_EVALUATION === selectedPeriodCode);
 
@@ -321,69 +299,36 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           data: dataToUse,
-          periodeEvaluation: selectedPeriod,
+          periodeEvaluation: form.getValues("periodeEvaluation"),
           groupName: selectedGroupName,
-          periodeEvaluationDates: periodWithDates
-            ? {
-                DATE_DEB: periodWithDates.DATE_DEB,
-                DATE_FIN: periodWithDates.DATE_FIN,
-                CODE_PERIODE_EVALUATION: periodWithDates.CODE_PERIODE_EVALUATION,
-                NOM_PERIODE_EVALUATION: periodWithDates.NOM_PERIODE_EVALUATION,
-              }
-            : null,
+          periodeEvaluationDates: periodWithDates || null,
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Erreur lors de la génération des PDFs");
-      }
-
+      if (!response.ok) throw new Error("Erreur génération PDF");
       const data = await response.json();
       setPdfDownloadUrl(data.path);
       setPdfStudentCount(data.studentCount);
       setShowPdfSuccessModal(true);
     } catch (error: any) {
-      setErrorMessage(error.message || "Une erreur est survenue lors de la génération des PDFs");
+      setErrorMessage(error.message);
       setShowErrorModal(true);
     } finally {
       setIsGeneratingPDF(false);
     }
   };
 
-  // ✅ Fonction de téléchargement extraite du JSX
-  const handleDownload = async () => {
-    try {
-      const response = await fetch(pdfDownloadUrl);
-      if (!response.ok) throw new Error(`Erreur ${response.status}: ${response.statusText}`);
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      setErrorMessage("Erreur lors du téléchargement: " + (error as Error).message);
-      setShowErrorModal(true);
-      setShowPdfSuccessModal(false);
-    }
-  };
-
   if (isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-50 grainy-light px-4">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-50 px-4">
         <div className="w-full max-w-md">
           <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-hidden">
             <div
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#156082] to-[#003349] transition-all duration-300 ease-out"
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#156082] to-[#003349] transition-all duration-300"
               style={{ width: `${progress}%` }}
             />
           </div>
-          <p className="text-sm text-center text-gray-600 mt-4">{`Chargement des données... ${progress}%`}</p>
+          <p className="text-sm text-center text-gray-600 mt-4">Chargement... {progress}%</p>
         </div>
       </div>
     );
@@ -391,157 +336,141 @@ export default function Home() {
 
   return (
     <>
-      <div className="min-h-screen bg-slate-50 grainy-light flex items-center justify-center p-3">
-        <Card className="w-full max-w-lg mx-4 shadow-none">
-          <CardHeader className="pb-4 px-8">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-3">
+        <Card className="w-full max-w-lg shadow-none">
+          <CardHeader className="pb-4 px-8 text-center">
             <div className="flex justify-center mb-2">
               <div className="bg-gradient-to-r from-[#156082] to-[#003349] rounded-full p-3">
                 <School className="w-6 h-6 text-white" />
               </div>
             </div>
-            <CardTitle className="text-2xl font-bold text-center bg-gradient-to-r from-[#156082] to-[#003349] bg-clip-text text-transparent">
+            <CardTitle className="text-2xl font-bold bg-gradient-to-r from-[#156082] to-[#003349] bg-clip-text text-transparent">
               Choisir les bulletins à éditer
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-4">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                {/* Campus */}
+                {/* 2. Dans le rendu du Select Campus */}
                 <FormField
                   control={form.control}
                   name="campus"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-md font-semibold text-gray-700">Campus</FormLabel>
+                      <FormLabel className="font-semibold">Campus</FormLabel>
                       <Select
                         onValueChange={(value) => {
-                          field.onChange(value);
-                          updateGroups(value);
+                          field.onChange(value); // Met à jour le formulaire
+                          updateGroups(value);   // Filtre les groupes et reset le champ "group"
                         }}
                         value={field.value}
                       >
                         <FormControl>
-                          <SelectTrigger className="h-10 text-sm border-2 focus:border-[#156082]">
+                          <SelectTrigger className="h-10 border-2 focus:border-[#156082]">
                             <SelectValue placeholder="Sélectionnez un campus" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           {campuses
-                            .filter((campus) => campus.label !== "GROUPE ESPI")
+                            .filter((c) => c.label !== "GROUPE ESPI")
                             .sort((a, b) => a.label.localeCompare(b.label))
-                            .map((campus) => (
-                              <SelectItem key={campus.id} value={campus.id} className="text-sm">
-                                {campus.label}
+                            .map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.label}
                               </SelectItem>
                             ))}
                         </SelectContent>
                       </Select>
-                      <FormMessage className="text-red-500" />
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                {/* Groupe */}
+                {/* 3. Dans le rendu du Select Groupe */}
                 <FormField
                   control={form.control}
                   name="group"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-md font-semibold text-gray-700">Groupe</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <FormLabel className="font-semibold">Groupe</FormLabel>
+                      <Select 
+                        onValueChange={field.onChange} 
+                        value={field.value || ""} // Sécurité pour éviter le passage de undefined à défini
+                      >
                         <FormControl>
-                          <SelectTrigger className="h-10 text-sm border-2 focus:border-[#156082]">
-                            <SelectValue placeholder="Sélectionnez un groupe" />
+                          <SelectTrigger className="h-10 border-2 focus:border-[#156082]">
+                            <SelectValue placeholder={groups.length === 0 ? "Choisissez d'abord un campus" : "Sélectionnez un groupe"} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {groups
-                            .filter((group) => {
-                              const startsWithExcluded = EXCLUDED_PREFIXES.some((prefix) =>
-                                group.label.startsWith(prefix)
-                              );
-                              const containsExcluded =
-                                group.label.includes("Césure") ||
-                                group.label.includes("RP") ||
-                                group.label.includes("DDS");
-                              return !startsWithExcluded && !containsExcluded;
-                            })
-                            .sort((a, b) => a.label.localeCompare(b.label))
-                            .map((group) => (
-                              <SelectItem
-                                key={group.id}
-                                value={group.id.toString()}
-                                className="text-sm"
-                              >
-                                {group.label}
-                              </SelectItem>
-                            ))}
+                          {groups.length > 0 ? (
+                            groups
+                              .filter((group) => {
+                                const prefixesToExclude = ["P-BTS1", "P-BTS2", "M-BTS1", "M-BTS2", "N-BTS1", "N-BTS2", "L-BTS1", "LI-BTS1", "LI-BTS2", "B-BTS1", "MP-BTS1", "MP-BTS2", "B-BTS2"];
+                                const startsWithExcludedPrefix = prefixesToExclude.some((prefix) => group.label.startsWith(prefix));
+                                const containsExcludedTerm = group.label.includes("Césure") || group.label.includes("RP") || group.label.includes("DDS");
+                                return !startsWithExcludedPrefix && !containsExcludedTerm;
+                              })
+                              .sort((a, b) => a.label.localeCompare(b.label))
+                              .map((group) => (
+                                <SelectItem key={group.id} value={group.id.toString()}>
+                                  {group.label}
+                                </SelectItem>
+                              ))
+                          ) : (
+                            <div className="p-2 text-sm text-gray-500">Aucun groupe disponible</div>
+                          )}
                         </SelectContent>
                       </Select>
-                      <FormMessage className="text-red-500" />
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                {/* Période */}
                 <FormField
                   control={form.control}
                   name="semester"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-md font-semibold text-gray-700">
-                        Période d&apos;évaluation
-                      </FormLabel>
+                      <FormLabel className="font-semibold">Période d'évaluation</FormLabel>
                       <Select
                         onValueChange={(value) => {
-                          const selectedPeriod = periods.find(
-                            (p) => p.CODE_PERIODE_EVALUATION === value
-                          );
-                          if (selectedPeriod) {
+                          const selected = periods.find((p) => p.CODE_PERIODE_EVALUATION === value);
+                          if (selected) {
                             form.setValue("periodeEvaluationCode", value);
-                            form.setValue("periodeEvaluation", selectedPeriod.NOM_PERIODE_EVALUATION);
+                            form.setValue("periodeEvaluation", selected.NOM_PERIODE_EVALUATION);
                           }
                           field.onChange(value);
                         }}
                         value={field.value}
                       >
                         <FormControl>
-                          <SelectTrigger className="h-10 text-sm border-2 focus:border-[#156082]">
+                          <SelectTrigger className="h-10 border-2 focus:border-[#156082]">
                             <SelectValue placeholder="Sélectionnez une période" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           {periods
-                            .filter((period) => !period.NOM_PERIODE_EVALUATION.startsWith("BTS"))
-                            .sort((a, b) =>
-                              a.NOM_PERIODE_EVALUATION.localeCompare(b.NOM_PERIODE_EVALUATION)
-                            )
-                            .map((period) => (
-                              <SelectItem
-                                key={period.CODE_PERIODE_EVALUATION}
-                                value={period.CODE_PERIODE_EVALUATION}
-                                className="text-sm"
-                              >
-                                {period.NOM_PERIODE_EVALUATION}
+                            .filter((p) => !p.NOM_PERIODE_EVALUATION.startsWith("BTS"))
+                            .sort((a, b) => a.NOM_PERIODE_EVALUATION.localeCompare(b.NOM_PERIODE_EVALUATION))
+                            .map((p) => (
+                              <SelectItem key={p.CODE_PERIODE_EVALUATION} value={p.CODE_PERIODE_EVALUATION}>
+                                {p.NOM_PERIODE_EVALUATION}
                               </SelectItem>
                             ))}
                         </SelectContent>
                       </Select>
-                      <FormMessage className="text-red-500" />
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
 
                 <Button
                   type="submit"
-                  className="w-full h-10 text-sm font-bold bg-gradient-to-r from-[#156082] to-[#003349] hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2 mt-2"
+                  className="w-full h-10 font-bold bg-gradient-to-r from-[#156082] to-[#003349] hover:opacity-90 transition-all"
                   disabled={isSubmitting}
                 >
-                  {isSubmitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <FileText className="w-4 h-4" />
-                  )}
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
                   {isSubmitting ? "Chargement..." : "Confirmer mon choix"}
                 </Button>
               </form>
@@ -550,83 +479,63 @@ export default function Home() {
         </Card>
       </div>
 
-      {/* Modale succès données */}
+      {/* Modales */}
       <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="w-6 h-6" />
-              Succès
+              <CheckCircle2 className="w-6 h-6" /> Succès
             </DialogTitle>
-            <DialogDescription className="text-gray-600">
-              Les données ont été récupérées avec succès. Vous pouvez maintenant procéder à la
-              génération des bulletins.
+            <DialogDescription>
+              Données récupérées. Vous pouvez générer les bulletins.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex flex-col sm:flex-row gap-3 sm:justify-center pt-4">
-            <Button
-              onClick={() => setShowSuccessModal(false)}
-              variant="outline"
-              className="w-full sm:w-auto"
-            >
-              Fermer
-            </Button>
-            <Button
-              onClick={handleGeneratePDFs}
-              disabled={isGeneratingPDF}
-              className="w-full sm:w-auto bg-wtm-button-linear hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2"
-            >
-              {isGeneratingPDF ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <FileText className="w-5 h-5" />
-              )}
-              {isGeneratingPDF ? "Génération en cours..." : "Générer les bulletins PDF"}
+          <DialogFooter className="flex gap-3 pt-4">
+            <Button onClick={() => setShowSuccessModal(false)} variant="outline">Fermer</Button>
+            <Button onClick={handleGeneratePDFs} disabled={isGeneratingPDF} className="bg-gradient-to-r from-[#156082] to-[#003349]">
+              {isGeneratingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+              Générer les PDF
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modale succès PDF */}
       <Dialog open={showPdfSuccessModal} onOpenChange={setShowPdfSuccessModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="w-6 h-6" />
-              Bulletins générés avec succès
+            <DialogTitle className="text-green-600 flex items-center gap-2">
+              <CheckCircle2 /> Terminée
             </DialogTitle>
-            <DialogDescription className="text-gray-600">
-              {pdfStudentCount} bulletins ont été générés et placés dans une archive ZIP.
+            <DialogDescription>
+              {pdfStudentCount} bulletins prêts dans l'archive.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex flex-col sm:flex-row gap-3 sm:justify-center pt-4">
+          <DialogFooter>
             <Button
-              onClick={() => setShowPdfSuccessModal(false)}
-              variant="outline"
-              className="w-full sm:w-auto"
+              onClick={async () => {
+                const response = await fetch(pdfDownloadUrl);
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
+                a.click();
+              }}
+              className="bg-gradient-to-r from-[#156082] to-[#003349]"
             >
-              Fermer
-            </Button>
-            <Button
-              onClick={handleDownload}
-              className="w-full sm:w-auto bg-wtm-button-linear hover:bg-wtm-button-linear-reverse transition-all duration-300 flex items-center justify-center gap-2"
-            >
-              <FileDown className="w-5 h-5" />
-              Télécharger les bulletins
+              <FileDown className="mr-2" /> Télécharger
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modale erreur */}
       <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <XCircle className="w-6 h-6" />
-              Erreur
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <XCircle /> Erreur
             </DialogTitle>
-            <DialogDescription className="text-gray-600">{errorMessage}</DialogDescription>
+            <DialogDescription>{errorMessage}</DialogDescription>
           </DialogHeader>
         </DialogContent>
       </Dialog>
