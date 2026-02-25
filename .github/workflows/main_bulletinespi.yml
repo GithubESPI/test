@@ -24,6 +24,7 @@ jobs:
         run: |
           npm install
           npm run build --if-present
+          npm prune --omit=dev
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -35,7 +36,6 @@ jobs:
             !**/.git
             !**/.github
             !**/.env*
-            !**/node_modules
 
   deploy:
     runs-on: ubuntu-latest
@@ -64,4 +64,4 @@ jobs:
           app-name: "bulletinespi"
           slot-name: "Production"
           package: .
-          startup-command: "npm install --omit=dev && npm start"
+          startup-command: "npm start"
