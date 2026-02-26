@@ -418,7 +418,7 @@ export default function Home() {
                                 </SelectItem>
                               ))
                           ) : (
-                            <div className="p-2 text-sm text-gray-500">Aucun groupe disponible</div>
+                            <div className="p-2 text-sm text-gray-500">Séléctionner d'abord un campus pour choisir un groupe</div>
                           )}
                         </SelectContent>
                       </Select>
