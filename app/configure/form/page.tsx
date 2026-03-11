@@ -97,8 +97,10 @@ export default function Home() {
   const [pdfStudentCount, setPdfStudentCount] = useState<number>(0);
   const [selectedGroupName, setSelectedGroupName] = useState<string>("");
   const [progress, setProgress] = useState(0);
+  const [isLoadingComplete, setIsLoadingComplete] = useState(false);
 
   const responseDataRef = useRef<any>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -133,74 +135,102 @@ export default function Home() {
   }, [session, form]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        const periodsResponse = await fetch("/api/periods");
-        if (!periodsResponse.ok) throw new Error("Erreur périodes");
-        const periodsData = await periodsResponse.json();
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
 
-        if (periodsData.success && Array.isArray(periodsData.data)) {
-          const startDate = new Date("2025-08-25 00:00:00");
-          const endDate = new Date("2026-08-23 00:00:00");
-          const filteredPeriods = periodsData.data.filter((period: PeriodeEvaluation) => {
-            const periodStartDate = new Date(period.DATE_DEB);
-            const periodEndDate = new Date(period.DATE_FIN);
-            return (
-              (periodStartDate.getTime() === startDate.getTime() &&
-                periodEndDate.getTime() === endDate.getTime()) ||
-              (periodStartDate >= startDate && periodEndDate <= endDate)
-            );
-          });
-          setPeriods(filteredPeriods);
-        }
+      // ✅ Les 3 appels partent EN MÊME TEMPS
+      const [periodsResponse, studentsResponse, groupsResponse] = await Promise.all([
+        fetch("/api/periods"),
+        fetch("/api/students"),
+        fetch("/api/groups"),
+      ]);
 
-        const studentsResponse = await fetch("/api/students");
-        const groupsResponse = await fetch("/api/groups");
-        const studentsData = await studentsResponse.json();
-        const groupsData = await groupsResponse.json();
+      if (!periodsResponse.ok) throw new Error("Erreur périodes");
 
-        const studentsArray = Object.values(studentsData) as YpareoStudent[];
-        const groupsArray = Object.values(groupsData) as YpareoGroup[];
-        setAllGroups(groupsArray);
+      const [periodsData, studentsData, groupsData] = await Promise.all([
+        periodsResponse.json(),
+        studentsResponse.json(),
+        groupsResponse.json(),
+      ]);
 
-        const uniqueCampusMap = new Map<number, string>();
-        studentsArray.forEach((student) => {
-          student.inscriptions.forEach((inscription) => {
-            if (!uniqueCampusMap.has(inscription.site.codeSite)) {
-              uniqueCampusMap.set(inscription.site.codeSite, inscription.site.nomSite);
-            }
-          });
+      // Filtrage des périodes (inchangé)
+      if (periodsData.success && Array.isArray(periodsData.data)) {
+        const startDate = new Date("2025-08-25 00:00:00");
+        const endDate = new Date("2026-08-23 00:00:00");
+        const filteredPeriods = periodsData.data.filter((period: PeriodeEvaluation) => {
+          const periodStartDate = new Date(period.DATE_DEB);
+          const periodEndDate = new Date(period.DATE_FIN);
+          return (
+            (periodStartDate.getTime() === startDate.getTime() &&
+              periodEndDate.getTime() === endDate.getTime()) ||
+            (periodStartDate >= startDate && periodEndDate <= endDate)
+          );
         });
-
-        const uniqueCampuses: Campus[] = Array.from(uniqueCampusMap).map(
-          ([codeSite, nomSite], index) => ({
-            id: `campus-${codeSite}-${index}`,
-            codeSite: codeSite,
-            label: nomSite,
-          })
-        );
-        setCampuses(uniqueCampuses);
-      } catch (error) {
-        console.error(error);
-        setErrorMessage("Erreur lors du chargement des données");
-        setShowErrorModal(true);
-      } finally {
-        setIsLoading(false);
+        setPeriods(filteredPeriods);
       }
-    };
-    fetchData();
+
+      // Groupes et campus (inchangé)
+      const studentsArray = Object.values(studentsData) as YpareoStudent[];
+      const groupsArray = Object.values(groupsData) as YpareoGroup[];
+      setAllGroups(groupsArray);
+
+      const uniqueCampusMap = new Map<number, string>();
+      studentsArray.forEach((student) => {
+        student.inscriptions.forEach((inscription) => {
+          if (!uniqueCampusMap.has(inscription.site.codeSite)) {
+            uniqueCampusMap.set(inscription.site.codeSite, inscription.site.nomSite);
+          }
+        });
+      });
+
+      const uniqueCampuses: Campus[] = Array.from(uniqueCampusMap).map(
+        ([codeSite, nomSite], index) => ({
+          id: `campus-${codeSite}-${index}`,
+          codeSite: codeSite,
+          label: nomSite,
+        })
+      );
+      setCampuses(uniqueCampuses);
+
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Erreur lors du chargement des données");
+      setShowErrorModal(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  fetchData();
   }, []);
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
+    useEffect(() => {
     if (isLoading) {
+      setIsLoadingComplete(false);
       setProgress(0);
-      interval = setInterval(() => {
-        setProgress((prev) => (prev >= 98 ? prev : prev + 1));
-      }, 50);
+
+      intervalRef.current = setInterval(() => {
+        setProgress((prev) => (prev >= 90 ? 90 : prev + 2));
+      }, 100);
+
+    } else {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+
+      intervalRef.current = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 100) {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            setTimeout(() => setIsLoadingComplete(true), 300);
+            return 100;
+          }
+          return prev + 1;
+        });
+      }, 20);
     }
-    return () => clearInterval(interval);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [isLoading]);
 
   // 1. Modifiez updateGroups pour qu'il puisse être appelé avec le reset du formulaire
@@ -318,7 +348,8 @@ export default function Home() {
     }
   };
 
-  if (isLoading) {
+  // Remplace "if (isLoading)" par :
+  if (!isLoadingComplete) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-50 px-4">
         <div className="w-full max-w-md">
@@ -418,7 +449,7 @@ export default function Home() {
                                 </SelectItem>
                               ))
                           ) : (
-                            <div className="p-2 text-sm text-gray-500">Aucun groupe disponible</div>
+                            <div className="p-2 text-sm text-gray-500">Séléctionner d'abord un campus pour choisir un groupe</div>
                           )}
                         </SelectContent>
                       </Select>

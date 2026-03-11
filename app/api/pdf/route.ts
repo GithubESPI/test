@@ -124,6 +124,7 @@ const SIGNATURE_MAP: Record<string, string> = {
   "306975": "lebon.png",
   "89152": "magali.png",
   "650429": "Anne-Lise.png",
+  "2168" : "brenda.png"
 };
 
 function preloadAssets(): PreloadedAssets {
@@ -933,12 +934,35 @@ async function createStudentPDF(
         let scale = 0.2;
         let currentMaxWidth = 120;
 
-        if (String(personnelCode) === "482") { scale = 0.45; currentMaxWidth = 220; }
-        else if (String(personnelCode) === "2239") { scale = 0.65; currentMaxWidth = 360; }
-        else {
-          const ow = signatureImage.width;
-          if (ow > 400) scale = 0.15;
-          else if (ow < 200) scale = 0.35;
+            // --- MODIFICATION ICI ---
+        if (personnelCode === "482") { 
+            scale = 0.45; 
+            currentMaxWidth = 220; 
+        } else if (personnelCode === "2239") { 
+            scale = 0.65; 
+            currentMaxWidth = 360; 
+        } else if (personnelCode === "2168") { 
+            // On passe à une échelle très haute pour compenser le vide dans l'image
+            scale = 1.2;            
+            currentMaxWidth = 1000; // On s'assure qu'aucune limite ne la réduit
+            
+            // On court-circuite le calcul "if (scaleByWidth.width > currentMaxWidth)" 
+            // en appliquant directement les dimensions voulues
+            const signatureDims = { width: 180, height: 90 }; 
+
+            page.drawText(`Signature du ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 15, size: 7, font: mainFont });
+            page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 27, size: 7, font: boldFont });
+            
+            page.drawImage(signatureImage, { 
+                x: pageWidth - margin - 210, // Un peu plus à gauche pour centrer si c'est large
+                y: signatureY - 45 - signatureDims.height, 
+                width: signatureDims.width, 
+                height: signatureDims.height 
+            });
+        } else {
+            const ow = signatureImage.width;
+            if (ow > 400) scale = 0.15;
+            else if (ow < 200) scale = 0.35;
         }
 
         const scaleByWidth = signatureImage.scale(scale);
