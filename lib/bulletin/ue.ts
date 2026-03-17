@@ -2,12 +2,10 @@ export type Etat = "VA" | "NV" | "C";
 
 // ✅ Toute valeur libre → Etat ; "R" est converti en "NV"
 export function normalizeEtat(s: string | undefined | null): Etat {
-  const up = String(s ?? "")
-    .trim()
-    .toUpperCase();
-  if (up === "R") return "NV"; // ← exigence : pas de R
+  const up = String(s ?? "").trim().toUpperCase();
+  if (up === "R") return "NV";
   if (up === "VA" || up === "NV" || up === "C") return up;
-  return "NV"; // fallback prudent
+  return "NV";
 }
 
 export const parseUeAverage = (v?: number | string | null): number | null => {
@@ -74,6 +72,8 @@ export function getEtatUE(
   if (avg === null) {
     // Si pas de NV et qu'on a du VA/C, on valide
     return hasValidData ? "VA" : "NV";
+  } else if (avg < 10) {
+    return "NV";
   }
 
   // 4. CAS : MOYENNE NUMÉRIQUE PRÉSENTE

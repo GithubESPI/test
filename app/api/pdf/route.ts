@@ -541,17 +541,32 @@ async function createStudentPDF(
     }
 
     // Logique de compensation
-    for (const [, { matieres }] of ueMap) {
+    // Logique de compensation
+    for (const [ueCode, { matieres }] of ueMap) {
+      const ueAvg = getUeAverage(ueAverages, ueCode, student.CODE_APPRENANT);
+      
+      // La compensation ne peut s'appliquer que si la moyenne UE est >= 10
+      if (ueAvg === null || ueAvg < 10) {
+        // Toutes les TEMP_8_10 deviennent NV
+        for (const m of matieres) {
+          if (matiereEtats.get(m.CODE_MATIERE) === "TEMP_8_10") {
+            matiereEtats.set(m.CODE_MATIERE, "NV");
+          }
+        }
+        continue;
+      }
+
       const etatsUe = matieres.map(m => matiereEtats.get(m.CODE_MATIERE));
       const hasNV = etatsUe.includes("NV");
       const hasVA = etatsUe.includes("VA");
+
       for (const m of matieres) {
         if (matiereEtats.get(m.CODE_MATIERE) === "TEMP_8_10") {
+          // C uniquement si UE >= 10, pas de NV dans l'UE, et au moins un VA
           matiereEtats.set(m.CODE_MATIERE, (!hasNV && hasVA) ? "C" : "NV");
         }
       }
     }
-
     // État final de chaque UE
     for (const [ueCode, { ue, matieres }] of ueMap) {
       const etatsFinaux = matieres.map(m => normalizeEtat(matiereEtats.get(m.CODE_MATIERE)));
@@ -1020,12 +1035,46 @@ export async function POST(req: NextRequest) {
 
     // Log UE/Matières
     if (data.MATIERE && data.MATIERE.length > 0) {
-      const uniqueSubjects = new Map<string, any>();
-      data.MATIERE.forEach((subject: any) => {
-        const key = `${subject.CODE_APPRENANT}_${subject.CODE_MATIERE}`;
-        if (!uniqueSubjects.has(key)) uniqueSubjects.set(key, subject);
-      });
-    }
+  const uniqueSubjects = new Map<string, any>();
+  
+  // 1. On garde votre logique de dédoublonnage
+  data.MATIERE.forEach((subject: any) => {
+    const key = `${subject.CODE_APPRENANT}_${subject.CODE_MATIERE}`;
+    if (!uniqueSubjects.has(key)) uniqueSubjects.set(key, subject);
+  });
+
+    uniqueSubjects.forEach((matiere: any) => {
+        const currentUeCode = matiere.CODE_UE || matiere.CODE_MATIERE_PARENTE;
+        const studentId = matiere.CODE_APPRENANT;
+
+        const moyenneUE = getUeAverage(data.MOYENNES_UE || [], currentUeCode, studentId);
+        
+        // On récupère toutes les notes de cette UE pour voir si l'une est < 8
+        const notesDeLUE = Array.from(uniqueSubjects.values()).filter((m: any) => 
+            m && String(m.CODE_APPRENANT) === String(studentId) && 
+            (m.CODE_UE === currentUeCode || m.CODE_MATIERE_PARENTE === currentUeCode)
+        );
+
+        const aUneNoteEliminatoire = notesDeLUE.some((m: any) => {
+            const n = parseUeAverage(m?.MOYENNE);
+            return n !== null && n < 8;
+        });
+
+        const noteMatiere = parseUeAverage(matiere.MOYENNE);
+        let etatCalculé: Etat = "NV";
+
+        if (noteMatiere !== null && noteMatiere >= 10) {
+            etatCalculé = "VA";
+        } else if (noteMatiere !== null && noteMatiere >= 8 && moyenneUE !== null && moyenneUE >= 10 && !aUneNoteEliminatoire) {
+            etatCalculé = "C";
+        } else {
+            etatCalculé = "NV";
+        }
+
+        // CRUCIAL : On enregistre l'état dans l'objet
+        matiere.ETAT_DYNAMIQUE = etatCalculé; 
+    });
+}
 
     const zip = new JSZip();
     let successCount = 0;
