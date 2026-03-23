@@ -124,7 +124,8 @@ const SIGNATURE_MAP: Record<string, string> = {
   "306975": "lebon.png",
   "89152": "magali.png",
   "650429": "Anne-Lise.png",
-  "2168" : "brenda.png"
+  "2168" : "brenda.png",
+  "1057288": "ks.png"
 };
 
 function preloadAssets(): PreloadedAssets {
@@ -956,6 +957,10 @@ async function createStudentPDF(
         } else if (personnelCode === "2239") { 
             scale = 0.65; 
             currentMaxWidth = 360; 
+        } else if (personnelCode === "1057288") { 
+            // ✅ AGRANDISSEMENT POUR KARINE
+            scale = 0.85;           // On augmente l'échelle (0.2 par défaut -> 0.85)
+            currentMaxWidth = 1050;  // On élargit la zone pour qu'elle ne soit pas bridée
         } else if (personnelCode === "2168") { 
             // On passe à une échelle très haute pour compenser le vide dans l'image
             scale = 1.2;            
