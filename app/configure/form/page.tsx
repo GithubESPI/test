@@ -171,14 +171,16 @@ export default function Home() {
       }
 
       // Groupes et campus (inchangé)
-      const studentsArray = Object.values(studentsData) as YpareoStudent[];
-      const groupsArray = Object.values(groupsData) as YpareoGroup[];
+      const studentsArray = studentsData ? (Object.values(studentsData) as YpareoStudent[]) : [];
+      const groupsArray = groupsData ? (Object.values(groupsData) as YpareoGroup[]) : [];
       setAllGroups(groupsArray);
 
       const uniqueCampusMap = new Map<number, string>();
+
       studentsArray.forEach((student) => {
-        student.inscriptions.forEach((inscription) => {
-          if (!uniqueCampusMap.has(inscription.site.codeSite)) {
+        // Le "?." évite le crash si "inscriptions" n'existe pas
+        student?.inscriptions?.forEach((inscription) => {
+          if (inscription?.site && !uniqueCampusMap.has(inscription.site.codeSite)) {
             uniqueCampusMap.set(inscription.site.codeSite, inscription.site.nomSite);
           }
         });
