@@ -25,7 +25,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ✅ Correction : conversion Buffer → Uint8Array pour NextResponse
+    // ✅ Suppression du fichier après récupération — avant d'envoyer la réponse
+    fileStorage.deleteFile(fileId);
+
     const response = new NextResponse(new Uint8Array(fileInfo.data));
     response.headers.set("Content-Type", fileInfo.contentType);
     response.headers.set("Content-Disposition", `attachment; filename="${fileId}"`);
@@ -34,6 +36,7 @@ export async function GET(request: NextRequest) {
     response.headers.set("Expires", "0");
 
     return response;
+
   } catch (error) {
     console.error("❌ Erreur lors du téléchargement du fichier:", error);
     return NextResponse.json(

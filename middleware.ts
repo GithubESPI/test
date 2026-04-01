@@ -1,16 +1,46 @@
-import { NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
+import { NextRequest, NextResponse } from "next/server";
 
-export function middleware() {
+const PUBLIC_ROUTES = [
+  "/api/auth",
+  "/api/health",
+];
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // ✅ Routes publiques — pas de vérification
+  const isPublic = PUBLIC_ROUTES.some((route) => pathname.startsWith(route));
+  if (isPublic) {
+    return NextResponse.next();
+  }
+
+  // ✅ Vérification du token JWT
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+
+  if (!token) {
+    // ✅ Redirige vers la page de connexion si non authentifié
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
   const response = NextResponse.next();
 
-  // Ajout des headers CORS
-  response.headers.set("Access-Control-Allow-Origin", "*");
-  response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  // ✅ CORS restrictif — uniquement ton domaine
+  const allowedOrigin = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  response.headers.set("Access-Control-Allow-Origin", allowedOrigin);
+  response.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   response.headers.set("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token");
 
   return response;
 }
 
 export const config = {
-  matcher: "/api/:path*",
+  matcher: [
+    "/api/:path*",
+    "/configure/:path*",
+    "/home/:path*",
+  ],
 };

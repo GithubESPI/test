@@ -1,6 +1,9 @@
 import { fetchWithRetry } from "@/lib/fetchWithRetry";
 import { NextResponse } from "next/server";
 
+// ✅ Cache 5 minutes — les groupes changent rarement
+export const revalidate = 300;
+
 export async function GET() {
   try {
     const baseUrl = process.env.YPAERO_BASE_URL;
@@ -18,10 +21,14 @@ export async function GET() {
         "X-Auth-Token": apiToken,
         Accept: "application/json",
       },
-      cache: "no-store",
+      // ✅ cache: "no-store" retiré
     });
 
-    return NextResponse.json(data);
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
+      },
+    });
   } catch (error) {
     console.error("Erreur récupération groupes:", error);
     return NextResponse.json(

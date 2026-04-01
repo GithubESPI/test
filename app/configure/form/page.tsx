@@ -33,7 +33,6 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 
-// Ajout du champ name dans le schéma
 const formSchema = z.object({
   name: z.string().optional(),
   campus: z.string().min(1, "Veuillez sélectionner un campus"),
@@ -100,7 +99,9 @@ export default function Home() {
   const [isLoadingComplete, setIsLoadingComplete] = useState(false);
 
   const responseDataRef = useRef<any>(null);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  // ✅ 2 refs séparées pour éviter les conflits entre les 2 useEffect
+  const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const completeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -114,145 +115,126 @@ export default function Home() {
     },
   });
 
+  // ✅ "form" retiré des dépendances — stable via useForm
   useEffect(() => {
-    if (session?.user?.email) {
-      const getUserData = async () => {
-        try {
-          const email = session?.user?.email;
-          if (email) {
-            const response = await fetch(`/api/user?email=${encodeURIComponent(email)}`);
-            const data = await response.json();
-            if (data?.name) {
-              form.setValue("name", data.name);
-            }
-          }
-        } catch (error) {
-          console.error("Erreur lors de la récupération du nom:", error);
+    if (!session?.user?.email) return;
+    fetch(`/api/user?email=${encodeURIComponent(session.user.email)}`)
+      .then((r) => r.json())
+      .then((data) => { if (data?.name) form.setValue("name", data.name); })
+      .catch(console.error);
+  }, [session?.user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+
+        const [periodsResponse, studentsResponse, groupsResponse] = await Promise.all([
+          fetch("/api/periods"),
+          fetch("/api/students"),
+          fetch("/api/groups"),
+        ]);
+
+        if (!periodsResponse.ok) throw new Error("Erreur périodes");
+
+        const [periodsData, studentsData, groupsData] = await Promise.all([
+          periodsResponse.json(),
+          studentsResponse.json(),
+          groupsResponse.json(),
+        ]);
+
+        if (periodsData.success && Array.isArray(periodsData.data)) {
+          const startDate = new Date("2025-08-25 00:00:00");
+          const endDate = new Date("2026-08-23 00:00:00");
+          const filteredPeriods = periodsData.data.filter((period: PeriodeEvaluation) => {
+            const periodStartDate = new Date(period.DATE_DEB);
+            const periodEndDate = new Date(period.DATE_FIN);
+            return (
+              (periodStartDate.getTime() === startDate.getTime() &&
+                periodEndDate.getTime() === endDate.getTime()) ||
+              (periodStartDate >= startDate && periodEndDate <= endDate)
+            );
+          });
+          setPeriods(filteredPeriods);
         }
-      };
-      getUserData();
-    }
-  }, [session, form]);
 
-  useEffect(() => {
-  const fetchData = async () => {
-    try {
-      setIsLoading(true);
+        const studentsArray = studentsData ? (Object.values(studentsData) as YpareoStudent[]) : [];
+        const groupsArray = groupsData ? (Object.values(groupsData) as YpareoGroup[]) : [];
+        setAllGroups(groupsArray);
 
-      // ✅ Les 3 appels partent EN MÊME TEMPS
-      const [periodsResponse, studentsResponse, groupsResponse] = await Promise.all([
-        fetch("/api/periods"),
-        fetch("/api/students"),
-        fetch("/api/groups"),
-      ]);
-
-      if (!periodsResponse.ok) throw new Error("Erreur périodes");
-
-      const [periodsData, studentsData, groupsData] = await Promise.all([
-        periodsResponse.json(),
-        studentsResponse.json(),
-        groupsResponse.json(),
-      ]);
-
-      // Filtrage des périodes (inchangé)
-      if (periodsData.success && Array.isArray(periodsData.data)) {
-        const startDate = new Date("2025-08-25 00:00:00");
-        const endDate = new Date("2026-08-23 00:00:00");
-        const filteredPeriods = periodsData.data.filter((period: PeriodeEvaluation) => {
-          const periodStartDate = new Date(period.DATE_DEB);
-          const periodEndDate = new Date(period.DATE_FIN);
-          return (
-            (periodStartDate.getTime() === startDate.getTime() &&
-              periodEndDate.getTime() === endDate.getTime()) ||
-            (periodStartDate >= startDate && periodEndDate <= endDate)
-          );
+        const uniqueCampusMap = new Map<number, string>();
+        studentsArray.forEach((student) => {
+          student?.inscriptions?.forEach((inscription) => {
+            if (inscription?.site && !uniqueCampusMap.has(inscription.site.codeSite)) {
+              uniqueCampusMap.set(inscription.site.codeSite, inscription.site.nomSite);
+            }
+          });
         });
-        setPeriods(filteredPeriods);
+
+        const uniqueCampuses: Campus[] = Array.from(uniqueCampusMap).map(
+          ([codeSite, nomSite], index) => ({
+            id: `campus-${codeSite}-${index}`,
+            codeSite: codeSite,
+            label: nomSite,
+          })
+        );
+        setCampuses(uniqueCampuses);
+      } catch (error) {
+        console.error(error);
+        setErrorMessage("Erreur lors du chargement des données");
+        setShowErrorModal(true);
+      } finally {
+        setIsLoading(false);
       }
-
-      // Groupes et campus (inchangé)
-      const studentsArray = studentsData ? (Object.values(studentsData) as YpareoStudent[]) : [];
-      const groupsArray = groupsData ? (Object.values(groupsData) as YpareoGroup[]) : [];
-      setAllGroups(groupsArray);
-
-      const uniqueCampusMap = new Map<number, string>();
-
-      studentsArray.forEach((student) => {
-        // Le "?." évite le crash si "inscriptions" n'existe pas
-        student?.inscriptions?.forEach((inscription) => {
-          if (inscription?.site && !uniqueCampusMap.has(inscription.site.codeSite)) {
-            uniqueCampusMap.set(inscription.site.codeSite, inscription.site.nomSite);
-          }
-        });
-      });
-
-      const uniqueCampuses: Campus[] = Array.from(uniqueCampusMap).map(
-        ([codeSite, nomSite], index) => ({
-          id: `campus-${codeSite}-${index}`,
-          codeSite: codeSite,
-          label: nomSite,
-        })
-      );
-      setCampuses(uniqueCampuses);
-
-    } catch (error) {
-      console.error(error);
-      setErrorMessage("Erreur lors du chargement des données");
-      setShowErrorModal(true);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  fetchData();
+    };
+    fetchData();
   }, []);
 
-    useEffect(() => {
+  // ✅ useEffect progress avec 2 refs séparées
+  useEffect(() => {
     if (isLoading) {
       setIsLoadingComplete(false);
       setProgress(0);
 
-      intervalRef.current = setInterval(() => {
+      // ✅ Ref dédiée à la phase "loading"
+      loadingIntervalRef.current = setInterval(() => {
         setProgress((prev) => (prev >= 90 ? 90 : prev + 2));
       }, 100);
 
+      return () => {
+        if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
+      };
     } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
 
-      intervalRef.current = setInterval(() => {
+      // ✅ Ref dédiée à la phase "complete"
+      completeIntervalRef.current = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 100) {
-            if (intervalRef.current) clearInterval(intervalRef.current);
+            if (completeIntervalRef.current) clearInterval(completeIntervalRef.current);
             setTimeout(() => setIsLoadingComplete(true), 300);
             return 100;
           }
           return prev + 1;
         });
       }, 20);
-    }
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+      return () => {
+        if (completeIntervalRef.current) clearInterval(completeIntervalRef.current);
+      };
+    }
   }, [isLoading]);
 
-  // 1. Modifiez updateGroups pour qu'il puisse être appelé avec le reset du formulaire
   const updateGroups = (campusId: string) => {
     const selectedCampus = campuses.find((campus) => campus.id === campusId);
     if (!selectedCampus) {
       setGroups([]);
       return;
     }
-
     const filteredGroups = allGroups
       .filter((group) => group.codeSite === selectedCampus.codeSite)
-      .map((group) => ({
-        id: group.codeGroupe,
-        label: group.nomGroupe,
-      }));
-
+      .map((group) => ({ id: group.codeGroupe, label: group.nomGroupe }));
     setGroups(filteredGroups);
-
-    // IMPORTANT : On vide la sélection du groupe dès que le campus change
     form.setValue("group", "");
   };
 
@@ -271,7 +253,6 @@ export default function Home() {
       const selectedGroup = groups.find((group) => group.id.toString() === values.group);
       if (selectedGroup) setSelectedGroupName(selectedGroup.label);
 
-      // Logique de vérification ALT/TP
       const groupName = selectedGroup?.label.toUpperCase() || "";
       const periodName = selectedPeriod.NOM_PERIODE_EVALUATION.toUpperCase();
       if (groupName.includes("ALT") && periodName.includes("TP")) {
@@ -320,7 +301,6 @@ export default function Home() {
       setShowErrorModal(true);
       return;
     }
-
     try {
       setIsGeneratingPDF(true);
       const selectedPeriodCode = form.getValues("semester");
@@ -350,7 +330,6 @@ export default function Home() {
     }
   };
 
-  // Remplace "if (isLoading)" par :
   if (!isLoadingComplete) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-50 px-4">
@@ -384,7 +363,6 @@ export default function Home() {
           <CardContent className="pt-4">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                {/* 2. Dans le rendu du Select Campus */}
                 <FormField
                   control={form.control}
                   name="campus"
@@ -393,8 +371,8 @@ export default function Home() {
                       <FormLabel className="font-semibold">Campus</FormLabel>
                       <Select
                         onValueChange={(value) => {
-                          field.onChange(value); // Met à jour le formulaire
-                          updateGroups(value);   // Filtre les groupes et reset le champ "group"
+                          field.onChange(value);
+                          updateGroups(value);
                         }}
                         value={field.value}
                       >
@@ -419,16 +397,15 @@ export default function Home() {
                   )}
                 />
 
-                {/* 3. Dans le rendu du Select Groupe */}
                 <FormField
                   control={form.control}
                   name="group"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="font-semibold">Groupe</FormLabel>
-                      <Select 
-                        onValueChange={field.onChange} 
-                        value={field.value || ""} // Sécurité pour éviter le passage de undefined à défini
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value || ""}
                       >
                         <FormControl>
                           <SelectTrigger className="h-10 border-2 focus:border-[#156082]">
@@ -451,7 +428,7 @@ export default function Home() {
                                 </SelectItem>
                               ))
                           ) : (
-                            <div className="p-2 text-sm text-gray-500">Séléctionner d'abord un campus pour choisir un groupe</div>
+                            <div className="p-2 text-sm text-gray-500">Sélectionner d'abord un campus pour choisir un groupe</div>
                           )}
                         </SelectContent>
                       </Select>
@@ -546,13 +523,21 @@ export default function Home() {
           <DialogFooter>
             <Button
               onClick={async () => {
-                const response = await fetch(pdfDownloadUrl);
-                const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
-                a.click();
+                try {
+                  const response = await fetch(pdfDownloadUrl);
+                  if (!response.ok) throw new Error("Erreur téléchargement");
+                  const blob = await response.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
+                  a.click();
+                  // ✅ Libère la mémoire après 1s
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch (error) {
+                  setErrorMessage("Erreur lors du téléchargement");
+                  setShowErrorModal(true);
+                }
               }}
               className="bg-gradient-to-r from-[#156082] to-[#003349]"
             >

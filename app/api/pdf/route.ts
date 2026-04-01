@@ -156,6 +156,18 @@ function preloadAssets(): PreloadedAssets {
   return { logoBytes, poppinsRegularBytes, poppinsBoldBytes, signatureCache };
 }
 
+// ✅ AJOUTER ICI — après preloadAssets(), avant POST
+let cachedAssets: PreloadedAssets | null = null;
+
+function getAssets(): PreloadedAssets {
+  if (!cachedAssets) {
+    cachedAssets = preloadAssets();
+    console.log("✅ Assets chargés et mis en cache");
+  }
+  return cachedAssets;
+}
+
+
 // ============================================================
 // UTILITAIRES
 // ============================================================
@@ -1027,7 +1039,7 @@ export async function POST(req: NextRequest) {
     console.log(`📥 Requête PDF - Groupe: ${groupName} | Période: ${periodeEvaluation} | Étudiants: ${data.APPRENANT?.length || 0}`);
 
     // ✅ CORRECTION 1 : Préchargement des assets UNE SEULE FOIS avant la boucle
-    const assets = preloadAssets();
+    const assets = getAssets();
     console.log("✅ Assets préchargés (logo, fonts, signatures)");
 
     // ✅ CORRECTION 2 : updateUECredits calculé UNE SEULE FOIS

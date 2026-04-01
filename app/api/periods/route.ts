@@ -1,6 +1,9 @@
 import { fetchWithRetry } from "@/lib/fetchWithRetry";
 import { NextResponse } from "next/server";
 
+// ✅ Cache 10 minutes — les périodes changent très rarement
+export const revalidate = 600;
+
 export async function GET() {
   try {
     const token = process.env.TOKEN_REQUETEUR!;
@@ -24,10 +27,15 @@ export async function GET() {
 
     const periodsArray = Array.isArray(responseData) ? responseData : Object.values(responseData);
 
-    return NextResponse.json({
-      success: true,
-      data: periodsArray,
-    });
+    return NextResponse.json(
+      { success: true, data: periodsArray },
+      {
+        headers: {
+          // ✅ Cache 10 minutes côté Azure/CDN
+          "Cache-Control": "public, s-maxage=600, stale-while-revalidate=60",
+        },
+      }
+    );
   } catch (error) {
     console.error("Erreur lors de la récupération des périodes:", error);
     return NextResponse.json(

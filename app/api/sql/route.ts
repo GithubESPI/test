@@ -33,7 +33,7 @@ async function executeQuery(query: string, token: string): Promise<any[]> {
     const url = process.env.URL_REQUETEUR!;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     const response = await fetch(url, {
       method: "POST",
@@ -319,12 +319,29 @@ export async function POST(request: Request) {
     // ✅ CORRECTION PRINCIPALE : Exécution parallèle de toutes les requêtes
     const queryEntries = Object.entries(queries) as [keyof QueryResults, string][];
 
-    const queryResults = await Promise.all(
-      queryEntries.map(([key, query]) =>
+    // ✅ Remplace Promise.all par des lots de 3 max
+    async function runInBatches<T>(
+      items: T[],
+      batchSize: number,
+      fn: (item: T) => Promise<any>
+    ) {
+      const results = [];
+      for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map(fn));
+        results.push(...batchResults);
+      }
+      return results;
+    }
+
+    // Puis remplace Promise.all par :
+    const queryResults = await runInBatches(
+      queryEntries,
+      3, // max 3 requêtes simultanées
+      ([key, query]) =>
         executeQuery(query, token)
           .then((results) => ({ key, results, error: null }))
           .catch((error: any) => ({ key, results: [] as any[], error: error.message }))
-      )
     );
 
     const results: Partial<QueryResults> = {};
@@ -348,7 +365,7 @@ export async function POST(request: Request) {
           hasSuccessfulQuery = true;
           totalResults += queryResult.length;
         }
-        results[key] = queryResult;
+        results[key as keyof QueryResults] = queryResult; // ✅ cast explicite
         formattedData.queries[key] = { results: queryResult };
       }
     }
