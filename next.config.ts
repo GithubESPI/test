@@ -1,12 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // 1. Indispensable pour Azure : réduit le poids de 500Mo à ~50Mo.
-  // Next.js génère un dossier '.next/standalone' autonome.
-  output: 'standalone', 
+  output: 'standalone',
 
   eslint: {
-    // Évite que le déploiement plante pour des erreurs de formatage.
     ignoreDuringBuilds: true,
   },
 
@@ -20,8 +17,15 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  // On retire le bloc 'experimental' s'il pose problème, 
-  // car 'output: standalone' se suffit à lui-même pour régler le gros du souci.
+  // ✅ Timeout global pour toutes les API routes (en secondes)
+  serverExternalPackages: ['@prisma/client'],
+
+  experimental: {
+    // Coupe les requêtes API qui traînent trop longtemps
+    serverActions: {
+      bodySizeLimit: '2mb',
+    },
+  },
 };
 
 export default nextConfig;

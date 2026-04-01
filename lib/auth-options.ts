@@ -16,27 +16,26 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   secret: process.env.NEXTAUTH_SECRET,
+
+  // ✅ JWT : plus de requête BDD à chaque page chargée
+  session: {
+    strategy: "jwt",
+    maxAge: 8 * 60 * 60, // 8h
+  },
+
   callbacks: {
     async signIn({ account, profile }) {
-      if (!account || !profile) {
-        console.error("Sign-in error: Missing account or profile");
-        return false;
-      }
-
+      if (!account || !profile) return false;
       try {
-        // ✅ upsert user : 1 seule requête au lieu de findUnique + create séparés
         const user = await prisma.user.upsert({
           where: { email: profile.email as string },
-          update: {
-            name: profile.name as string,
-          },
+          update: { name: profile.name as string },
           create: {
             email: profile.email as string,
             name: profile.name as string,
           },
         });
 
-        // ✅ upsert account : 1 seule requête au lieu de update + create séparés
         await prisma.account.upsert({
           where: {
             provider_providerAccountId: {
@@ -75,26 +74,26 @@ export const authOptions: NextAuthOptions = {
       }
     },
 
-    async session({ session, user }) {
-      session.user.id = user.id;
+    // ✅ JWT callback : on stocke l'id dans le token
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+      }
+      return token;
+    },
+
+    // ✅ Session depuis le token, zéro requête BDD
+    async session({ session, token }) {
+      if (token?.id) {
+        session.user.id = token.id as string;
+      }
       return session;
     },
   },
+
   debug: process.env.NODE_ENV === "development",
   pages: {
     signIn: "/",
     error: "/auth/error",
-  },
-  events: {
-    signIn: async ({ user }) => {
-      if (!user) {
-        console.error("NextAuth error: User not found");
-      }
-    },
-  },
-  logger: {
-    error(code, metadata) {
-      console.error("NextAuth error:", code, metadata);
-    },
   },
 };

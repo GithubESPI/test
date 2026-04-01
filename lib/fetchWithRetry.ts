@@ -1,10 +1,11 @@
-export async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3) {
+export async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2) {
   let lastError;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      // ✅ 8s max par tentative, pas 60s
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const response = await fetch(url, {
         ...options,
@@ -31,7 +32,8 @@ export async function fetchWithRetry(url: string, options: RequestInit, maxRetri
     } catch (error) {
       lastError = error;
       if (i < maxRetries - 1) {
-        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, i)));
+        // ✅ Délai fixe court, pas exponentiel
+        await new Promise((r) => setTimeout(r, 500));
       }
     }
   }
