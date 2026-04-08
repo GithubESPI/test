@@ -5,12 +5,12 @@ on:
     branches:
       - main
   workflow_dispatch:
-  # ✅ Vérifie la santé du site toutes les 5 minutes
-  schedule:
-    - cron: "*/5 * * * *"
+  # ✅ Désactivé temporairement pour éviter la boucle de redémarrage infinie
+  # schedule:
+  #   - cron: "*/5 * * * *"
 
 jobs:
-  # ✅ Job de health check — tourne en permanence
+  # ✅ Job de health check
   healthcheck:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
@@ -24,10 +24,8 @@ jobs:
           echo "Status: $STATUS"
           if [ "$STATUS" != "200" ]; then
             echo "site_down=true" >> $GITHUB_OUTPUT
-            echo "❌ Site down! Status: $STATUS"
           else
             echo "site_down=false" >> $GITHUB_OUTPUT
-            echo "✅ Site OK"
           fi
 
   # ✅ Redémarre Azure si le site est down
@@ -49,7 +47,6 @@ jobs:
           azcliversion: latest
           inlineScript: |
             az webapp restart --name bulletinespi --resource-group backbulletin_group
-            echo "✅ App Service redémarré automatiquement"
 
   build:
     runs-on: ubuntu-latest
@@ -68,8 +65,11 @@ jobs:
           npm ci
           npx prisma generate
           npm run build
+          # Montage du dossier standalone conforme aux besoins d'Azure
           cp -r public .next/standalone/public
           cp -r .next/static .next/standalone/.next/static
+          # ✅ CRUCIAL : Copie des fichiers Prisma générés pour le runtime
+          cp -r node_modules/.prisma .next/standalone/node_modules/ || true
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -101,16 +101,8 @@ jobs:
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         id: deploy
-        continue-on-error: true
         with:
           app-name: "bulletinespi"
           package: .
-          startup-command: "node server.js"
-
-      - name: Retry Deploy if failed
-        if: steps.deploy.outcome == 'failure'
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: "bulletinespi"
-          package: .
-          startup-command: "node server.js"
+          # ✅ Force le port 8080 pour Azure et lance le serveur standalone
+          startup-command: "PORT=8080 node server.js"
