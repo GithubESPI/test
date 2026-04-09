@@ -1,38 +1,49 @@
-import { fetchWithRetry } from "@/lib/fetchWithRetry";
 import { NextResponse } from "next/server";
 
-// ✅ Cache 5 minutes — évite les 19s à chaque requête
+// Cache 5 minutes — les campus changent très rarement
 export const revalidate = 300;
 
 export async function GET() {
   try {
-    const baseUrl = process.env.YPAERO_BASE_URL;
-    const apiToken = process.env.YPAERO_API_TOKEN;
+    const token = process.env.TOKEN_REQUETEUR!;
+    const url = process.env.URL_REQUETEUR!;
 
-    if (!baseUrl || !apiToken) {
-      throw new Error("Variables d'environnement YPAERO_BASE_URL ou YPAERO_API_TOKEN manquantes");
+    if (!token || !url) {
+      throw new Error("Variables TOKEN_REQUETEUR ou URL_REQUETEUR manquantes");
     }
 
-    const url = `${baseUrl}/r/v1/formation-longue/apprenants?codesPeriode=5`;
-
-    const data = await fetchWithRetry(url, {
-      method: "GET",
+    // ✅ Requête ultra-légère : uniquement CODE_SITE + NOM_SITE
+    // Avant : /formation-longue/apprenants chargeait tous les apprenants (~36 Mo)
+    //         juste pour extraire les codeSite uniques
+    // Après : 2 colonnes, quelques dizaines de lignes (~2 Ko)
+    const response = await fetch(url, {
+      method: "POST",
       headers: {
-        "X-Auth-Token": apiToken,
+        "X-Auth-Token": token,
+        "Content-Type": "application/json",
         Accept: "application/json",
       },
-      // ✅ cache: "no-store" retiré
+      body: JSON.stringify({
+        sql: "SELECT DISTINCT CODE_SITE, NOM_SITE FROM SITE ORDER BY NOM_SITE",
+      }),
     });
 
-    return NextResponse.json(data, {
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const sitesArray = Array.isArray(data) ? data : Object.values(data);
+
+    return NextResponse.json(sitesArray, {
       headers: {
         "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
       },
     });
   } catch (error) {
-    console.error("Erreur récupération étudiants:", error);
+    console.error("Erreur récupération campus:", error);
     return NextResponse.json(
-      { error: "Erreur lors de la récupération des données", details: (error as Error).message },
+      { error: "Erreur récupération campus", details: (error as Error).message },
       { status: 500 }
     );
   }

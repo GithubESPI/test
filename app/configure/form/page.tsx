@@ -51,21 +51,13 @@ interface PeriodeEvaluation {
   DATE_FIN: string;
 }
 
-interface YpareoStudent {
-  inscriptions: Array<{
-    site: {
-      codeSite: number;
-      nomSite: string;
-    };
-    codeGroupe: number | null;
-  }>;
-}
-
 interface YpareoGroup {
   codeGroupe: number;
   nomGroupe: string;
   codeSite: number;
 }
+
+// ✅ SUPPRIMÉ : interface YpareoStudent — plus utilisée
 
 interface Campus {
   id: string;
@@ -99,7 +91,6 @@ export default function Home() {
   const [isLoadingComplete, setIsLoadingComplete] = useState(false);
 
   const responseDataRef = useRef<any>(null);
-  // ✅ 2 refs séparées pour éviter les conflits entre les 2 useEffect
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const completeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -115,7 +106,6 @@ export default function Home() {
     },
   });
 
-  // ✅ "form" retiré des dépendances — stable via useForm
   useEffect(() => {
     if (!session?.user?.email) return;
     fetch(`/api/user?email=${encodeURIComponent(session.user.email)}`)
@@ -129,20 +119,24 @@ export default function Home() {
       try {
         setIsLoading(true);
 
-        const [periodsResponse, studentsResponse, groupsResponse] = await Promise.all([
+        // ✅ CORRECTION : /api/students supprimé — c'était lui les 36 Mo
+        // On charge uniquement périodes + groupes (2 appels au lieu de 3)
+        // Les campus sont extraits depuis groupsData qui contient déjà codeSite,
+        // enrichi avec nomSite via /api/students qui appelle désormais le requêteur SQL
+        const [periodsResponse, groupsResponse] = await Promise.all([
           fetch("/api/periods"),
-          fetch("/api/students"),
           fetch("/api/groups"),
         ]);
 
         if (!periodsResponse.ok) throw new Error("Erreur périodes");
+        if (!groupsResponse.ok) throw new Error("Erreur groupes");
 
-        const [periodsData, studentsData, groupsData] = await Promise.all([
+        const [periodsData, groupsData] = await Promise.all([
           periodsResponse.json(),
-          studentsResponse.json(),
           groupsResponse.json(),
         ]);
 
+        // Périodes — inchangé
         if (periodsData.success && Array.isArray(periodsData.data)) {
           const startDate = new Date("2025-08-25 00:00:00");
           const endDate = new Date("2026-08-23 00:00:00");
@@ -158,27 +152,42 @@ export default function Home() {
           setPeriods(filteredPeriods);
         }
 
-        const studentsArray = studentsData ? (Object.values(studentsData) as YpareoStudent[]) : [];
-        const groupsArray = groupsData ? (Object.values(groupsData) as YpareoGroup[]) : [];
+        // Groupes — inchangé
+        const groupsArray = groupsData
+          ? (Object.values(groupsData) as YpareoGroup[])
+          : [];
         setAllGroups(groupsArray);
 
-        const uniqueCampusMap = new Map<number, string>();
-        studentsArray.forEach((student) => {
-          student?.inscriptions?.forEach((inscription) => {
-            if (inscription?.site && !uniqueCampusMap.has(inscription.site.codeSite)) {
-              uniqueCampusMap.set(inscription.site.codeSite, inscription.site.nomSite);
-            }
-          });
+        // ✅ Campus extraits depuis les groupes (codeSite déjà présent)
+        // + nomSite récupéré via /api/students (requêteur SQL léger)
+        // On dédoublonne par codeSite, puis on appelle /api/students
+        // uniquement pour enrichir avec le nom — ~2 Ko au lieu de 36 Mo
+        const uniqueCodeSites = [...new Set(groupsArray.map((g) => g.codeSite).filter(Boolean))];
+
+        // Récupération des noms de campus via le requêteur SQL
+        const sitesResponse = await fetch("/api/students");
+        const sitesData = sitesResponse.ok ? await sitesResponse.json() : [];
+        const sitesArray: { CODE_SITE: number; NOM_SITE: string }[] = Array.isArray(sitesData)
+          ? sitesData
+          : Object.values(sitesData);
+
+        // Map codeSite → nomSite
+        const siteNameMap = new Map<number, string>();
+        sitesArray.forEach((site) => {
+          siteNameMap.set(Number(site.CODE_SITE), site.NOM_SITE);
         });
 
-        const uniqueCampuses: Campus[] = Array.from(uniqueCampusMap).map(
-          ([codeSite, nomSite], index) => ({
+        // Construction de la liste des campus
+        const uniqueCampuses: Campus[] = uniqueCodeSites
+          .map((codeSite, index) => ({
             id: `campus-${codeSite}-${index}`,
             codeSite: codeSite,
-            label: nomSite,
-          })
-        );
+            label: siteNameMap.get(codeSite) ?? `Campus ${codeSite}`,
+          }))
+          .filter((c) => c.label !== "GROUPE ESPI");
+
         setCampuses(uniqueCampuses);
+
       } catch (error) {
         console.error(error);
         setErrorMessage("Erreur lors du chargement des données");
@@ -190,24 +199,19 @@ export default function Home() {
     fetchData();
   }, []);
 
-  // ✅ useEffect progress avec 2 refs séparées
+  // Progress bar — inchangé
   useEffect(() => {
     if (isLoading) {
       setIsLoadingComplete(false);
       setProgress(0);
-
-      // ✅ Ref dédiée à la phase "loading"
       loadingIntervalRef.current = setInterval(() => {
         setProgress((prev) => (prev >= 90 ? 90 : prev + 2));
       }, 100);
-
       return () => {
         if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
       };
     } else {
       if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
-
-      // ✅ Ref dédiée à la phase "complete"
       completeIntervalRef.current = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 100) {
@@ -218,7 +222,6 @@ export default function Home() {
           return prev + 1;
         });
       }, 20);
-
       return () => {
         if (completeIntervalRef.current) clearInterval(completeIntervalRef.current);
       };
@@ -262,6 +265,7 @@ export default function Home() {
         throw new Error(`Incohérence : Groupe Temps Plein avec période Alternance.`);
       }
 
+      // /api/sql — appelé UNIQUEMENT après confirmation, inchangé
       const response = await fetch("/api/sql", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -383,7 +387,6 @@ export default function Home() {
                         </FormControl>
                         <SelectContent>
                           {campuses
-                            .filter((c) => c.label !== "GROUPE ESPI")
                             .sort((a, b) => a.label.localeCompare(b.label))
                             .map((c) => (
                               <SelectItem key={c.id} value={c.id}>
@@ -489,7 +492,6 @@ export default function Home() {
         </Card>
       </div>
 
-      {/* Modales */}
       <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -532,7 +534,6 @@ export default function Home() {
                   a.href = url;
                   a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
                   a.click();
-                  // ✅ Libère la mémoire après 1s
                   setTimeout(() => URL.revokeObjectURL(url), 1000);
                 } catch (error) {
                   setErrorMessage("Erreur lors du téléchargement");

@@ -1,9 +1,12 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 
+// ✅ Mise à jour : Ajout des routes Swagger dans les routes publiques
 const PUBLIC_ROUTES = [
   "/api/auth",
   "/api/health",
+  "/api/docs", // ✅ Autorise l'accès au JSON de Swagger
+  "/docs",     // ✅ Autorise l'accès à l'interface visuelle
 ];
 
 export async function middleware(request: NextRequest) {
@@ -42,5 +45,6 @@ export const config = {
     "/api/:path*",
     "/configure/:path*",
     "/home/:path*",
+    "/docs/:path*", // ✅ Ajouté pour être sûr que le middleware traite aussi cette route
   ],
 };

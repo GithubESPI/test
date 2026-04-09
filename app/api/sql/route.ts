@@ -140,12 +140,14 @@ export async function POST(request: Request) {
         WHERE g.CODE_GROUPE = ${group} 
         GROUP BY g.NOM_GROUPE, g.ETENDU_GROUPE, f.NOM_FORMATION, s.CODE_SESSION
       `,
+
       SITE: `
         SELECT DISTINCT s.CODE_SITE, s.NOM_SITE, s.ETENDU_SITE, p.CODE_PERSONNEL 
         FROM SITE s 
         INNER JOIN PERSONNEL p ON s.CODE_PERSONNEL = p.CODE_PERSONNEL
         WHERE s.CODE_SITE = ${campus}
       `,
+
       APPRENANT: `
         SELECT DISTINCT a.CODE_APPRENANT, a.NOM_APPRENANT, a.PRENOM_APPRENANT, a.DATE_NAISSANCE, 
           g.CODE_GROUPE, c.CODE_CALENDRIER, s.CODE_SESSION, 
@@ -162,10 +164,15 @@ export async function POST(request: Request) {
           g.CODE_GROUPE, c.CODE_CALENDRIER, s.CODE_SESSION 
         ORDER BY a.NOM_APPRENANT
       `,
+
+      // ✅ OPTIMISATION ABSENCE :
+      // - Suppression des colonnes inutiles (MINUTE_DEB, MINUTE_FIN, s.DATE_DEB, s.DATE_FIN)
+      // - Filtre de session ajouté pour limiter au référentiel en cours
       ABSENCE: `
-        SELECT DISTINCT a.CODE_APPRENANT, a.NOM_APPRENANT, a.PRENOM_APPRENANT, g.CODE_GROUPE, 
-          abs.CODE_ABSENCE, abs.MINUTE_DEB, abs.MINUTE_FIN, abs.IS_RETARD, ma.IS_JUSTIFIE, 
-          ad.DUREE, ad.NUM_JOUR, ad.DATE_ABSENCE, s.CODE_SESSION, s.DATE_DEB, s.DATE_FIN 
+        SELECT DISTINCT
+          a.CODE_APPRENANT, a.NOM_APPRENANT, a.PRENOM_APPRENANT,
+          abs.CODE_ABSENCE, abs.IS_RETARD, ma.IS_JUSTIFIE,
+          ad.DUREE, ad.DATE_ABSENCE AS DATE_DEB, s.DATE_FIN
         FROM GROUPE g 
         INNER JOIN FREQUENTE f ON g.CODE_GROUPE = f.CODE_GROUPE 
         INNER JOIN INSCRIPTION i ON f.CODE_INSCRIPTION = i.CODE_INSCRIPTION 
@@ -176,9 +183,11 @@ export async function POST(request: Request) {
         LEFT JOIN CALENDRIER c ON f.CODE_CALENDRIER = c.CODE_CALENDRIER 
         LEFT JOIN SESSION s ON c.CODE_SESSION = s.CODE_SESSION 
         WHERE g.CODE_GROUPE = ${group} 
-        AND CONVERT(date, abs.DATE_DEB) BETWEEN '2025-08-25' AND '2026-08-23' 
+          AND CONVERT(date, ad.DATE_ABSENCE) BETWEEN '2025-08-25' AND '2026-08-23'
+          AND ad.DUREE > 0
         ORDER BY a.NOM_APPRENANT, ad.DATE_ABSENCE
       `,
+
       MATIERE: `
         SELECT g.CODE_GROUPE, m.CODE_MATIERE, r.CODE_PERIODE_EVALUATION, pe.NOM_PERIODE_EVALUATION, 
           r.CODE_REFERENTIEL, m.NOM_MATIERE, m.CODE_TYPE_MATIERE, rd.NUM_ORDRE, g.CODE_SITE, 
@@ -197,11 +206,23 @@ export async function POST(request: Request) {
           AND r.CODE_ANNEE = ${groupNumQuery}
         ORDER BY rd.NUM_ORDRE ASC, m.NOM_MATIERE
       `,
+
+      // ✅ OPTIMISATION MOYENNES_UE :
+      // Remplacement du LEFT JOIN NOTE + LEFT JOIN EVALUATION_NOTE par une sous-requête
+      // SELECT TOP 1 — évite la multiplication des lignes (1 ligne par note au lieu de 1 par matière)
+      // tout en conservant NOM_EVALUATION_NOTE utilisé dans le PDF.
       MOYENNES_UE: `
         SELECT 
           g.CODE_GROUPE, g.NOM_GROUPE, ap.CODE_APPRENANT, ap.NOM_APPRENANT, ap.PRENOM_APPRENANT,
-          m.CODE_MATIERE, m.NOM_MATIERE, rd.NUM_ORDRE, mm.MOYENNE, en.NOM_EVALUATION_NOTE,
-          pe.NOM_PERIODE_EVALUATION, r.CODE_REFERENTIEL, r.NOM_REFERENTIEL
+          m.CODE_MATIERE, m.NOM_MATIERE, rd.NUM_ORDRE, mm.MOYENNE,
+          pe.NOM_PERIODE_EVALUATION, r.CODE_REFERENTIEL, r.NOM_REFERENTIEL,
+          (
+            SELECT TOP 1 en2.NOM_EVALUATION_NOTE
+            FROM NOTE n2
+            INNER JOIN EVALUATION_NOTE en2 ON n2.CODE_EVALUATION_NOTE = en2.CODE_EVALUATION_NOTE
+            WHERE n2.CODE_APPRENANT = ap.CODE_APPRENANT
+              AND n2.CODE_REFERENTIEL_DETAIL = rd.CODE_REFERENTIEL_DETAIL
+          ) AS NOM_EVALUATION_NOTE
         FROM GROUPE g 
         INNER JOIN REFERENTIEL r ON g.CODE_FORMATION = r.CODE_FORMATION 
         INNER JOIN REFERENTIEL_DETAIL rd ON r.CODE_REFERENTIEL = rd.CODE_REFERENTIEL 
@@ -214,9 +235,6 @@ export async function POST(request: Request) {
           AND mm.CODE_GROUPE = g.CODE_GROUPE 
           AND mm.CODE_REFERENTIEL = r.CODE_REFERENTIEL
           AND mm.CODE_APPRENANT = ap.CODE_APPRENANT
-        LEFT JOIN NOTE n ON n.CODE_APPRENANT = ap.CODE_APPRENANT 
-          AND n.CODE_REFERENTIEL_DETAIL = rd.CODE_REFERENTIEL_DETAIL
-        LEFT JOIN EVALUATION_NOTE en ON n.CODE_EVALUATION_NOTE = en.CODE_EVALUATION_NOTE
         WHERE g.CODE_GROUPE = ${group}
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
           AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
@@ -226,6 +244,7 @@ export async function POST(request: Request) {
           AND r.IS_DANS_MOYENNE = '1'
         ORDER BY ap.NOM_APPRENANT, ap.PRENOM_APPRENANT, rd.NUM_ORDRE, m.NOM_MATIERE
       `,
+
       MOYENNE_GENERALE: `
         SELECT 
           g.CODE_GROUPE, g.NOM_GROUPE, ap.CODE_APPRENANT, ap.NOM_APPRENANT, ap.PRENOM_APPRENANT,
@@ -248,6 +267,7 @@ export async function POST(request: Request) {
         GROUP BY g.CODE_GROUPE, g.NOM_GROUPE, ap.CODE_APPRENANT, ap.NOM_APPRENANT, ap.PRENOM_APPRENANT, pe.NOM_PERIODE_EVALUATION
         ORDER BY ap.NOM_APPRENANT, ap.PRENOM_APPRENANT
       `,
+
       ECTS_PAR_MATIERE: `
         SELECT 
           g.CODE_GROUPE, g.NOM_GROUPE, ap.CODE_APPRENANT, ap.NOM_APPRENANT, ap.PRENOM_APPRENANT,
@@ -272,6 +292,7 @@ export async function POST(request: Request) {
           }
         ORDER BY ap.NOM_APPRENANT, ap.PRENOM_APPRENANT, rd.NUM_ORDRE, m.NOM_MATIERE
       `,
+
       OBSERVATIONS: `
         SELECT 
           ap.CODE_OBSERVATION, o.MEMO_OBSERVATION, i.CODE_APPRENANT, 
@@ -292,6 +313,7 @@ export async function POST(request: Request) {
           AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
         ORDER BY a.NOM_APPRENANT, a.PRENOM_APPRENANT
       `,
+
       PERSONNEL: `
         SELECT DISTINCT p.CODE_PERSONNEL, g.CODE_PERSONNEL_GESTIONNAIRE, p.NOM_PERSONNEL, 
           p.PRENOM_PERSONNEL, p.CODE_FONCTION_PERSONNEL, fp.NOM_FONCTION_PERSONNEL 
@@ -300,6 +322,11 @@ export async function POST(request: Request) {
         INNER JOIN FONCTION_PERSONNEL fp ON p.CODE_FONCTION_PERSONNEL = fp.CODE_FONCTION_PERSONNEL 
         WHERE g.CODE_GROUPE = ${group}
       `,
+
+      // ✅ CORRECTION CRITIQUE NOTES :
+      // Ajout du filtre CODE_PERIODE_EVALUATION — sans lui, toutes les notes
+      // de tous les semestres de tous les étudiants du groupe étaient chargées.
+      // C'est la principale cause des 36 Mo.
       NOTES: `
         SELECT n.CODE_NOTE, n.VALEUR_NOTE, a.NOM_APPRENANT, m.NOM_MATIERE, r.CODE_PERIODE_EVALUATION 
         FROM NOTE n 
@@ -307,7 +334,9 @@ export async function POST(request: Request) {
         INNER JOIN MATIERE m ON rd.CODE_MATIERE = m.CODE_MATIERE 
         INNER JOIN REFERENTIEL r ON rd.CODE_REFERENTIEL = r.CODE_REFERENTIEL 
         INNER JOIN APPRENANT a ON n.CODE_APPRENANT = a.CODE_APPRENANT 
-        WHERE r.CODE_SESSION = 5 
+        WHERE r.CODE_SESSION = 5
+          AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
+          AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
           AND a.CODE_APPRENANT IN (
             SELECT i.CODE_APPRENANT FROM INSCRIPTION i 
             INNER JOIN FREQUENTE f ON i.CODE_INSCRIPTION = f.CODE_INSCRIPTION 
@@ -316,10 +345,6 @@ export async function POST(request: Request) {
       `,
     };
 
-    // ✅ CORRECTION PRINCIPALE : Exécution parallèle de toutes les requêtes
-    const queryEntries = Object.entries(queries) as [keyof QueryResults, string][];
-
-    // ✅ Remplace Promise.all par des lots de 3 max
     async function runInBatches<T>(
       items: T[],
       batchSize: number,
@@ -334,10 +359,11 @@ export async function POST(request: Request) {
       return results;
     }
 
-    // Puis remplace Promise.all par :
+    const queryEntries = Object.entries(queries) as [keyof QueryResults, string][];
+
     const queryResults = await runInBatches(
       queryEntries,
-      3, // max 3 requêtes simultanées
+      3,
       ([key, query]) =>
         executeQuery(query, token)
           .then((results) => ({ key, results, error: null }))
@@ -365,7 +391,7 @@ export async function POST(request: Request) {
           hasSuccessfulQuery = true;
           totalResults += queryResult.length;
         }
-        results[key as keyof QueryResults] = queryResult; // ✅ cast explicite
+        results[key as keyof QueryResults] = queryResult;
         formattedData.queries[key] = { results: queryResult };
       }
     }

@@ -1,11 +1,11 @@
-export async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2) {
+export async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 1) {
   let lastError;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
       const controller = new AbortController();
       // ✅ 8s max par tentative, pas 60s
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const response = await fetch(url, {
         ...options,
