@@ -1114,41 +1114,53 @@ export async function POST(req: NextRequest) {
     // ✅ CORRECTION 4 : Génération parallèle de tous les PDFs
     console.log(`⚡ Génération parallèle de ${data.APPRENANT.length} PDFs...`);
 
-    const pdfResults = await Promise.all(
-      data.APPRENANT.map(async (studentObj: any) => {
-        const student: StudentData = {
-          CODE_APPRENANT: studentObj.CODE_APPRENANT || "",
-          NOM_APPRENANT: studentObj.NOM_APPRENANT || "",
-          PRENOM_APPRENANT: studentObj.PRENOM_APPRENANT || "",
-          DATE_NAISSANCE: studentObj.DATE_NAISSANCE || null,
-        };
+    // ✅ FIX : Génération par batches de 5 pour éviter l'explosion mémoire
+// Promise.all sur 30 étudiants = 30 PDFs en RAM simultanément → crash Azure
+    const pdfResults: any[] = [];
+    const PDF_BATCH_SIZE = 5;
 
-        try {
-          const pdfBytes = await createStudentPDF(
-            student,
-            data.MOYENNES_UE || [],
-            data.MOYENNES_UE || [],
-            data.OBSERVATIONS || [],
-            updatedSubjects,          // ✅ Réutilisé, pas recalculé
-            data.GROUPE || [],
-            data.SITE || [],
-            periodeEvaluation,
-            data.ABSENCE || [],
-            processedAbsences,        // ✅ Réutilisé, pas recalculé
-            assets,                   // ✅ Assets préchargés partagés
-            data.PERSONNEL || [],
-            data.NOTES || [],
-            data.MOYENNE_GENERALE || []
-          );
+    for (let i = 0; i < data.APPRENANT.length; i += PDF_BATCH_SIZE) {
+      const batch = data.APPRENANT.slice(i, i + PDF_BATCH_SIZE);
+      console.log(`⚡ Batch PDF ${Math.floor(i / PDF_BATCH_SIZE) + 1}/${Math.ceil(data.APPRENANT.length / PDF_BATCH_SIZE)}`);
 
-          const filename = `2025-2026_${nomFormation}_${nomAnnee}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
-          return { success: true, pdfBytes, filename, student };
-        } catch (error) {
-          console.error(`❌ Erreur PDF pour ${student.NOM_APPRENANT}:`, error);
-          return { success: false, pdfBytes: null, filename: "", student };
-        }
-      })
-    );
+      const batchResults = await Promise.all(
+        batch.map(async (studentObj: any) => {
+          const student: StudentData = {
+            CODE_APPRENANT: studentObj.CODE_APPRENANT || "",
+            NOM_APPRENANT: studentObj.NOM_APPRENANT || "",
+            PRENOM_APPRENANT: studentObj.PRENOM_APPRENANT || "",
+            DATE_NAISSANCE: studentObj.DATE_NAISSANCE || null,
+          };
+
+          try {
+            const pdfBytes = await createStudentPDF(
+              student,
+              data.MOYENNES_UE || [],
+              data.MOYENNES_UE || [],
+              data.OBSERVATIONS || [],
+              updatedSubjects,
+              data.GROUPE || [],
+              data.SITE || [],
+              periodeEvaluation,
+              data.ABSENCE || [],
+              processedAbsences,
+              assets,
+              data.PERSONNEL || [],
+              data.NOTES || [],
+              data.MOYENNE_GENERALE || []
+            );
+
+            const filename = `2025-2026_${nomFormation}_${nomAnnee}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
+            return { success: true, pdfBytes, filename, student };
+          } catch (error) {
+            console.error(`❌ Erreur PDF pour ${student.NOM_APPRENANT}:`, error);
+            return { success: false, pdfBytes: null, filename: "", student };
+          }
+        })
+      );
+
+      pdfResults.push(...batchResults);
+    }
 
     // Ajout des PDFs au ZIP
     for (const result of pdfResults) {
@@ -1167,7 +1179,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Aucun PDF n'a pu être généré", details: `${failureCount} bulletins ont échoué` }, { status: 500 });
     }
 
-    const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
+    const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
     let groupNameForFilename = data.GROUPE?.[0]?.NOM_GROUPE || groupName;
     let periodNameForFilename = data.MOYENNES_UE?.[0]?.NOM_PERIODE_EVALUATION || periodeEvaluation;
@@ -1176,7 +1188,7 @@ export async function POST(req: NextRequest) {
     const sanitizedPeriod = periodNameForFilename.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
     const zipId = `bulletins_${sanitizedGroupName}_${sanitizedPeriod}.zip`;
 
-    fileStorage.storeFile(zipId, Buffer.from(zipBuffer), "application/zip");
+    fileStorage.storeFile(zipId, zipBuffer, "application/zip");
 
     if (!fileStorage.hasFile(zipId)) {
       return NextResponse.json({ success: false, error: "Erreur lors du stockage du fichier ZIP" }, { status: 500 });

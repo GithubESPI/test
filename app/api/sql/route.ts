@@ -28,12 +28,13 @@ interface QueryResults {
   NOTES: any[];
 }
 
-async function executeQuery(query: string, token: string): Promise<any[]> {
+// ✅ FIX 1 — Timeout augmenté à 30s pour éviter les AbortError sur Azure
+async function executeQuery(query: string, token: string, timeoutMs = 30000): Promise<any[]> {
   try {
     const url = process.env.URL_REQUETEUR!;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const response = await fetch(url, {
       method: "POST",
@@ -165,9 +166,6 @@ export async function POST(request: Request) {
         ORDER BY a.NOM_APPRENANT
       `,
 
-      // ✅ OPTIMISATION ABSENCE :
-      // - Suppression des colonnes inutiles (MINUTE_DEB, MINUTE_FIN, s.DATE_DEB, s.DATE_FIN)
-      // - Filtre de session ajouté pour limiter au référentiel en cours
       ABSENCE: `
         SELECT DISTINCT
           a.CODE_APPRENANT, a.NOM_APPRENANT, a.PRENOM_APPRENANT,
@@ -207,10 +205,6 @@ export async function POST(request: Request) {
         ORDER BY rd.NUM_ORDRE ASC, m.NOM_MATIERE
       `,
 
-      // ✅ OPTIMISATION MOYENNES_UE :
-      // Remplacement du LEFT JOIN NOTE + LEFT JOIN EVALUATION_NOTE par une sous-requête
-      // SELECT TOP 1 — évite la multiplication des lignes (1 ligne par note au lieu de 1 par matière)
-      // tout en conservant NOM_EVALUATION_NOTE utilisé dans le PDF.
       MOYENNES_UE: `
         SELECT 
           g.CODE_GROUPE, g.NOM_GROUPE, ap.CODE_APPRENANT, ap.NOM_APPRENANT, ap.PRENOM_APPRENANT,
@@ -323,25 +317,21 @@ export async function POST(request: Request) {
         WHERE g.CODE_GROUPE = ${group}
       `,
 
-      // ✅ CORRECTION CRITIQUE NOTES :
-      // Ajout du filtre CODE_PERIODE_EVALUATION — sans lui, toutes les notes
-      // de tous les semestres de tous les étudiants du groupe étaient chargées.
-      // C'est la principale cause des 36 Mo.
+      // ✅ FIX 3 — Remplacement du IN (SELECT ...) par un INNER JOIN direct
+      // Plus performant : évite un sous-select exécuté ligne par ligne
       NOTES: `
         SELECT n.CODE_NOTE, n.VALEUR_NOTE, a.NOM_APPRENANT, m.NOM_MATIERE, r.CODE_PERIODE_EVALUATION 
         FROM NOTE n 
         INNER JOIN REFERENTIEL_DETAIL rd ON n.CODE_REFERENTIEL_DETAIL = rd.CODE_REFERENTIEL_DETAIL 
         INNER JOIN MATIERE m ON rd.CODE_MATIERE = m.CODE_MATIERE 
         INNER JOIN REFERENTIEL r ON rd.CODE_REFERENTIEL = r.CODE_REFERENTIEL 
-        INNER JOIN APPRENANT a ON n.CODE_APPRENANT = a.CODE_APPRENANT 
+        INNER JOIN APPRENANT a ON n.CODE_APPRENANT = a.CODE_APPRENANT
+        INNER JOIN INSCRIPTION i ON a.CODE_APPRENANT = i.CODE_APPRENANT
+        INNER JOIN FREQUENTE f ON i.CODE_INSCRIPTION = f.CODE_INSCRIPTION
         WHERE r.CODE_SESSION = 5
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
           AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
-          AND a.CODE_APPRENANT IN (
-            SELECT i.CODE_APPRENANT FROM INSCRIPTION i 
-            INNER JOIN FREQUENTE f ON i.CODE_INSCRIPTION = f.CODE_INSCRIPTION 
-            WHERE f.CODE_GROUPE = ${group}
-          )
+          AND f.CODE_GROUPE = ${group}
       `,
     };
 
@@ -361,9 +351,10 @@ export async function POST(request: Request) {
 
     const queryEntries = Object.entries(queries) as [keyof QueryResults, string][];
 
+    // ✅ FIX 2 — Batch réduit de 3 à 2 pour moins de pression simultanée sur la BDD
     const queryResults = await runInBatches(
       queryEntries,
-      3,
+      2,
       ([key, query]) =>
         executeQuery(query, token)
           .then((results) => ({ key, results, error: null }))
