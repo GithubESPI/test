@@ -75,6 +75,9 @@ interface State {
   pdfDownloadUrl: string;
   pdfStudentCount: number;
   selectedGroupName: string;
+  // Overlay de progression
+  overlaySteps: { label: string; status: "done" | "current" | "todo" }[];
+  overlayProgress: number;
 }
 
 const initialState: State = {
@@ -84,6 +87,7 @@ const initialState: State = {
   progress: 0, isLoadingComplete: false,
   modal: "none", errorMessage: "",
   retrievedData: null, pdfDownloadUrl: "", pdfStudentCount: 0, selectedGroupName: "",
+  overlaySteps: [], overlayProgress: 0,
 };
 
 type Action =
@@ -98,7 +102,9 @@ type Action =
   | { type: "SQL_SUCCESS"; data: any; groupName: string }
   | { type: "PDF_SUCCESS"; url: string; count: number }
   | { type: "SHOW_ERROR"; message: string }
-  | { type: "CLOSE_MODAL" };
+  | { type: "CLOSE_MODAL" }
+  | { type: "SET_OVERLAY_STEPS"; steps: { label: string; status: "done" | "current" | "todo" }[] }
+  | { type: "SET_OVERLAY_PROGRESS"; progress: number };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -114,6 +120,8 @@ function reducer(state: State, action: Action): State {
     case "PDF_SUCCESS": return { ...state, pdfDownloadUrl: action.url, pdfStudentCount: action.count, modal: "pdfSuccess" };
     case "SHOW_ERROR": return { ...state, errorMessage: action.message, modal: "error" };
     case "CLOSE_MODAL": return { ...state, modal: "none" };
+    case "SET_OVERLAY_STEPS": return { ...state, overlaySteps: action.steps };
+    case "SET_OVERLAY_PROGRESS": return { ...state, overlayProgress: action.progress };
     default: return state;
   }
 }
@@ -272,6 +280,47 @@ export default function FormPage() {
     dispatch({ type: "SET_CAMPUS", campus: campusId, groups: filtered });
   }, [state.campuses, state.allGroups]);
 
+  const SQL_STEPS = [
+    "Connexion à YParéo...",
+    "Récupération des apprenants...",
+    "Récupération des notes et moyennes...",
+    "Récupération des absences...",
+    "Finalisation des données...",
+  ];
+
+  const PDF_STEPS = [
+    "Données prêtes",
+    "Génération des bulletins PDF...",
+    "Création de l'archive ZIP...",
+    "Finalisation...",
+  ];
+
+  const animateSteps = useCallback((
+    steps: string[],
+    durations: number[],
+    dispatch: React.Dispatch<Action>
+  ) => {
+    const timers: NodeJS.Timeout[] = [];
+    let elapsed = 0;
+
+    steps.forEach((label, i) => {
+      const t = setTimeout(() => {
+        dispatch({
+          type: "SET_OVERLAY_STEPS",
+          steps: steps.map((l, j) => ({
+            label: l,
+            status: j < i ? "done" : j === i ? "current" : "todo",
+          })),
+        });
+        dispatch({ type: "SET_OVERLAY_PROGRESS", progress: Math.round(((i + 1) / steps.length) * 90) });
+      }, elapsed);
+      timers.push(t);
+      elapsed += durations[i] || 2000;
+    });
+
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
   const handleSubmit = useCallback(async () => {
     if (!state.campus || !state.group || !state.semester) {
       return dispatch({ type: "SHOW_ERROR", message: "Veuillez remplir tous les champs." });
@@ -286,33 +335,56 @@ export default function FormPage() {
 
     try {
       dispatch({ type: "SET_SUBMITTING", value: true });
-      const response = await fetch("/api/sql", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          campus: selectedCampus.codeSite.toString(),
-          group: state.group,
-          periodeEvaluationCode: state.semester,
-          periodeEvaluation: selectedPeriod.NOM_PERIODE_EVALUATION,
-          semester: state.semester,
-          periodeEvaluationDates: {
-            DATE_DEB: selectedPeriod.DATE_DEB,
-            DATE_FIN: selectedPeriod.DATE_FIN,
-            CODE_PERIODE_EVALUATION: selectedPeriod.CODE_PERIODE_EVALUATION,
-            NOM_PERIODE_EVALUATION: selectedPeriod.NOM_PERIODE_EVALUATION,
-          },
-        }),
-      });
+      dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 0 });
+
+      // Anime les étapes pendant l'attente
+      const cancelAnim = animateSteps(SQL_STEPS, [500, 2500, 3000, 3000, 2000], dispatch);
+
+      // Timeout client 45s — évite que le navigateur reste bloqué indéfiniment
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45000);
+
+      let response: Response;
+      try {
+        response = await fetch("/api/sql", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            campus: selectedCampus.codeSite.toString(),
+            group: state.group,
+            periodeEvaluationCode: state.semester,
+            periodeEvaluation: selectedPeriod.NOM_PERIODE_EVALUATION,
+            semester: state.semester,
+            periodeEvaluationDates: {
+              DATE_DEB: selectedPeriod.DATE_DEB,
+              DATE_FIN: selectedPeriod.DATE_FIN,
+              CODE_PERIODE_EVALUATION: selectedPeriod.CODE_PERIODE_EVALUATION,
+              NOM_PERIODE_EVALUATION: selectedPeriod.NOM_PERIODE_EVALUATION,
+            },
+          }),
+        });
+      } finally {
+        clearTimeout(timeout);
+        cancelAnim();
+      }
+
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
+
+      dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 100 });
       retrievedDataRef.current = data.data;
       dispatch({ type: "SQL_SUCCESS", data: data.data, groupName: selectedGroup.label });
     } catch (error: any) {
-      dispatch({ type: "SHOW_ERROR", message: error.message || "Erreur lors de la récupération des données." });
+      const msg = error.name === "AbortError"
+        ? "La requête a pris trop de temps (>45s). Veuillez réessayer."
+        : error.message || "Erreur lors de la récupération des données.";
+      dispatch({ type: "SHOW_ERROR", message: msg });
     } finally {
       dispatch({ type: "SET_SUBMITTING", value: false });
+      dispatch({ type: "SET_OVERLAY_STEPS", steps: [] });
     }
-  }, [state]);
+  }, [state, animateSteps]);
 
   const handleGeneratePDFs = useCallback(async () => {
     const dataToUse = retrievedDataRef.current || state.retrievedData;
@@ -322,6 +394,10 @@ export default function FormPage() {
     try {
       dispatch({ type: "SET_GENERATING", value: true });
       dispatch({ type: "CLOSE_MODAL" });
+      dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 0 });
+
+      const cancelAnim = animateSteps(PDF_STEPS, [300, 4000, 3000, 1500], dispatch);
+
       const response = await fetch("/api/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -348,13 +424,16 @@ export default function FormPage() {
         }),
       }).catch(() => {}); // silencieux — ne bloque pas le téléchargement
 
+      cancelAnim();
+      dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 100 });
       dispatch({ type: "PDF_SUCCESS", url: data.path, count: data.studentCount });
     } catch (error: any) {
       dispatch({ type: "SHOW_ERROR", message: error.message });
     } finally {
       dispatch({ type: "SET_GENERATING", value: false });
+      dispatch({ type: "SET_OVERLAY_STEPS", steps: [] });
     }
-  }, [state]);
+  }, [state, animateSteps]);
 
   // Loading screen
   if (!state.isLoadingComplete) {
@@ -380,6 +459,53 @@ export default function FormPage() {
 
   return (
     <>
+      {/* ── Overlay plein écran pendant SQL / PDF ── */}
+      {(state.isSubmitting || state.isGeneratingPDF) && state.overlaySteps.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-7">
+            <div className="flex items-center gap-3 mb-5">
+              <Loader2 className="h-5 w-5 animate-spin text-[#156082] shrink-0" />
+              <p className="text-sm font-medium text-gray-900">
+                {state.isSubmitting ? "Récupération des données…" : "Génération des bulletins…"}
+              </p>
+            </div>
+
+            {/* Étapes */}
+            <div className="space-y-3 mb-5">
+              {state.overlaySteps.map((s, i) => (
+                <div key={i} className="flex items-center gap-2.5">
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all ${
+                    s.status === "done"    ? "bg-[#156082] text-white" :
+                    s.status === "current" ? "bg-[#e6f1fb] text-[#156082] ring-2 ring-[#156082]/30" :
+                                            "bg-gray-100 text-gray-300"
+                  }`}>
+                    {s.status === "done" ? "✓" : i + 1}
+                  </div>
+                  <span className={`text-sm transition-colors ${
+                    s.status === "done"    ? "text-gray-400 line-through" :
+                    s.status === "current" ? "text-gray-900 font-medium" :
+                                            "text-gray-300"
+                  }`}>
+                    {s.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Barre de progression */}
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#156082] rounded-full transition-all duration-700"
+                style={{ width: `${state.overlayProgress}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-2 text-center">
+              Cette opération peut prendre jusqu'à 25 secondes
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="min-h-screen flex bg-gray-50">
 
         {/* Sidebar */}
@@ -529,7 +655,7 @@ export default function FormPage() {
                 {state.isGeneratingPDF && (
                   <div className="flex items-center justify-center gap-2 text-xs text-[#156082] py-1">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Génération des bulletins en cours...
+                    Génération en cours…
                   </div>
                 )}
               </div>
