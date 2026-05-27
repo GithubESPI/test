@@ -1,0 +1,29 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 30
+      arrivalRate: 2
+      name: "Démarrage — montée progressive"
+    - duration: 60
+      arrivalRate: 10
+      name: "Charge normale — ~10 users simultanés"
+    - duration: 60
+      arrivalRate: 30
+      name: "Pic réaliste — 30 users simultanés"
+    - duration: 30
+      arrivalRate: 2
+      name: "Redescente"
+
+scenarios:
+  - name: "Génération bulletin"
+    flow:
+      - post:
+          url: "/api/sql"
+          headers:
+            Content-Type: "application/json"
+          json:
+            campus: "319"
+            group: "593"
+            periodeEvaluationCode: "1"
+            periodeEvaluation: "ALT Semestre 1"
+      - think: 3

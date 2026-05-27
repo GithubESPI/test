@@ -1,78 +1,53 @@
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { authOptions } from "@/lib/auth/options";
 import ButtonsProvider from "@/components/ButtonProvider";
-import Image from "next/image";
 import Link from "next/link";
 
-export default function Page() {
+export default async function Page() {
+  const session = await getServerSession(authOptions);
+  if (session) redirect("/home");
+
   return (
-    <main className="relative min-h-screen w-full bg-white">
-      {/* Split background - géré par Tailwind, pas de JS nécessaire */}
-      <div className="absolute inset-0 flex">
-        <div className="w-1/2 bg-white"></div>
-        <div className="hidden md:block w-1/2 relative overflow-hidden">
-          <Image
-            src="/images/background-img.png"
-            alt="background"
-            fill
-            className="object-cover object-[10%_center]"
-          />
-          <div className="absolute inset-0 bg-blue-800/40"></div>
-        </div>
-      </div>
-
-      <div className="flex flex-col md:flex-row h-full min-h-screen relative z-10">
-        {/* Zone du formulaire */}
-        <div className="w-full md:w-1/2 flex items-center justify-center py-8 px-4">
-          <div className="w-full max-w-md">
-            {/* Logo */}
-            <div className="flex justify-center mb-10">
-              <Image
-                src="/images/logo.png"
-                alt="ESPI logo"
-                width={160}
-                height={40}
-                className="h-auto"
-              />
+    <main className="min-h-screen grid">
+      {/* Gauche — formulaire */}
+      <div className="flex flex-col items-center justify-center px-8 py-12 bg-white">
+        <div className="w-full max-w-sm flex flex-col items-center gap-8">
+          {/* Logo */}
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#156082] to-[#003349] flex items-center justify-center">
+              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+              </svg>
             </div>
+            <div className="text-center">
+              <h1 className="text-xl font-semibold text-gray-900">Bulletins scolaires</h1>
+              <p className="text-sm text-gray-500 mt-1">Connectez-vous avec votre compte ESPI</p>
+            </div>
+          </div>
 
-            {/* Titre */}
-            <h1 className="text-2xl font-medium text-center mb-8">
-              Connectez-vous à l&apos;application des bulletins
-            </h1>
-
-            {/* Bouton Authentification */}
+          {/* Bouton connexion */}
+          <div className="w-full">
             <ButtonsProvider />
           </div>
 
           {/* Footer */}
-          <div className="absolute bottom-4 w-full flex justify-center px-4 z-10">
-            <p className="text-xs text-gray-500 max-w-md">
-              En continuant, vous acceptez notre{" "}
-              <Link
-                href="https://groupe-espi.fr/politique-de-confidentialite/"
-                target="_blank"
-                className="text-gray-700 hover:underline"
-              >
-                Politique de confidentialité
-              </Link>
-              .
-            </p>
-          </div>
-        </div>
-
-        {/* Zone d'illustration (desktop uniquement) */}
-        <div className="hidden md:flex w-1/2 relative">
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
-            <Image
-              src="/images/background-img.png"
-              alt="background"
-              fill
-              className="object-cover object-[10%_center]"
-              priority
-              quality={100}
-            />
-          </div>
+          <p className="text-xs text-gray-400 text-center">
+            En continuant, vous acceptez notre{" "}
+            <Link
+              href="https://groupe-espi.fr/politique-de-confidentialite/"
+              target="_blank"
+              className="text-gray-500 hover:underline"
+            >
+              Politique de confidentialité
+            </Link>
+          </p>
         </div>
       </div>
+
+      {/* Droite — illustration */}
     </main>
   );
 }

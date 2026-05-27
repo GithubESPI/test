@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Etat, getEtatUE, getUeAverage, normalizeEtat, parseUeAverage } from "@/lib/bulletin/ue";
-import { fileStorage } from "@/lib/fileStorage";
+import { fileStorage } from "@/lib/storage/fileStorage";
+
 import fontkit from "@pdf-lib/fontkit";
 import fs from "fs";
 import JSZip from "jszip";
@@ -1188,9 +1189,9 @@ export async function POST(req: NextRequest) {
     const sanitizedPeriod = periodNameForFilename.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
     const zipId = `bulletins_${sanitizedGroupName}_${sanitizedPeriod}.zip`;
 
-    fileStorage.storeFile(zipId, zipBuffer, "application/zip");
+    await fileStorage.storeFile(zipId, zipBuffer, "application/zip");
 
-    if (!fileStorage.hasFile(zipId)) {
+    if (!await fileStorage.hasFile(zipId)) {
       return NextResponse.json({ success: false, error: "Erreur lors du stockage du fichier ZIP" }, { status: 500 });
     }
 

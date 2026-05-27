@@ -1,16 +1,18 @@
-import Providers from "@/components/Providers";
-import SessionWrapper from "@/lib/SessionWrapper";
+
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
+import SessionWrapper from "@/lib/SessionWrapper";
+import Providers from "@/components/Providers";
 
 const poppins = Poppins({
   subsets: ["latin"],
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap", // affiche le texte immédiatement avec la font système, puis swap
 });
 
 export const metadata: Metadata = {
-  title: "UploadsBulletins",
+  title: "Bulletins",
   description:
     "Convertir des tableaux excels en bulletins de notes. Charger vos fichiers excels contenant les données scolaires et génèrer automatiquement vos bulletins semestriels et annuels au format Word.",
 };

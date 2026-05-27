@@ -1,30 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
-
+  output: "standalone",
+  compress: true, // gzip activé
   eslint: {
     ignoreDuringBuilds: true,
   },
-
-  images: {
-    unoptimized: true,
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "assets.dewatermark.ai",
-      },
-    ],
-  },
-
-  // ✅ Timeout global pour toutes les API routes (en secondes)
-  serverExternalPackages: ['@prisma/client'],
-
+  serverExternalPackages: ["@pdf-lib/fontkit", "pdf-lib"],
   experimental: {
-    // Coupe les requêtes API qui traînent trop longtemps
     serverActions: {
-      bodySizeLimit: '2mb',
+      bodySizeLimit: "50mb",
     },
+  },
+  // Optimisation des images (si tu en utilises un jour)
+  images: {
+    formats: ["image/avif", "image/webp"],
   },
 };
 

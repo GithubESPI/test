@@ -1,4 +1,5 @@
-import { fileStorage } from "@/lib/fileStorage";
+
+import { fileStorage } from "@/lib/storage/fileStorage";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -10,14 +11,14 @@ export async function GET(request: NextRequest) {
       return new NextResponse("Paramètre 'id' manquant", { status: 400 });
     }
 
-    if (!fileStorage.hasFile(fileId)) {
+    if (!await fileStorage.hasFile(fileId)) {
       return NextResponse.json(
-        { success: false, error: "Fichier introuvable" },
+        { success: false, error: "Fichier introuvable ou déjà supprimé" },
         { status: 404 }
       );
     }
 
-    const fileInfo = fileStorage.getFile(fileId);
+    const fileInfo = await fileStorage.getFile(fileId);
     if (!fileInfo) {
       return NextResponse.json(
         { success: false, error: "Erreur lors de la récupération du fichier" },
@@ -25,8 +26,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ✅ Suppression du fichier après récupération — avant d'envoyer la réponse
-    fileStorage.deleteFile(fileId);
+    // ✅ Plus de deleteFile() ici — le cleanupOldFiles() de fileStorage.ts
+    // supprime automatiquement les fichiers après 60 min.
+    // L'utilisateur peut réessayer le téléchargement si la connexion coupe.
 
     const response = new NextResponse(new Uint8Array(fileInfo.data));
     response.headers.set("Content-Type", fileInfo.contentType);

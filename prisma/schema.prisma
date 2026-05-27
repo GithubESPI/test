@@ -8,16 +8,28 @@ datasource db {
 }
 
 model User {
-  id            String          @id @default(cuid())
+  id            String       @id @default(cuid())
   name          String?
-  email         String          @unique
+  email         String       @unique
   emailVerified DateTime?
   image         String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  hasSeenGuide  Boolean      @default(false)  // ✅ modal premier login
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   accounts      Account[]
-  Authenticator Authenticator[]
   sessions      Session[]
+  generations   Generation[] // ✅ historique des générations
+}
+
+model Generation {
+  id          String   @id @default(cuid())
+  userId      String
+  campus      String
+  groupe      String
+  periode     String
+  nbBulletins Int
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Account {
@@ -54,18 +66,4 @@ model VerificationToken {
   expires    DateTime
 
   @@id([identifier, token])
-}
-
-model Authenticator {
-  credentialID         String  @unique
-  userId               String
-  providerAccountId    String
-  credentialPublicKey  String
-  counter              Int
-  credentialDeviceType String
-  credentialBackedUp   Boolean
-  transports           String?
-  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([userId, credentialID])
 }

@@ -5,7 +5,7 @@ export async function fetchWithRetry(url: string, options: RequestInit, maxRetri
     try {
       const controller = new AbortController();
       // ✅ 8s max par tentative, pas 60s
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const response = await fetch(url, {
         ...options,

@@ -2,7 +2,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -12,37 +11,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { CheckCircle2, FileDown, FileText, Loader2, School, XCircle } from "lucide-react";
+import { CheckCircle2, FileDown, FileText, Loader2, XCircle, ChevronLeft } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { useEffect, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
-import * as z from "zod";
+import { useCallback, useEffect, useReducer, useRef } from "react";
+import Link from "next/link";
 
-const formSchema = z.object({
-  name: z.string().optional(),
-  campus: z.string().min(1, "Veuillez sélectionner un campus"),
-  group: z.string().min(1, "Veuillez sélectionner un groupe"),
-  semester: z.string().min(1, "Veuillez sélectionner une période"),
-  periodeEvaluationCode: z.string().optional(),
-  periodeEvaluation: z.string().optional(),
-});
-
-type FormValues = z.infer<typeof formSchema>;
+// ============================================================
+// TYPES
+// ============================================================
 
 interface PeriodeEvaluation {
   CODE_PERIODE_EVALUATION: string;
@@ -57,8 +39,6 @@ interface YpareoGroup {
   codeSite: number;
 }
 
-// ✅ SUPPRIMÉ : interface YpareoStudent — plus utilisée
-
 interface Campus {
   id: string;
   codeSite: number;
@@ -70,211 +50,251 @@ interface Group {
   label: string;
 }
 
-export default function Home() {
-  const { data: session } = useSession();
-  const [campuses, setCampuses] = useState<Campus[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [periods, setPeriods] = useState<PeriodeEvaluation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-  const [allGroups, setAllGroups] = useState<YpareoGroup[]>([]);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [showErrorModal, setShowErrorModal] = useState(false);
-  const [showPdfSuccessModal, setShowPdfSuccessModal] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [retrievedData, setRetrievedData] = useState<any>(null);
-  const [pdfDownloadUrl, setPdfDownloadUrl] = useState<string>("");
-  const [pdfStudentCount, setPdfStudentCount] = useState<number>(0);
-  const [selectedGroupName, setSelectedGroupName] = useState<string>("");
-  const [progress, setProgress] = useState(0);
-  const [isLoadingComplete, setIsLoadingComplete] = useState(false);
+type Modal = "none" | "success" | "error" | "pdfSuccess";
 
-  const responseDataRef = useRef<any>(null);
+// ============================================================
+// REDUCER
+// ============================================================
+
+interface State {
+  campuses: Campus[];
+  allGroups: YpareoGroup[];
+  groups: Group[];
+  periods: PeriodeEvaluation[];
+  campus: string;
+  group: string;
+  semester: string;
+  isLoading: boolean;
+  isSubmitting: boolean;
+  isGeneratingPDF: boolean;
+  progress: number;
+  isLoadingComplete: boolean;
+  modal: Modal;
+  errorMessage: string;
+  retrievedData: any;
+  pdfDownloadUrl: string;
+  pdfStudentCount: number;
+  selectedGroupName: string;
+}
+
+const initialState: State = {
+  campuses: [], allGroups: [], groups: [], periods: [],
+  campus: "", group: "", semester: "",
+  isLoading: true, isSubmitting: false, isGeneratingPDF: false,
+  progress: 0, isLoadingComplete: false,
+  modal: "none", errorMessage: "",
+  retrievedData: null, pdfDownloadUrl: "", pdfStudentCount: 0, selectedGroupName: "",
+};
+
+type Action =
+  | { type: "INIT_DATA"; campuses: Campus[]; groups: YpareoGroup[]; periods: PeriodeEvaluation[] }
+  | { type: "SET_CAMPUS"; campus: string; groups: Group[] }
+  | { type: "SET_GROUP"; group: string }
+  | { type: "SET_SEMESTER"; semester: string }
+  | { type: "SET_LOADING_DONE" }
+  | { type: "SET_PROGRESS"; progress: number }
+  | { type: "SET_SUBMITTING"; value: boolean }
+  | { type: "SET_GENERATING"; value: boolean }
+  | { type: "SQL_SUCCESS"; data: any; groupName: string }
+  | { type: "PDF_SUCCESS"; url: string; count: number }
+  | { type: "SHOW_ERROR"; message: string }
+  | { type: "CLOSE_MODAL" };
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case "INIT_DATA": return { ...state, campuses: action.campuses, allGroups: action.groups, periods: action.periods, isLoading: false };
+    case "SET_CAMPUS": return { ...state, campus: action.campus, groups: action.groups, group: "", semester: "" };
+    case "SET_GROUP": return { ...state, group: action.group };
+    case "SET_SEMESTER": return { ...state, semester: action.semester };
+    case "SET_LOADING_DONE": return { ...state, isLoadingComplete: true };
+    case "SET_PROGRESS": return { ...state, progress: action.progress };
+    case "SET_SUBMITTING": return { ...state, isSubmitting: action.value };
+    case "SET_GENERATING": return { ...state, isGeneratingPDF: action.value };
+    case "SQL_SUCCESS": return { ...state, retrievedData: action.data, selectedGroupName: action.groupName, modal: "success" };
+    case "PDF_SUCCESS": return { ...state, pdfDownloadUrl: action.url, pdfStudentCount: action.count, modal: "pdfSuccess" };
+    case "SHOW_ERROR": return { ...state, errorMessage: action.message, modal: "error" };
+    case "CLOSE_MODAL": return { ...state, modal: "none" };
+    default: return state;
+  }
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+const EXCLUDED_PREFIXES = ["P-BTS1","P-BTS2","M-BTS1","M-BTS2","N-BTS1","N-BTS2","L-BTS1","LI-BTS1","LI-BTS2","B-BTS1","MP-BTS1","MP-BTS2","B-BTS2"];
+const EXCLUDED_TERMS = ["Césure", "RP", "DDS"];
+
+function filterGroups(groups: Group[]): Group[] {
+  return groups.filter((g) => {
+    const startsExcluded = EXCLUDED_PREFIXES.some((p) => g.label.startsWith(p));
+    const containsExcluded = EXCLUDED_TERMS.some((t) => g.label.includes(t));
+    return !startsExcluded && !containsExcluded;
+  });
+}
+
+function checkCoherence(groupName: string, periodName: string): string | null {
+  const g = groupName.toUpperCase();
+  const p = periodName.toUpperCase();
+  if (g.includes("ALT") && p.includes("TP")) return "Incohérence : Groupe Alternance avec période Temps Plein.";
+  if (g.includes("TP") && p.includes("ALT")) return "Incohérence : Groupe Temps Plein avec période Alternance.";
+  return null;
+}
+
+async function downloadZip(url: string, filename: string) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Erreur téléchargement");
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+// ============================================================
+// STEP INDICATOR
+// ============================================================
+
+function StepIndicator({ step, label, status }: { step: number; label: string; status: "done" | "current" | "todo" }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium shrink-0 mt-0.5 ${
+        status === "done" ? "bg-[#156082] text-white" :
+        status === "current" ? "bg-white text-[#003349] font-semibold" :
+        "bg-white/10 text-white/40"
+      }`}>
+        {status === "done" ? "✓" : step}
+      </div>
+      <span className={`text-sm leading-relaxed ${
+        status === "current" ? "text-white font-medium" :
+        status === "done" ? "text-white/60" :
+        "text-white/40"
+      }`}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
+
+export default function FormPage() {
+  const { data: session } = useSession();
+  const [state, dispatch] = useReducer(reducer, initialState);
+  const retrievedDataRef = useRef<any>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const completeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      name: "",
-      campus: "",
-      group: "",
-      semester: "",
-      periodeEvaluationCode: "",
-      periodeEvaluation: "",
-    },
-  });
+  // Détermination de l'étape courante
+  const currentStep = !state.campus ? 1 : !state.group ? 2 : !state.semester ? 3 : 4;
 
-  useEffect(() => {
-    if (!session?.user?.email) return;
-    fetch(`/api/user?email=${encodeURIComponent(session.user.email)}`)
-      .then((r) => r.json())
-      .then((data) => { if (data?.name) form.setValue("name", data.name); })
-      .catch(console.error);
-  }, [session?.user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  // Chargement initial
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setIsLoading(true);
-
-        // ✅ CORRECTION : /api/students supprimé — c'était lui les 36 Mo
-        // On charge uniquement périodes + groupes (2 appels au lieu de 3)
-        // Les campus sont extraits depuis groupsData qui contient déjà codeSite,
-        // enrichi avec nomSite via /api/students qui appelle désormais le requêteur SQL
-        const [periodsResponse, groupsResponse] = await Promise.all([
+        const [periodsRes, groupsRes] = await Promise.all([
           fetch("/api/periods"),
           fetch("/api/groups"),
         ]);
-
-        if (!periodsResponse.ok) throw new Error("Erreur périodes");
-        if (!groupsResponse.ok) throw new Error("Erreur groupes");
+        if (!periodsRes.ok || !groupsRes.ok) throw new Error("Erreur chargement données");
 
         const [periodsData, groupsData] = await Promise.all([
-          periodsResponse.json(),
-          groupsResponse.json(),
+          periodsRes.json(),
+          groupsRes.json(),
         ]);
 
-        // Périodes — inchangé
-        if (periodsData.success && Array.isArray(periodsData.data)) {
-          const startDate = new Date("2025-08-25 00:00:00");
-          const endDate = new Date("2026-08-23 00:00:00");
-          const filteredPeriods = periodsData.data.filter((period: PeriodeEvaluation) => {
-            const periodStartDate = new Date(period.DATE_DEB);
-            const periodEndDate = new Date(period.DATE_FIN);
-            return (
-              (periodStartDate.getTime() === startDate.getTime() &&
-                periodEndDate.getTime() === endDate.getTime()) ||
-              (periodStartDate >= startDate && periodEndDate <= endDate)
-            );
-          });
-          setPeriods(filteredPeriods);
-        }
-
-        // Groupes — inchangé
-        const groupsArray = groupsData
-          ? (Object.values(groupsData) as YpareoGroup[])
+        const startDate = new Date("2025-08-25");
+        const endDate = new Date("2026-08-23");
+        // ✅ Filtre assoupli — garde toutes les périodes qui chevauchent l'année scolaire
+        const filteredPeriods: PeriodeEvaluation[] = periodsData.success
+          ? periodsData.data.filter((p: PeriodeEvaluation) => {
+              const s = new Date(p.DATE_DEB);
+              const e = new Date(p.DATE_FIN);
+              return s <= endDate && e >= startDate;
+            })
           : [];
-        setAllGroups(groupsArray);
 
-        // ✅ Campus extraits depuis les groupes (codeSite déjà présent)
-        // + nomSite récupéré via /api/students (requêteur SQL léger)
-        // On dédoublonne par codeSite, puis on appelle /api/students
-        // uniquement pour enrichir avec le nom — ~2 Ko au lieu de 36 Mo
+        const groupsArray: YpareoGroup[] = groupsData ? Object.values(groupsData) : [];
+
+        const sitesRes = await fetch("/api/students");
+        const sitesRaw = sitesRes.ok ? await sitesRes.json() : [];
+        const sitesArray: { CODE_SITE: number; NOM_SITE: string }[] = Array.isArray(sitesRaw) ? sitesRaw : Object.values(sitesRaw);
+        const siteNameMap = new Map<number, string>(sitesArray.map((s) => [Number(s.CODE_SITE), s.NOM_SITE]));
+
         const uniqueCodeSites = [...new Set(groupsArray.map((g) => g.codeSite).filter(Boolean))];
-
-        // Récupération des noms de campus via le requêteur SQL
-        const sitesResponse = await fetch("/api/students");
-        const sitesData = sitesResponse.ok ? await sitesResponse.json() : [];
-        const sitesArray: { CODE_SITE: number; NOM_SITE: string }[] = Array.isArray(sitesData)
-          ? sitesData
-          : Object.values(sitesData);
-
-        // Map codeSite → nomSite
-        const siteNameMap = new Map<number, string>();
-        sitesArray.forEach((site) => {
-          siteNameMap.set(Number(site.CODE_SITE), site.NOM_SITE);
-        });
-
-        // Construction de la liste des campus
-        const uniqueCampuses: Campus[] = uniqueCodeSites
-          .map((codeSite, index) => ({
-            id: `campus-${codeSite}-${index}`,
-            codeSite: codeSite,
-            label: siteNameMap.get(codeSite) ?? `Campus ${codeSite}`,
-          }))
+        const campuses: Campus[] = uniqueCodeSites
+          .map((codeSite, i) => ({ id: `campus-${codeSite}-${i}`, codeSite, label: siteNameMap.get(codeSite) ?? `Campus ${codeSite}` }))
           .filter((c) => c.label !== "GROUPE ESPI");
 
-        setCampuses(uniqueCampuses);
-
-      } catch (error) {
-        console.error(error);
-        setErrorMessage("Erreur lors du chargement des données");
-        setShowErrorModal(true);
-      } finally {
-        setIsLoading(false);
+        dispatch({ type: "INIT_DATA", campuses, groups: groupsArray, periods: filteredPeriods });
+      } catch (error: any) {
+        dispatch({ type: "SHOW_ERROR", message: error.message || "Erreur chargement" });
+        dispatch({ type: "INIT_DATA", campuses: [], groups: [], periods: [] });
       }
     };
     fetchData();
   }, []);
 
-  // Progress bar — inchangé
+  // Progress bar
   useEffect(() => {
-    if (isLoading) {
-      setIsLoadingComplete(false);
-      setProgress(0);
+    if (state.isLoading) {
       loadingIntervalRef.current = setInterval(() => {
-        setProgress((prev) => (prev >= 90 ? 90 : prev + 2));
+        dispatch({ type: "SET_PROGRESS", progress: Math.min(state.progress + 2, 90) });
       }, 100);
-      return () => {
-        if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
-      };
+      return () => { if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current); };
     } else {
       if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
       completeIntervalRef.current = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 100) {
-            if (completeIntervalRef.current) clearInterval(completeIntervalRef.current);
-            setTimeout(() => setIsLoadingComplete(true), 300);
-            return 100;
-          }
-          return prev + 1;
-        });
+        if (state.progress >= 100) {
+          clearInterval(completeIntervalRef.current!);
+          setTimeout(() => dispatch({ type: "SET_LOADING_DONE" }), 300);
+        } else {
+          dispatch({ type: "SET_PROGRESS", progress: state.progress + 1 });
+        }
       }, 20);
-      return () => {
-        if (completeIntervalRef.current) clearInterval(completeIntervalRef.current);
-      };
+      return () => { if (completeIntervalRef.current) clearInterval(completeIntervalRef.current); };
     }
-  }, [isLoading]);
+  }, [state.isLoading, state.progress]);
 
-  const updateGroups = (campusId: string) => {
-    const selectedCampus = campuses.find((campus) => campus.id === campusId);
-    if (!selectedCampus) {
-      setGroups([]);
-      return;
+  const handleCampusChange = useCallback((campusId: string) => {
+    const selectedCampus = state.campuses.find((c) => c.id === campusId);
+    if (!selectedCampus) return dispatch({ type: "SET_CAMPUS", campus: campusId, groups: [] });
+    const filtered = filterGroups(
+      state.allGroups
+        .filter((g) => g.codeSite === selectedCampus.codeSite)
+        .map((g) => ({ id: g.codeGroupe, label: g.nomGroupe }))
+        .sort((a, b) => a.label.localeCompare(b.label))
+    );
+    dispatch({ type: "SET_CAMPUS", campus: campusId, groups: filtered });
+  }, [state.campuses, state.allGroups]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!state.campus || !state.group || !state.semester) {
+      return dispatch({ type: "SHOW_ERROR", message: "Veuillez remplir tous les champs." });
     }
-    const filteredGroups = allGroups
-      .filter((group) => group.codeSite === selectedCampus.codeSite)
-      .map((group) => ({ id: group.codeGroupe, label: group.nomGroupe }));
-    setGroups(filteredGroups);
-    form.setValue("group", "");
-  };
+    const selectedCampus = state.campuses.find((c) => c.id === state.campus);
+    const selectedPeriod = state.periods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester);
+    const selectedGroup = state.groups.find((g) => g.id.toString() === state.group);
+    if (!selectedCampus || !selectedPeriod || !selectedGroup) return dispatch({ type: "SHOW_ERROR", message: "Sélection invalide." });
 
-  const onSubmit = async (values: FormValues) => {
+    const coherenceError = checkCoherence(selectedGroup.label, selectedPeriod.NOM_PERIODE_EVALUATION);
+    if (coherenceError) return dispatch({ type: "SHOW_ERROR", message: coherenceError });
+
     try {
-      setIsSubmitting(true);
-      const selectedCampus = campuses.find((campus) => campus.id === values.campus);
-      if (!selectedCampus) throw new Error("Campus non trouvé");
-
-      const selectedPeriod = periods.find((p) => p.CODE_PERIODE_EVALUATION === values.semester);
-      if (!selectedPeriod) throw new Error("Période non trouvée");
-
-      values.periodeEvaluationCode = values.semester;
-      values.periodeEvaluation = selectedPeriod.NOM_PERIODE_EVALUATION;
-
-      const selectedGroup = groups.find((group) => group.id.toString() === values.group);
-      if (selectedGroup) setSelectedGroupName(selectedGroup.label);
-
-      const groupName = selectedGroup?.label.toUpperCase() || "";
-      const periodName = selectedPeriod.NOM_PERIODE_EVALUATION.toUpperCase();
-      if (groupName.includes("ALT") && periodName.includes("TP")) {
-        throw new Error(`Incohérence : Groupe Alternance avec période Temps Plein.`);
-      }
-      if (groupName.includes("TP") && periodName.includes("ALT")) {
-        throw new Error(`Incohérence : Groupe Temps Plein avec période Alternance.`);
-      }
-
-      // /api/sql — appelé UNIQUEMENT après confirmation, inchangé
+      dispatch({ type: "SET_SUBMITTING", value: true });
       const response = await fetch("/api/sql", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           campus: selectedCampus.codeSite.toString(),
-          group: values.group,
-          periodeEvaluationCode: values.periodeEvaluationCode,
-          periodeEvaluation: values.periodeEvaluation,
-          semester: values.semester,
+          group: state.group,
+          periodeEvaluationCode: state.semester,
+          periodeEvaluation: selectedPeriod.NOM_PERIODE_EVALUATION,
+          semester: state.semester,
           periodeEvaluationDates: {
             DATE_DEB: selectedPeriod.DATE_DEB,
             DATE_FIN: selectedPeriod.DATE_FIN,
@@ -283,279 +303,305 @@ export default function Home() {
           },
         }),
       });
-
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-
-      responseDataRef.current = data.data;
-      setRetrievedData(data.data);
-      setShowSuccessModal(true);
+      retrievedDataRef.current = data.data;
+      dispatch({ type: "SQL_SUCCESS", data: data.data, groupName: selectedGroup.label });
     } catch (error: any) {
-      setErrorMessage(error.message || "Une erreur est survenue");
-      setShowErrorModal(true);
+      dispatch({ type: "SHOW_ERROR", message: error.message || "Erreur lors de la récupération des données." });
     } finally {
-      setIsSubmitting(false);
+      dispatch({ type: "SET_SUBMITTING", value: false });
     }
-  };
+  }, [state]);
 
-  const handleGeneratePDFs = async () => {
-    const dataToUse = responseDataRef.current || retrievedData;
-    if (!dataToUse || !dataToUse.APPRENANT?.length) {
-      setErrorMessage("Données insuffisantes pour générer les PDFs.");
-      setShowErrorModal(true);
-      return;
-    }
+  const handleGeneratePDFs = useCallback(async () => {
+    const dataToUse = retrievedDataRef.current || state.retrievedData;
+    if (!dataToUse?.APPRENANT?.length) return dispatch({ type: "SHOW_ERROR", message: "Données insuffisantes." });
+    const selectedPeriod = state.periods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester);
+    const selectedCampus = state.campuses.find((c) => c.id === state.campus);
     try {
-      setIsGeneratingPDF(true);
-      const selectedPeriodCode = form.getValues("semester");
-      const periodWithDates = periods.find((p) => p.CODE_PERIODE_EVALUATION === selectedPeriodCode);
-
+      dispatch({ type: "SET_GENERATING", value: true });
+      dispatch({ type: "CLOSE_MODAL" });
       const response = await fetch("/api/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           data: dataToUse,
-          periodeEvaluation: form.getValues("periodeEvaluation"),
-          groupName: selectedGroupName,
-          periodeEvaluationDates: periodWithDates || null,
+          periodeEvaluation: selectedPeriod?.NOM_PERIODE_EVALUATION,
+          groupName: state.selectedGroupName,
+          periodeEvaluationDates: selectedPeriod || null,
         }),
       });
-
       if (!response.ok) throw new Error("Erreur génération PDF");
       const data = await response.json();
-      setPdfDownloadUrl(data.path);
-      setPdfStudentCount(data.studentCount);
-      setShowPdfSuccessModal(true);
-    } catch (error: any) {
-      setErrorMessage(error.message);
-      setShowErrorModal(true);
-    } finally {
-      setIsGeneratingPDF(false);
-    }
-  };
+      retrievedDataRef.current = null;
 
-  if (!isLoadingComplete) {
+      // ✅ Enregistrement de la génération en BDD
+      await fetch("/api/generations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campus: selectedCampus?.label ?? "",
+          groupe: state.selectedGroupName,
+          periode: selectedPeriod?.NOM_PERIODE_EVALUATION ?? "",
+          nbBulletins: data.studentCount,
+        }),
+      }).catch(() => {}); // silencieux — ne bloque pas le téléchargement
+
+      dispatch({ type: "PDF_SUCCESS", url: data.path, count: data.studentCount });
+    } catch (error: any) {
+      dispatch({ type: "SHOW_ERROR", message: error.message });
+    } finally {
+      dispatch({ type: "SET_GENERATING", value: false });
+    }
+  }, [state]);
+
+  // Loading screen
+  if (!state.isLoadingComplete) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-50 px-4">
-        <div className="w-full max-w-md">
-          <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gray-50 px-4">
+        <div className="w-full max-w-xs space-y-3">
+          <div className="relative w-full h-1 bg-gray-200 rounded-full overflow-hidden">
             <div
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#156082] to-[#003349] transition-all duration-300"
-              style={{ width: `${progress}%` }}
+              className="absolute inset-y-0 left-0 bg-[#156082] transition-all duration-300 rounded-full"
+              style={{ width: `${state.progress}%` }}
             />
           </div>
-          <p className="text-sm text-center text-gray-600 mt-4">Chargement... {progress}%</p>
+          <p className="text-xs text-center text-gray-400">Chargement des données... {state.progress}%</p>
         </div>
       </div>
     );
   }
 
+  const selectedCampusLabel = state.campuses.find((c) => c.id === state.campus)?.label;
+  const selectedGroupLabel = state.groups.find((g) => g.id.toString() === state.group)?.label;
+  const selectedPeriodObj = state.periods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester);
+  const isFormValid = !!state.campus && !!state.group && !!state.semester;
+
   return (
     <>
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-3">
-        <Card className="w-full max-w-lg shadow-none">
-          <CardHeader className="pb-4 px-8 text-center">
-            <div className="flex justify-center mb-2">
-              <div className="bg-gradient-to-r from-[#156082] to-[#003349] rounded-full p-3">
-                <School className="w-6 h-6 text-white" />
+      <div className="min-h-screen flex bg-gray-50">
+
+        {/* Sidebar */}
+        <aside className="w-72 bg-[#003349] flex flex-col py-8 px-5 shrink-0 min-h-screen">
+          {/* Back */}
+          <Link
+            href="/home"
+            className="flex items-center gap-1.5 text-white/40 hover:text-white/70 text-xs mb-8 transition-colors w-fit"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            Tableau de bord
+          </Link>
+
+          <div className="mb-8">
+            <h2 className="text-white font-medium text-base">Génération de bulletins</h2>
+            <p className="text-white/40 text-xs mt-1">Suivez les étapes ci-dessous</p>
+          </div>
+
+          {/* Étapes */}
+          <div className="flex flex-col gap-5">
+            <StepIndicator step={1} label="Sélection du campus" status={currentStep > 1 ? "done" : currentStep === 1 ? "current" : "todo"} />
+            <StepIndicator step={2} label="Sélection du groupe" status={currentStep > 2 ? "done" : currentStep === 2 ? "current" : "todo"} />
+            <StepIndicator step={3} label="Période d'évaluation" status={currentStep > 3 ? "done" : currentStep === 3 ? "current" : "todo"} />
+            <StepIndicator step={4} label="Génération des PDF" status={currentStep === 4 ? "current" : "todo"} />
+          </div>
+
+          {/* Récapitulatif */}
+          {(selectedCampusLabel || selectedGroupLabel) && (
+            <div className="mt-auto bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+              {selectedCampusLabel && (
+                <div>
+                  <div className="text-white/40 text-xs">Campus</div>
+                  <div className="text-white text-sm font-medium mt-0.5">{selectedCampusLabel}</div>
+                </div>
+              )}
+              {selectedGroupLabel && (
+                <div>
+                  <div className="text-white/40 text-xs">Groupe</div>
+                  <div className="text-white text-sm font-medium mt-0.5">{selectedGroupLabel}</div>
+                </div>
+              )}
+              {selectedPeriodObj && (
+                <div>
+                  <div className="text-white/40 text-xs">Période</div>
+                  <div className="text-white text-sm font-medium mt-0.5">{selectedPeriodObj.NOM_PERIODE_EVALUATION}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </aside>
+
+        {/* Contenu principal */}
+        <div className="flex-1 flex items-start justify-center p-8 pt-16">
+          <div className="w-full max-w-md">
+
+            {/* Progress bar */}
+            <div className="w-full h-0.5 bg-gray-200 rounded-full mb-8 overflow-hidden">
+              <div
+                className="h-full bg-[#156082] rounded-full transition-all duration-500"
+                style={{ width: `${Math.round(((currentStep - 1) / 3) * 100)}%` }}
+              />
+            </div>
+
+            <div className="bg-white border border-gray-100 rounded-2xl p-8 shadow-sm">
+              <div className="mb-6">
+                <h1 className="text-lg font-medium text-gray-900">Choisir les bulletins à éditer</h1>
+                <p className="text-sm text-gray-500 mt-1">
+                  {session?.user?.name ? `Bonjour ${session.user.name} —` : ""} Remplissez les champs ci-dessous
+                </p>
+              </div>
+
+              <div className="space-y-5">
+                {/* Campus */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Campus</label>
+                  <Select value={state.campus} onValueChange={handleCampusChange}>
+                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm">
+                      <SelectValue placeholder="Sélectionnez un campus" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[...state.campuses]
+                        .sort((a, b) => a.label.localeCompare(b.label))
+                        .map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Groupe */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Groupe</label>
+                  <Select
+                    value={state.group}
+                    onValueChange={(v) => dispatch({ type: "SET_GROUP", group: v })}
+                    disabled={!state.campus}
+                  >
+                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm disabled:opacity-50">
+                      <SelectValue placeholder={!state.campus ? "Choisissez d'abord un campus" : "Sélectionnez un groupe"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {state.groups.map((g) => (
+                        <SelectItem key={g.id} value={g.id.toString()}>{g.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Période */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Période d'évaluation</label>
+                  <Select
+                    value={state.semester}
+                    onValueChange={(v) => dispatch({ type: "SET_SEMESTER", semester: v })}
+                    disabled={!state.group}
+                  >
+                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm disabled:opacity-50">
+                      <SelectValue placeholder="Sélectionnez une période" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[...state.periods]
+                        .filter((p) => !p.NOM_PERIODE_EVALUATION.startsWith("BTS"))
+                        .sort((a, b) => a.NOM_PERIODE_EVALUATION.localeCompare(b.NOM_PERIODE_EVALUATION))
+                        .map((p) => (
+                          <SelectItem key={p.CODE_PERIODE_EVALUATION} value={p.CODE_PERIODE_EVALUATION}>
+                            {p.NOM_PERIODE_EVALUATION}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Submit */}
+                <Button
+                  onClick={handleSubmit}
+                  disabled={!isFormValid || state.isSubmitting}
+                  className="w-full h-10 bg-[#156082] hover:bg-[#124f6b] text-white font-medium text-sm disabled:opacity-40 transition-all mt-2"
+                >
+                  {state.isSubmitting ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" />Chargement...</>
+                  ) : (
+                    <><FileText className="w-4 h-4 mr-2" />Confirmer mon choix</>
+                  )}
+                </Button>
+
+                {/* Génération en cours */}
+                {state.isGeneratingPDF && (
+                  <div className="flex items-center justify-center gap-2 text-xs text-[#156082] py-1">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Génération des bulletins en cours...
+                  </div>
+                )}
               </div>
             </div>
-            <CardTitle className="text-2xl font-bold bg-gradient-to-r from-[#156082] to-[#003349] bg-clip-text text-transparent">
-              Choisir les bulletins à éditer
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <FormField
-                  control={form.control}
-                  name="campus"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="font-semibold">Campus</FormLabel>
-                      <Select
-                        onValueChange={(value) => {
-                          field.onChange(value);
-                          updateGroups(value);
-                        }}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="h-10 border-2 focus:border-[#156082]">
-                            <SelectValue placeholder="Sélectionnez un campus" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {campuses
-                            .sort((a, b) => a.label.localeCompare(b.label))
-                            .map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.label}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="group"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="font-semibold">Groupe</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value || ""}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="h-10 border-2 focus:border-[#156082]">
-                            <SelectValue placeholder={groups.length === 0 ? "Choisissez d'abord un campus" : "Sélectionnez un groupe"} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {groups.length > 0 ? (
-                            groups
-                              .filter((group) => {
-                                const prefixesToExclude = ["P-BTS1", "P-BTS2", "M-BTS1", "M-BTS2", "N-BTS1", "N-BTS2", "L-BTS1", "LI-BTS1", "LI-BTS2", "B-BTS1", "MP-BTS1", "MP-BTS2", "B-BTS2"];
-                                const startsWithExcludedPrefix = prefixesToExclude.some((prefix) => group.label.startsWith(prefix));
-                                const containsExcludedTerm = group.label.includes("Césure") || group.label.includes("RP") || group.label.includes("DDS");
-                                return !startsWithExcludedPrefix && !containsExcludedTerm;
-                              })
-                              .sort((a, b) => a.label.localeCompare(b.label))
-                              .map((group) => (
-                                <SelectItem key={group.id} value={group.id.toString()}>
-                                  {group.label}
-                                </SelectItem>
-                              ))
-                          ) : (
-                            <div className="p-2 text-sm text-gray-500">Sélectionner d'abord un campus pour choisir un groupe</div>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="semester"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="font-semibold">Période d'évaluation</FormLabel>
-                      <Select
-                        onValueChange={(value) => {
-                          const selected = periods.find((p) => p.CODE_PERIODE_EVALUATION === value);
-                          if (selected) {
-                            form.setValue("periodeEvaluationCode", value);
-                            form.setValue("periodeEvaluation", selected.NOM_PERIODE_EVALUATION);
-                          }
-                          field.onChange(value);
-                        }}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="h-10 border-2 focus:border-[#156082]">
-                            <SelectValue placeholder="Sélectionnez une période" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {periods
-                            .filter((p) => !p.NOM_PERIODE_EVALUATION.startsWith("BTS"))
-                            .sort((a, b) => a.NOM_PERIODE_EVALUATION.localeCompare(b.NOM_PERIODE_EVALUATION))
-                            .map((p) => (
-                              <SelectItem key={p.CODE_PERIODE_EVALUATION} value={p.CODE_PERIODE_EVALUATION}>
-                                {p.NOM_PERIODE_EVALUATION}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <Button
-                  type="submit"
-                  className="w-full h-10 font-bold bg-gradient-to-r from-[#156082] to-[#003349] hover:opacity-90 transition-all"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-                  {isSubmitting ? "Chargement..." : "Confirmer mon choix"}
-                </Button>
-              </form>
-            </Form>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
-      <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
+      {/* Modal — Succès données */}
+      <Dialog open={state.modal === "success"} onOpenChange={() => dispatch({ type: "CLOSE_MODAL" })}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="w-6 h-6" /> Succès
+              <CheckCircle2 className="w-5 h-5" /> Données récupérées
             </DialogTitle>
             <DialogDescription>
-              Données récupérées. Vous pouvez générer les bulletins.
+              Données prêtes pour{" "}
+              <span className="font-medium text-gray-900">{state.selectedGroupName}</span>
+              {selectedPeriodObj && <> — <span className="font-medium text-gray-900">{selectedPeriodObj.NOM_PERIODE_EVALUATION}</span></>}.
+              <br />Vous pouvez générer les bulletins.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex gap-3 pt-4">
-            <Button onClick={() => setShowSuccessModal(false)} variant="outline">Fermer</Button>
-            <Button onClick={handleGeneratePDFs} disabled={isGeneratingPDF} className="bg-gradient-to-r from-[#156082] to-[#003349]">
-              {isGeneratingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-              Générer les PDF
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" onClick={() => dispatch({ type: "CLOSE_MODAL" })}>Fermer</Button>
+            <Button onClick={handleGeneratePDFs} disabled={state.isGeneratingPDF} className="bg-[#156082] hover:bg-[#124f6b]">
+              {state.isGeneratingPDF ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Génération...</> : <><FileText className="w-4 h-4 mr-2" />Générer les PDF</>}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showPdfSuccessModal} onOpenChange={setShowPdfSuccessModal}>
+      {/* Modal — PDF prêt */}
+      <Dialog open={state.modal === "pdfSuccess"} onOpenChange={() => dispatch({ type: "CLOSE_MODAL" })}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-green-600 flex items-center gap-2">
-              <CheckCircle2 /> Terminée
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <CheckCircle2 className="w-5 h-5" /> Bulletins générés
             </DialogTitle>
             <DialogDescription>
-              {pdfStudentCount} bulletins prêts dans l'archive.
+              <span className="font-medium text-gray-900">{state.pdfStudentCount} bulletin{state.pdfStudentCount > 1 ? "s" : ""}</span>{" "}
+              prêt{state.pdfStudentCount > 1 ? "s" : ""} dans l'archive ZIP.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="pt-2">
             <Button
               onClick={async () => {
                 try {
-                  const response = await fetch(pdfDownloadUrl);
-                  if (!response.ok) throw new Error("Erreur téléchargement");
-                  const blob = await response.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `bulletins_${selectedGroupName.replace(/\s+/g, "_")}.zip`;
-                  a.click();
-                  setTimeout(() => URL.revokeObjectURL(url), 1000);
-                } catch (error) {
-                  setErrorMessage("Erreur lors du téléchargement");
-                  setShowErrorModal(true);
+                  await downloadZip(state.pdfDownloadUrl, `bulletins_${state.selectedGroupName.replace(/\s+/g, "_")}.zip`);
+                } catch {
+                  dispatch({ type: "SHOW_ERROR", message: "Erreur lors du téléchargement." });
                 }
               }}
-              className="bg-gradient-to-r from-[#156082] to-[#003349]"
+              className="bg-[#156082] hover:bg-[#124f6b]"
             >
-              <FileDown className="mr-2" /> Télécharger
+              <FileDown className="mr-2 h-4 w-4" /> Télécharger le ZIP
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
-        <DialogContent>
+      {/* Modal — Erreur */}
+      <Dialog open={state.modal === "error"} onOpenChange={() => dispatch({ type: "CLOSE_MODAL" })}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-red-600 flex items-center gap-2">
-              <XCircle /> Erreur
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <XCircle className="w-5 h-5" /> Erreur
             </DialogTitle>
-            <DialogDescription>{errorMessage}</DialogDescription>
+            <DialogDescription>{state.errorMessage}</DialogDescription>
           </DialogHeader>
+          <DialogFooter className="pt-2">
+            <Button variant="outline" onClick={() => dispatch({ type: "CLOSE_MODAL" })}>Fermer</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
