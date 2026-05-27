@@ -13,27 +13,39 @@ export async function GET() {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [bulletinsThisMonth, groupesThisMonth, campusCount, hasSeenGuide] = await Promise.all([
-      // Total bulletins générés ce mois
+    // Récupère l'utilisateur courant d'abord
+    const currentUser = await prisma.user.findUnique({
+      where: { email: session.user.email! },
+      select: { id: true, hasSeenGuide: true },
+    });
+
+    if (!currentUser) {
+      return NextResponse.json({ error: "Utilisateur introuvable" }, { status: 404 });
+    }
+
+    const [bulletinsThisMonth, groupesThisMonth, campusCount] = await Promise.all([
+      // Bulletins générés ce mois par CET utilisateur
       prisma.generation.aggregate({
         _sum: { nbBulletins: true },
-        where: { createdAt: { gte: startOfMonth } },
+        where: {
+          userId: currentUser.id,
+          createdAt: { gte: startOfMonth },
+        },
       }),
-      // Groupes uniques traités ce mois
+      // Groupes uniques traités ce mois par CET utilisateur
       prisma.generation.findMany({
-        where: { createdAt: { gte: startOfMonth } },
+        where: {
+          userId: currentUser.id,
+          createdAt: { gte: startOfMonth },
+        },
         select: { groupe: true },
         distinct: ["groupe"],
       }),
-      // Campus uniques au total
+      // Campus uniques de CET utilisateur
       prisma.generation.findMany({
+        where: { userId: currentUser.id },
         select: { campus: true },
         distinct: ["campus"],
-      }),
-      // hasSeenGuide pour l'utilisateur courant
-      prisma.user.findUnique({
-        where: { email: session.user.email! },
-        select: { hasSeenGuide: true },
       }),
     ]);
 
@@ -43,7 +55,7 @@ export async function GET() {
         bulletinsThisMonth: bulletinsThisMonth._sum.nbBulletins ?? 0,
         groupesThisMonth: groupesThisMonth.length,
         campusActifs: campusCount.length,
-        hasSeenGuide: hasSeenGuide?.hasSeenGuide ?? false,
+        hasSeenGuide: currentUser.hasSeenGuide ?? false,
       },
     });
   } catch (error) {
