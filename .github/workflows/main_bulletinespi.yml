@@ -106,7 +106,6 @@ jobs:
         run: |
           npm ci
           npx prisma generate
-          npx prisma db push   # ✅ Crée/met à jour les tables (YmageCache inclus)
           npm run build
           # Montage du dossier standalone conforme aux besoins d'Azure
           cp -r public .next/standalone/public
