@@ -130,30 +130,43 @@ const SIGNATURE_MAP: Record<string, string> = {
 };
 
 function preloadAssets(): PreloadedAssets {
-  // Logo
-  const logoPath = path.join(process.cwd(), "public", "logo", "espi.jpg");
-  const logoBytes = fs.readFileSync(logoPath);
+  const publicDir = path.join(process.cwd(), "public");
 
-  // Fonts
+  // Logo — fallback vers un buffer vide si le fichier est absent en production
+  let logoBytes: Buffer;
+  try {
+    logoBytes = fs.readFileSync(path.join(publicDir, "logo", "espi.jpg"));
+  } catch (err) {
+    console.error("⚠️ Logo ESPI introuvable :", path.join(publicDir, "logo", "espi.jpg"), err);
+    logoBytes = Buffer.alloc(0); // buffer vide → le PDF sera généré sans logo
+  }
+
+  // Fonts Poppins — optionnelles
   let poppinsRegularBytes: Buffer | null = null;
   let poppinsBoldBytes: Buffer | null = null;
   try {
-    poppinsRegularBytes = fs.readFileSync(path.join(process.cwd(), "public", "fonts", "Poppins-Regular.ttf"));
-    poppinsBoldBytes = fs.readFileSync(path.join(process.cwd(), "public", "fonts", "Poppins-Bold.ttf"));
+    poppinsRegularBytes = fs.readFileSync(path.join(publicDir, "fonts", "Poppins-Regular.ttf"));
+    poppinsBoldBytes = fs.readFileSync(path.join(publicDir, "fonts", "Poppins-Bold.ttf"));
   } catch {
-    console.warn("⚠️ Polices Poppins non trouvées, utilisation des polices standard");
+    console.warn("⚠️ Polices Poppins non trouvées → utilisation des polices standard");
   }
 
-  // Signatures
+  // Signatures — optionnelles, chargées silencieusement
   const signatureCache = new Map<string, Buffer>();
   for (const [code, filename] of Object.entries(SIGNATURE_MAP)) {
-    const sigPath = path.join(process.cwd(), "public", "signatures", filename);
-    if (fs.existsSync(sigPath)) {
-      signatureCache.set(code, fs.readFileSync(sigPath));
-      signatureCache.set(filename, fs.readFileSync(sigPath)); // aussi par nom de fichier
+    const sigPath = path.join(publicDir, "signatures", filename);
+    try {
+      if (fs.existsSync(sigPath)) {
+        const buf = fs.readFileSync(sigPath);
+        signatureCache.set(code, buf);
+        signatureCache.set(filename, buf);
+      }
+    } catch (err) {
+      console.warn(`⚠️ Signature ${filename} introuvable :`, err);
     }
   }
 
+  console.log(`✅ Assets chargés depuis ${publicDir} (logo: ${logoBytes.length}B, fonts: ${poppinsRegularBytes ? "ok" : "absent"}, sigs: ${signatureCache.size / 2})`);
   return { logoBytes, poppinsRegularBytes, poppinsBoldBytes, signatureCache };
 }
 
@@ -601,10 +614,14 @@ async function createStudentPDF(
     const logoOffsetLeft = 20;
     currentY = pageHeight - margin / 2;
     try {
-      const logoImage = await pdfDoc.embedJpg(assets.logoBytes);
-      const logoDims = logoImage.scale(0.25);
-      page.drawImage(logoImage, { x: margin - logoOffsetLeft, y: currentY - logoDims.height, width: logoDims.width, height: logoDims.height });
-      currentY -= logoDims.height;
+      if (assets.logoBytes.length > 0) {
+        const logoImage = await pdfDoc.embedJpg(assets.logoBytes);
+        const logoDims = logoImage.scale(0.25);
+        page.drawImage(logoImage, { x: margin - logoOffsetLeft, y: currentY - logoDims.height, width: logoDims.width, height: logoDims.height });
+        currentY -= logoDims.height;
+      } else {
+        page.drawText("ESPI", { x: margin - logoOffsetLeft, y: currentY, size: 24, font: mainFont, color: rgb(0.2, 0.6, 0.6) });
+      }
     } catch {
       page.drawText("ESPI", { x: margin - logoOffsetLeft, y: currentY, size: 24, font: mainFont, color: rgb(0.2, 0.6, 0.6) });
     }

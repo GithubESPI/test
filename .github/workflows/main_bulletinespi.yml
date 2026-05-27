@@ -4,9 +4,8 @@ on:
     branches:
       - main
   workflow_dispatch:
-  # ✅ Désactivé temporairement pour éviter la boucle de redémarrage infinie
-  # schedule:
-  #   - cron: "*/5 * * * *"
+  schedule:
+    - cron: "*/5 * * * *"  # Vérification toutes les 5 minutes
 jobs:
   # ✅ Job de health check
   healthcheck:
@@ -26,24 +25,69 @@ jobs:
             echo "site_down=false" >> $GITHUB_OUTPUT
           fi
 
-  # ✅ Redémarre Azure si le site est down
+  # ✅ Notif email site KO + redémarrage Azure
   restart:
     runs-on: ubuntu-latest
     needs: healthcheck
     if: needs.healthcheck.outputs.site_down == 'true'
     steps:
+      - name: Envoyer email — Site KO
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          secure: false
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "🔴 [ALERTE] Site Bulletins ESPI est KO"
+          to: a.vespuce@groupe-espi.fr,l.vaughn@groupe-espi.fr
+          from: ${{ secrets.SMTP_USERNAME }}
+          body: |
+            ⚠️ Le site https://bulletin.groupe-espi.fr est inaccessible.
+
+            Heure de détection : ${{ github.event.repository.updated_at }}
+            URL vérifiée : https://bulletin.groupe-espi.fr/api/health
+
+            Une tentative de redémarrage automatique est en cours sur Azure.
+            Vous recevrez un second email dès que le site sera de nouveau en ligne.
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_8DCFBB797F5C46F2BD03DBD4EC13F578 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_0EAD5EB0E7124FFA80CCC2F5776E4166 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_A8DB54A0ACBE45F0AC7047A1A989606D }}
+
       - name: Restart Azure App Service
         uses: azure/cli@v2
         with:
           azcliversion: latest
           inlineScript: |
             az webapp restart --name bulletinespi --resource-group backbulletin_group
+
+      - name: Attendre 30s puis vérifier si le site est remonté
+        run: |
+          sleep 30
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://bulletin.groupe-espi.fr/api/health)
+          echo "STATUS_AFTER=$STATUS" >> $GITHUB_ENV
+
+      - name: Envoyer email — Site de nouveau en ligne
+        if: env.STATUS_AFTER == '200'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          secure: false
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "✅ [RÉSOLU] Site Bulletins ESPI est de nouveau en ligne"
+          to: a.vespuce@groupe-espi.fr,l.vaughn@groupe-espi.fr
+          from: ${{ secrets.SMTP_USERNAME }}
+          body: |
+            ✅ Le site https://bulletin.groupe-espi.fr est de nouveau accessible.
+
+            Le redémarrage automatique Azure a fonctionné.
+            Tous les utilisateurs peuvent se reconnecter normalement.
 
   build:
     runs-on: ubuntu-latest
@@ -62,6 +106,7 @@ jobs:
         run: |
           npm ci
           npx prisma generate
+          npx prisma db push   # ✅ Crée/met à jour les tables (YmageCache inclus)
           npm run build
           # Montage du dossier standalone conforme aux besoins d'Azure
           cp -r public .next/standalone/public

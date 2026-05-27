@@ -6,7 +6,14 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  serverExternalPackages: ["@pdf-lib/fontkit", "pdf-lib"],
+  // Ces packages doivent rester externes (non-bundlés par webpack) pour éviter
+  // les erreurs de chunk-splitting en production (returnNaN, TypeError undefined.aa)
+  serverExternalPackages: [
+    "@pdf-lib/fontkit",
+    "pdf-lib",
+    "framer-motion",
+    "motion",
+  ],
   experimental: {
     serverActions: {
       bodySizeLimit: "50mb",

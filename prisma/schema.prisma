@@ -67,3 +67,11 @@ model VerificationToken {
 
   @@id([identifier, token])
 }
+
+// Cache des données Ymag — sert de fallback si l'API est KO
+model YmageCache {
+  key       String   @id       // ex: "periods", "groups", "sites", "sql_42_S1"
+  data      Json               // données JSON de la dernière réponse réussie
+  updatedAt DateTime @updatedAt
+  expiresAt DateTime           // date limite de fraîcheur
+}
