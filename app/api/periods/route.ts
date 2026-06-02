@@ -1,9 +1,9 @@
-
 import { fetchWithRetry } from "@/lib/fetchWithRetry";
 import { NextResponse } from "next/server";
+import { withYmageCache } from "@/lib/ymag/cache";
 
-// ✅ Cache 10 minutes — les périodes changent très rarement
-export const revalidate = 600;
+// On gère le cache nous-mêmes (YmageCache) → cache route Next désactivé
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -14,27 +14,43 @@ export async function GET() {
       throw new Error("Variables d'environnement TOKEN_REQUETEUR ou URL_REQUETEUR manquantes");
     }
 
-    const responseData = await fetchWithRetry(url, {
-      method: "POST",
-      headers: {
-        "X-Auth-Token": token,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-      body: JSON.stringify({
-        sql: "SELECT * FROM PERIODE_EVALUATION ORDER BY NOM_PERIODE_EVALUATION",
-      }),
-    });
-
-    const periodsArray = Array.isArray(responseData) ? responseData : Object.values(responseData);
+    const { data: periodsArray, fromCache } = await withYmageCache(
+      "periods",
+      30 * 24 * 3600, // 30 jours — les périodes changent au maximum une fois par semestre
+      async () => {
+        const responseData = await fetchWithRetry(url, {
+          method: "POST",
+          headers: {
+            "X-Auth-Token": token,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+          body: JSON.stringify({
+            sql: "SELECT * FROM PERIODE_EVALUATION ORDER BY NOM_PERIODE_EVALUATION",
+          }),
+        });
+        return Array.isArray(responseData)
+          ? responseData
+          : Object.values(responseData as object);
+      }
+    );
 
     return NextResponse.json(
-      { success: true, data: periodsArray },
+      {
+        success: true,
+        data: periodsArray,
+        ...(fromCache && {
+          fromCache: true,
+          warning: "Ymag temporairement inaccessible — données depuis le cache",
+        }),
+      },
       {
         headers: {
-          // ✅ Cache 10 minutes côté Azure/CDN
-          "Cache-Control": "public, s-maxage=600, stale-while-revalidate=60",
+          "Cache-Control": fromCache
+            ? "no-store"
+            : "public, s-maxage=600, stale-while-revalidate=60",
         },
       }
     );

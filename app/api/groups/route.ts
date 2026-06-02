@@ -1,9 +1,8 @@
-
 import { fetchWithRetry } from "@/lib/fetchWithRetry";
 import { NextResponse } from "next/server";
+import { withYmageCache } from "@/lib/ymag/cache";
 
-// ✅ Cache 5 minutes — les groupes changent rarement
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -14,22 +13,29 @@ export async function GET() {
       throw new Error("Variables d'environnement YPAERO_BASE_URL ou YPAERO_API_TOKEN manquantes");
     }
 
-    const url = `${baseUrl}/r/v1/formation-longue/groupes?codesPeriode=5`;
+    const { data, fromCache } = await withYmageCache(
+      "groups",
+      7 * 24 * 3600, // 7 jours — les groupes sont stables au sein d'un semestre
+      async () => {
+        const url = `${baseUrl}/r/v1/formation-longue/groupes?codesPeriode=5`;
+        return await fetchWithRetry(url, {
+          method: "GET",
+          headers: {
+            "X-Auth-Token": apiToken,
+            Accept: "application/json",
+          },
+        });
+      }
+    );
 
-    const data = await fetchWithRetry(url, {
-      method: "GET",
-      headers: {
-        "X-Auth-Token": apiToken,
-        Accept: "application/json",
-      },
-      // ✅ cache: "no-store" retiré
-    });
+    const headers: Record<string, string> = {
+      "Cache-Control": fromCache
+        ? "no-store"
+        : "public, s-maxage=300, stale-while-revalidate=60",
+    };
+    if (fromCache) headers["X-Cache-Fallback"] = "true";
 
-    return NextResponse.json(data, {
-      headers: {
-        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
-      },
-    });
+    return NextResponse.json(data, { headers });
   } catch (error) {
     console.error("Erreur récupération groupes:", error);
     return NextResponse.json(

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
+import { withYmageCache } from "@/lib/ymag/cache";
 
 interface FormattedData {
   timestamp: string;
@@ -91,6 +92,14 @@ export async function POST(request: Request) {
 
     const token = process.env.TOKEN_REQUETEUR!;
 
+    // 🔁 Clé de cache unique par groupe + période — sert de secours si Ymag est KO
+    const cacheKey = `sql_${group}_${periodeEvaluationCode || String(periodeEvaluation).replace(/\s+/g, "_")}`;
+
+    const { data: cachePayload, fromCache } = await withYmageCache(
+      cacheKey,
+      4 * 3600, // 4h de fraîcheur — au-delà, sert quand même de secours si Ymag tombe
+      async () => {
+
     // Étape 1️⃣ : Récupérer les infos du groupe
     const groupResults = await executeQuery(
       `SELECT NOM_GROUPE, NUMERO_ANNEE, CODE_FORMATION FROM GROUPE WHERE CODE_GROUPE = ${group}`,
@@ -98,14 +107,8 @@ export async function POST(request: Request) {
     );
 
     if (!groupResults.length) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Aucun groupe trouvé",
-          details: "Le CODE_GROUPE fourni ne correspond à aucun NOM_GROUPE.",
-        },
-        { status: 404 }
-      );
+      // Sentinelle → géré en 404 dans le catch (hors cache)
+      throw new Error("GROUP_NOT_FOUND");
     }
 
     const nomGroupe = groupResults[0].NOM_GROUPE;
@@ -388,6 +391,44 @@ export async function POST(request: Request) {
     }
 
     if (!hasSuccessfulQuery) {
+      // Sentinelle → si pas de cache, renvoyé en 404 par le catch
+      throw new Error("NO_DATA");
+    }
+
+    // ✅ Succès → valeur mise en cache par withYmageCache
+    return {
+      data: results,
+      timestamp: formattedData.timestamp,
+      totalResults,
+    };
+      } // fin de la fonction passée à withYmageCache
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: cachePayload.data,
+      timestamp: cachePayload.timestamp,
+      totalResults: cachePayload.totalResults,
+      ...(fromCache && {
+        fromCache: true,
+        warning:
+          "Ymag temporairement inaccessible — données issues du cache (dernière génération réussie)",
+      }),
+    });
+  } catch (error: any) {
+    // Groupe inexistant → 404
+    if (error?.message === "GROUP_NOT_FOUND") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Aucun groupe trouvé",
+          details: "Le CODE_GROUPE fourni ne correspond à aucun NOM_GROUPE.",
+        },
+        { status: 404 }
+      );
+    }
+    // Aucune donnée ET aucun cache disponible → 404
+    if (error?.message === "NO_DATA") {
       return NextResponse.json(
         {
           success: false,
@@ -397,14 +438,6 @@ export async function POST(request: Request) {
         { status: 404 }
       );
     }
-
-    return NextResponse.json({
-      success: true,
-      data: results,
-      timestamp: formattedData.timestamp,
-      totalResults,
-    });
-  } catch (error: any) {
     console.error("❌ Erreur générale:", error);
     return NextResponse.json(
       {

@@ -17,59 +17,86 @@ if (!USE_AZURE) {
 }
 
 // ============================================================
-// STOCKAGE LOCAL (fallback sans Azure)
+// STOCKAGE LOCAL ASYNC (fallback sans Azure)
 // ============================================================
 
 const LOCAL_DIR = path.join(os.tmpdir(), "bulletins-temp");
 
-function ensureLocalDir() {
-  if (!fs.existsSync(LOCAL_DIR)) fs.mkdirSync(LOCAL_DIR, { recursive: true });
+/** Crée le dossier temporaire s'il n'existe pas (non bloquant). */
+async function ensureLocalDir(): Promise<void> {
+  await fs.promises.mkdir(LOCAL_DIR, { recursive: true });
+}
+
+/** Vérifie l'existence d'un chemin sans bloquer le thread. */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.promises.access(p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const localStore = {
-  storeFile(id: string, data: Buffer, contentType = "application/zip") {
-    ensureLocalDir();
-    fs.writeFileSync(path.join(LOCAL_DIR, id), data);
-    fs.writeFileSync(
-      path.join(LOCAL_DIR, `${id}.meta.json`),
-      JSON.stringify({ contentType, timestamp: Date.now() })
-    );
+  async storeFile(id: string, data: Buffer, contentType = "application/zip"): Promise<void> {
+    await ensureLocalDir();
+    await Promise.all([
+      fs.promises.writeFile(path.join(LOCAL_DIR, id), data),
+      fs.promises.writeFile(
+        path.join(LOCAL_DIR, `${id}.meta.json`),
+        JSON.stringify({ contentType, timestamp: Date.now() })
+      ),
+    ]);
   },
-  hasFile(id: string) {
-    return fs.existsSync(path.join(LOCAL_DIR, id));
+
+  async hasFile(id: string): Promise<boolean> {
+    return pathExists(path.join(LOCAL_DIR, id));
   },
-  getFile(id: string): { data: Buffer; contentType: string } | null {
+
+  async getFile(id: string): Promise<{ data: Buffer; contentType: string } | null> {
     const filePath = path.join(LOCAL_DIR, id);
     const metaPath = path.join(LOCAL_DIR, `${id}.meta.json`);
-    if (!fs.existsSync(filePath) || !fs.existsSync(metaPath)) return null;
-    const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-    return { data: fs.readFileSync(filePath), contentType: meta.contentType };
+    if (!(await pathExists(filePath)) || !(await pathExists(metaPath))) return null;
+    const [data, metaRaw] = await Promise.all([
+      fs.promises.readFile(filePath),
+      fs.promises.readFile(metaPath, "utf8"),
+    ]);
+    const meta = JSON.parse(metaRaw);
+    return { data, contentType: meta.contentType };
   },
-  deleteFile(id: string) {
-    for (const p of [
+
+  async deleteFile(id: string): Promise<boolean> {
+    const targets = [
       path.join(LOCAL_DIR, id),
       path.join(LOCAL_DIR, `${id}.meta.json`),
-    ]) {
-      try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
-    }
+    ];
+    await Promise.allSettled(targets.map((p) => fs.promises.unlink(p)));
     return true;
   },
-  cleanupOldFiles(maxAgeMinutes = MAX_AGE_MINUTES) {
-    ensureLocalDir();
+
+  async cleanupOldFiles(maxAgeMinutes = MAX_AGE_MINUTES): Promise<void> {
+    await ensureLocalDir();
     const cutoff = Date.now() - maxAgeMinutes * 60 * 1000;
     let cleaned = 0;
-    for (const file of fs.readdirSync(LOCAL_DIR)) {
-      if (file.endsWith(".meta.json")) continue;
-      const metaPath = path.join(LOCAL_DIR, `${file}.meta.json`);
-      if (!fs.existsSync(metaPath)) continue;
-      try {
-        const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-        if ((meta.timestamp || 0) < cutoff) {
-          localStore.deleteFile(file);
-          cleaned++;
-        }
-      } catch {}
-    }
+
+    const files = await fs.promises.readdir(LOCAL_DIR);
+    await Promise.all(
+      files
+        .filter((f) => !f.endsWith(".meta.json"))
+        .map(async (file) => {
+          const metaPath = path.join(LOCAL_DIR, `${file}.meta.json`);
+          if (!(await pathExists(metaPath))) return;
+          try {
+            const raw = await fs.promises.readFile(metaPath, "utf8");
+            const meta = JSON.parse(raw);
+            if ((meta.timestamp || 0) < cutoff) {
+              await localStore.deleteFile(file);
+              cleaned++;
+            }
+          } catch {}
+        })
+    );
+
     if (cleaned > 0) console.log(`[fileStorage] ${cleaned} fichiers locaux nettoyés.`);
   },
 };
@@ -87,7 +114,7 @@ async function getContainerClient() {
 }
 
 const azureStore = {
-  async storeFile(id: string, data: Buffer, contentType = "application/zip") {
+  async storeFile(id: string, data: Buffer, contentType = "application/zip"): Promise<void> {
     const container = await getContainerClient();
     const blob = container.getBlockBlobClient(id);
     await blob.upload(data, data.length, {
@@ -95,7 +122,8 @@ const azureStore = {
       metadata: { timestamp: Date.now().toString(), contentType },
     });
   },
-  async hasFile(id: string) {
+
+  async hasFile(id: string): Promise<boolean> {
     try {
       const container = await getContainerClient();
       await container.getBlockBlobClient(id).getProperties();
@@ -104,6 +132,7 @@ const azureStore = {
       return false;
     }
   },
+
   async getFile(id: string): Promise<{ data: Buffer; contentType: string } | null> {
     try {
       const container = await getContainerClient();
@@ -122,7 +151,8 @@ const azureStore = {
       return null;
     }
   },
-  async deleteFile(id: string) {
+
+  async deleteFile(id: string): Promise<boolean> {
     try {
       const container = await getContainerClient();
       await container.getBlockBlobClient(id).deleteIfExists();
@@ -132,7 +162,8 @@ const azureStore = {
       return false;
     }
   },
-  async cleanupOldFiles(maxAgeMinutes = MAX_AGE_MINUTES) {
+
+  async cleanupOldFiles(maxAgeMinutes = MAX_AGE_MINUTES): Promise<void> {
     try {
       const container = await getContainerClient();
       const cutoff = Date.now() - maxAgeMinutes * 60 * 1000;
@@ -152,29 +183,29 @@ const azureStore = {
 };
 
 // ============================================================
-// API UNIFIÉE — même interface pour le reste de l'app
+// API UNIFIÉE — même interface async pour le reste de l'app
 // ============================================================
 
 export const fileStorage = {
-  async storeFile(id: string, data: Buffer, contentType?: string) {
+  async storeFile(id: string, data: Buffer, contentType?: string): Promise<void> {
     if (USE_AZURE) return azureStore.storeFile(id, data, contentType);
-    localStore.storeFile(id, data, contentType);
+    return localStore.storeFile(id, data, contentType);
   },
-  async hasFile(id: string) {
+  async hasFile(id: string): Promise<boolean> {
     if (USE_AZURE) return azureStore.hasFile(id);
     return localStore.hasFile(id);
   },
-  async getFile(id: string) {
+  async getFile(id: string): Promise<{ data: Buffer; contentType: string } | null> {
     if (USE_AZURE) return azureStore.getFile(id);
     return localStore.getFile(id);
   },
-  async deleteFile(id: string) {
+  async deleteFile(id: string): Promise<boolean> {
     if (USE_AZURE) return azureStore.deleteFile(id);
     return localStore.deleteFile(id);
   },
-  async cleanupOldFiles(maxAgeMinutes?: number) {
+  async cleanupOldFiles(maxAgeMinutes?: number): Promise<void> {
     if (USE_AZURE) return azureStore.cleanupOldFiles(maxAgeMinutes);
-    localStore.cleanupOldFiles(maxAgeMinutes);
+    return localStore.cleanupOldFiles(maxAgeMinutes);
   },
 };
 

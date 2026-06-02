@@ -129,56 +129,64 @@ const SIGNATURE_MAP: Record<string, string> = {
   "1057288": "ks.png"
 };
 
-function preloadAssets(): PreloadedAssets {
+async function preloadAssets(): Promise<PreloadedAssets> {
   const publicDir = path.join(process.cwd(), "public");
 
   // Logo — fallback vers un buffer vide si le fichier est absent en production
   let logoBytes: Buffer;
   try {
-    logoBytes = fs.readFileSync(path.join(publicDir, "logo", "espi.jpg"));
+    logoBytes = await fs.promises.readFile(path.join(publicDir, "logo", "espi.jpg"));
   } catch (err) {
     console.error("⚠️ Logo ESPI introuvable :", path.join(publicDir, "logo", "espi.jpg"), err);
-    logoBytes = Buffer.alloc(0); // buffer vide → le PDF sera généré sans logo
+    logoBytes = Buffer.alloc(0);
   }
 
   // Fonts Poppins — optionnelles
   let poppinsRegularBytes: Buffer | null = null;
   let poppinsBoldBytes: Buffer | null = null;
   try {
-    poppinsRegularBytes = fs.readFileSync(path.join(publicDir, "fonts", "Poppins-Regular.ttf"));
-    poppinsBoldBytes = fs.readFileSync(path.join(publicDir, "fonts", "Poppins-Bold.ttf"));
+    [poppinsRegularBytes, poppinsBoldBytes] = await Promise.all([
+      fs.promises.readFile(path.join(publicDir, "fonts", "Poppins-Regular.ttf")),
+      fs.promises.readFile(path.join(publicDir, "fonts", "Poppins-Bold.ttf")),
+    ]);
   } catch {
     console.warn("⚠️ Polices Poppins non trouvées → utilisation des polices standard");
   }
 
-  // Signatures — optionnelles, chargées silencieusement
+  // Signatures — chargées en parallèle, silencieusement si absentes
   const signatureCache = new Map<string, Buffer>();
-  for (const [code, filename] of Object.entries(SIGNATURE_MAP)) {
-    const sigPath = path.join(publicDir, "signatures", filename);
-    try {
-      if (fs.existsSync(sigPath)) {
-        const buf = fs.readFileSync(sigPath);
+  await Promise.all(
+    Object.entries(SIGNATURE_MAP).map(async ([code, filename]) => {
+      const sigPath = path.join(publicDir, "signatures", filename);
+      try {
+        const buf = await fs.promises.readFile(sigPath);
         signatureCache.set(code, buf);
         signatureCache.set(filename, buf);
+      } catch {
+        // fichier absent → ignoré silencieusement
       }
-    } catch (err) {
-      console.warn(`⚠️ Signature ${filename} introuvable :`, err);
-    }
-  }
+    })
+  );
 
   console.log(`✅ Assets chargés depuis ${publicDir} (logo: ${logoBytes.length}B, fonts: ${poppinsRegularBytes ? "ok" : "absent"}, sigs: ${signatureCache.size / 2})`);
   return { logoBytes, poppinsRegularBytes, poppinsBoldBytes, signatureCache };
 }
 
-// ✅ AJOUTER ICI — après preloadAssets(), avant POST
+// Cache singleton — chargé une seule fois à la première requête PDF
 let cachedAssets: PreloadedAssets | null = null;
+let assetsLoadingPromise: Promise<PreloadedAssets> | null = null;
 
-function getAssets(): PreloadedAssets {
-  if (!cachedAssets) {
-    cachedAssets = preloadAssets();
-    console.log("✅ Assets chargés et mis en cache");
+async function getAssets(): Promise<PreloadedAssets> {
+  if (cachedAssets) return cachedAssets;
+  // Évite les chargements parallèles si plusieurs requêtes arrivent simultanément
+  if (!assetsLoadingPromise) {
+    assetsLoadingPromise = preloadAssets().then((assets) => {
+      cachedAssets = assets;
+      assetsLoadingPromise = null;
+      return assets;
+    });
   }
-  return cachedAssets;
+  return assetsLoadingPromise;
 }
 
 
@@ -1056,8 +1064,8 @@ export async function POST(req: NextRequest) {
     const { data, periodeEvaluation, groupName } = body;
     console.log(`📥 Requête PDF - Groupe: ${groupName} | Période: ${periodeEvaluation} | Étudiants: ${data.APPRENANT?.length || 0}`);
 
-    // ✅ CORRECTION 1 : Préchargement des assets UNE SEULE FOIS avant la boucle
-    const assets = getAssets();
+    // ✅ CORRECTION 1 : Préchargement des assets UNE SEULE FOIS avant la boucle (async)
+    const assets = await getAssets();
     console.log("✅ Assets préchargés (logo, fonts, signatures)");
 
     // ✅ CORRECTION 2 : updateUECredits calculé UNE SEULE FOIS

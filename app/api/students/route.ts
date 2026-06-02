@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { withYmageCache } from "@/lib/ymag/cache";
 
-// Cache 5 minutes — les campus changent très rarement
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -12,32 +12,37 @@ export async function GET() {
       throw new Error("Variables TOKEN_REQUETEUR ou URL_REQUETEUR manquantes");
     }
 
-    // ✅ Requête ultra-légère : uniquement CODE_SITE + NOM_SITE
-    // Avant : /formation-longue/apprenants chargeait tous les apprenants (~36 Mo)
-    //         juste pour extraire les codeSite uniques
-    // Après : 2 colonnes, quelques dizaines de lignes (~2 Ko)
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "X-Auth-Token": token,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        sql: "SELECT DISTINCT CODE_SITE, NOM_SITE FROM SITE ORDER BY NOM_SITE",
-      }),
-    });
+    const { data: sitesArray, fromCache } = await withYmageCache(
+      "sites",
+      30 * 24 * 3600, // 30 jours — les campus changent très rarement
+      async () => {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "X-Auth-Token": token,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            sql: "SELECT DISTINCT CODE_SITE, NOM_SITE FROM SITE ORDER BY NOM_SITE",
+          }),
+        });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
-    const data = await response.json();
-    const sitesArray = Array.isArray(data) ? data : Object.values(data);
+        const data = await response.json();
+        return Array.isArray(data) ? data : Object.values(data as object);
+      }
+    );
 
     return NextResponse.json(sitesArray, {
       headers: {
-        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
+        "Cache-Control": fromCache
+          ? "no-store"
+          : "public, s-maxage=300, stale-while-revalidate=60",
+        ...(fromCache && { "X-Cache-Fallback": "true" }),
       },
     });
   } catch (error) {
