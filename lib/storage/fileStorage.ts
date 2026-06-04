@@ -7,7 +7,7 @@ import path from "path";
 // ============================================================
 
 const USE_AZURE = !!process.env.AZURE_STORAGE_CONNECTION_STRING;
-const CONTAINER_NAME = "bulletins";
+const SHARE_NAME = "bulletins"; // partage Azure Files (compte de type FileStorage)
 const MAX_AGE_MINUTES = 60;
 
 if (!USE_AZURE) {
@@ -102,31 +102,48 @@ const localStore = {
 };
 
 // ============================================================
-// STOCKAGE AZURE BLOB (production avec plusieurs instances)
+// STOCKAGE AZURE FILES (production avec plusieurs instances)
+// Compte de type FileStorage → on utilise un "partage de fichiers"
+// (et non des Blobs). Stockage partagé entre toutes les instances.
 // ============================================================
 
-async function getContainerClient() {
-  const { BlobServiceClient } = await import("@azure/storage-blob");
-  const client = BlobServiceClient.fromConnectionString(
+// Garde-fou : on ne tente la création du partage qu'une seule fois par process
+let shareEnsured = false;
+
+async function getShareClient() {
+  const { ShareServiceClient } = await import("@azure/storage-file-share");
+  const svc = ShareServiceClient.fromConnectionString(
     process.env.AZURE_STORAGE_CONNECTION_STRING!
   );
-  return client.getContainerClient(CONTAINER_NAME);
+  const share = svc.getShareClient(SHARE_NAME);
+
+  // Crée le partage "bulletins" s'il n'existe pas encore
+  if (!shareEnsured) {
+    try {
+      await share.createIfNotExists();
+      shareEnsured = true;
+    } catch (err) {
+      console.error("[fileStorage] Impossible de créer/vérifier le partage Azure Files:", err);
+    }
+  }
+
+  return share;
 }
 
 const azureStore = {
   async storeFile(id: string, data: Buffer, contentType = "application/zip"): Promise<void> {
-    const container = await getContainerClient();
-    const blob = container.getBlockBlobClient(id);
-    await blob.upload(data, data.length, {
-      blobHTTPHeaders: { blobContentType: contentType },
-      metadata: { timestamp: Date.now().toString(), contentType },
+    const share = await getShareClient();
+    const file = share.rootDirectoryClient.getFileClient(id);
+    // uploadData gère automatiquement le découpage en segments (fichiers volumineux)
+    await file.uploadData(data, {
+      fileHttpHeaders: { fileContentType: contentType },
     });
   },
 
   async hasFile(id: string): Promise<boolean> {
     try {
-      const container = await getContainerClient();
-      await container.getBlockBlobClient(id).getProperties();
+      const share = await getShareClient();
+      await share.rootDirectoryClient.getFileClient(id).getProperties();
       return true;
     } catch {
       return false;
@@ -135,10 +152,10 @@ const azureStore = {
 
   async getFile(id: string): Promise<{ data: Buffer; contentType: string } | null> {
     try {
-      const container = await getContainerClient();
-      const blob = container.getBlockBlobClient(id);
-      const props = await blob.getProperties();
-      const download = await blob.download();
+      const share = await getShareClient();
+      const file = share.rootDirectoryClient.getFileClient(id);
+      const props = await file.getProperties();
+      const download = await file.download();
       const chunks: Buffer[] = [];
       for await (const chunk of download.readableStreamBody as AsyncIterable<Buffer>) {
         chunks.push(Buffer.from(chunk));
@@ -154,30 +171,39 @@ const azureStore = {
 
   async deleteFile(id: string): Promise<boolean> {
     try {
-      const container = await getContainerClient();
-      await container.getBlockBlobClient(id).deleteIfExists();
+      const share = await getShareClient();
+      await share.rootDirectoryClient.getFileClient(id).deleteIfExists();
       return true;
     } catch (err) {
-      console.error(`[fileStorage] Erreur suppression blob ${id}:`, err);
+      console.error(`[fileStorage] Erreur suppression fichier ${id}:`, err);
       return false;
     }
   },
 
   async cleanupOldFiles(maxAgeMinutes = MAX_AGE_MINUTES): Promise<void> {
     try {
-      const container = await getContainerClient();
+      const share = await getShareClient();
+      const dir = share.rootDirectoryClient;
       const cutoff = Date.now() - maxAgeMinutes * 60 * 1000;
       let cleaned = 0;
-      for await (const blob of container.listBlobsFlat({ includeMetadata: true })) {
-        const ts = blob.metadata?.timestamp;
-        if (ts && parseInt(ts) < cutoff) {
-          await container.deleteBlob(blob.name);
-          cleaned++;
+
+      for await (const item of dir.listFilesAndDirectories()) {
+        if (item.kind !== "file") continue;
+        try {
+          const file = dir.getFileClient(item.name);
+          const props = await file.getProperties();
+          if (props.lastModified && props.lastModified.getTime() < cutoff) {
+            await file.deleteIfExists();
+            cleaned++;
+          }
+        } catch {
+          // fichier déjà supprimé entre-temps → on ignore
         }
       }
-      if (cleaned > 0) console.log(`[fileStorage] ${cleaned} blobs Azure nettoyés.`);
+
+      if (cleaned > 0) console.log(`[fileStorage] ${cleaned} fichiers Azure nettoyés.`);
     } catch (err) {
-      console.error("[fileStorage] Erreur nettoyage Azure:", err);
+      console.error("[fileStorage] Erreur nettoyage Azure Files:", err);
     }
   },
 };

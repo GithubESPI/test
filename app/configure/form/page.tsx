@@ -74,6 +74,7 @@ interface State {
   retrievedData: any;
   pdfDownloadUrl: string;
   pdfStudentCount: number;
+  pdfFromCache: boolean;
   selectedGroupName: string;
   // Overlay de progression
   overlaySteps: { label: string; status: "done" | "current" | "todo" }[];
@@ -86,7 +87,7 @@ const initialState: State = {
   isLoading: true, isSubmitting: false, isGeneratingPDF: false,
   progress: 0, isLoadingComplete: false,
   modal: "none", errorMessage: "",
-  retrievedData: null, pdfDownloadUrl: "", pdfStudentCount: 0, selectedGroupName: "",
+  retrievedData: null, pdfDownloadUrl: "", pdfStudentCount: 0, pdfFromCache: false, selectedGroupName: "",
   overlaySteps: [], overlayProgress: 0,
 };
 
@@ -100,7 +101,7 @@ type Action =
   | { type: "SET_SUBMITTING"; value: boolean }
   | { type: "SET_GENERATING"; value: boolean }
   | { type: "SQL_SUCCESS"; data: any; groupName: string }
-  | { type: "PDF_SUCCESS"; url: string; count: number }
+  | { type: "PDF_SUCCESS"; url: string; count: number; fromCache: boolean; groupName: string }
   | { type: "SHOW_ERROR"; message: string }
   | { type: "CLOSE_MODAL" }
   | { type: "SET_OVERLAY_STEPS"; steps: { label: string; status: "done" | "current" | "todo" }[] }
@@ -117,7 +118,7 @@ function reducer(state: State, action: Action): State {
     case "SET_SUBMITTING": return { ...state, isSubmitting: action.value };
     case "SET_GENERATING": return { ...state, isGeneratingPDF: action.value };
     case "SQL_SUCCESS": return { ...state, retrievedData: action.data, selectedGroupName: action.groupName, modal: "success" };
-    case "PDF_SUCCESS": return { ...state, pdfDownloadUrl: action.url, pdfStudentCount: action.count, modal: "pdfSuccess" };
+    case "PDF_SUCCESS": return { ...state, pdfDownloadUrl: action.url, pdfStudentCount: action.count, pdfFromCache: action.fromCache, selectedGroupName: action.groupName, modal: "pdfSuccess" };
     case "SHOW_ERROR": return { ...state, errorMessage: action.message, modal: "error" };
     case "CLOSE_MODAL": return { ...state, modal: "none" };
     case "SET_OVERLAY_STEPS": return { ...state, overlaySteps: action.steps };
@@ -321,32 +322,33 @@ export default function FormPage() {
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  const handleSubmit = useCallback(async () => {
+  // ✅ Flux unifié : 1 clic = récupération SQL → génération PDF → téléchargement auto
+  const handleGenerate = useCallback(async () => {
     if (!state.campus || !state.group || !state.semester) {
       return dispatch({ type: "SHOW_ERROR", message: "Veuillez remplir tous les champs." });
     }
     const selectedCampus = state.campuses.find((c) => c.id === state.campus);
     const selectedPeriod = state.periods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester);
     const selectedGroup = state.groups.find((g) => g.id.toString() === state.group);
-    if (!selectedCampus || !selectedPeriod || !selectedGroup) return dispatch({ type: "SHOW_ERROR", message: "Sélection invalide." });
+    if (!selectedCampus || !selectedPeriod || !selectedGroup) {
+      return dispatch({ type: "SHOW_ERROR", message: "Sélection invalide." });
+    }
 
     const coherenceError = checkCoherence(selectedGroup.label, selectedPeriod.NOM_PERIODE_EVALUATION);
     if (coherenceError) return dispatch({ type: "SHOW_ERROR", message: coherenceError });
 
     try {
+      // ───────── PHASE 1 : récupération des données (SQL Ymag) ─────────
       dispatch({ type: "SET_SUBMITTING", value: true });
       dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 0 });
+      let cancelAnim = animateSteps(SQL_STEPS, [500, 2500, 3000, 3000, 2000], dispatch);
 
-      // Anime les étapes pendant l'attente
-      const cancelAnim = animateSteps(SQL_STEPS, [500, 2500, 3000, 3000, 2000], dispatch);
-
-      // Timeout client 45s — évite que le navigateur reste bloqué indéfiniment
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 45000);
 
-      let response: Response;
+      let sqlRes: Response;
       try {
-        response = await fetch("/api/sql", {
+        sqlRes = await fetch("/api/sql", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
@@ -369,67 +371,75 @@ export default function FormPage() {
         cancelAnim();
       }
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
+      const sqlJson = await sqlRes.json();
+      if (!sqlRes.ok) throw new Error(sqlJson.error || "Erreur lors de la récupération des données.");
+
+      const sqlData = sqlJson.data;
+      const fromCache = !!sqlJson.fromCache;
+      if (!sqlData?.APPRENANT?.length) {
+        throw new Error("Aucun apprenant trouvé pour cette sélection.");
+      }
+
+      // ───────── PHASE 2 : génération des bulletins PDF ─────────
+      dispatch({ type: "SET_SUBMITTING", value: false });
+      dispatch({ type: "SET_GENERATING", value: true });
+      dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 0 });
+      cancelAnim = animateSteps(PDF_STEPS, [300, 4000, 3000, 1500], dispatch);
+
+      let pdfRes: Response;
+      try {
+        pdfRes = await fetch("/api/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data: sqlData,
+            periodeEvaluation: selectedPeriod.NOM_PERIODE_EVALUATION,
+            groupName: selectedGroup.label,
+            periodeEvaluationDates: selectedPeriod,
+          }),
+        });
+      } finally {
+        cancelAnim();
+      }
+
+      const pdfJson = await pdfRes.json();
+      if (!pdfRes.ok) throw new Error(pdfJson.error || "Erreur lors de la génération des bulletins.");
+
+      // Enregistrement en BDD — silencieux, ne bloque pas le téléchargement
+      fetch("/api/generations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campus: selectedCampus.label,
+          groupe: selectedGroup.label,
+          periode: selectedPeriod.NOM_PERIODE_EVALUATION,
+          nbBulletins: pdfJson.studentCount,
+        }),
+      }).catch(() => {});
 
       dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 100 });
-      retrievedDataRef.current = data.data;
-      dispatch({ type: "SQL_SUCCESS", data: data.data, groupName: selectedGroup.label });
+
+      // ✅ Téléchargement automatique du ZIP
+      try {
+        await downloadZip(pdfJson.path, `bulletins_${selectedGroup.label.replace(/\s+/g, "_")}.zip`);
+      } catch {
+        // Si le navigateur bloque le téléchargement auto, le bouton de secours reste dispo dans la modale
+      }
+
+      dispatch({
+        type: "PDF_SUCCESS",
+        url: pdfJson.path,
+        count: pdfJson.studentCount,
+        fromCache,
+        groupName: selectedGroup.label,
+      });
     } catch (error: any) {
       const msg = error.name === "AbortError"
         ? "La requête a pris trop de temps (>45s). Veuillez réessayer."
-        : error.message || "Erreur lors de la récupération des données.";
+        : error.message || "Une erreur est survenue.";
       dispatch({ type: "SHOW_ERROR", message: msg });
     } finally {
       dispatch({ type: "SET_SUBMITTING", value: false });
-      dispatch({ type: "SET_OVERLAY_STEPS", steps: [] });
-    }
-  }, [state, animateSteps]);
-
-  const handleGeneratePDFs = useCallback(async () => {
-    const dataToUse = retrievedDataRef.current || state.retrievedData;
-    if (!dataToUse?.APPRENANT?.length) return dispatch({ type: "SHOW_ERROR", message: "Données insuffisantes." });
-    const selectedPeriod = state.periods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester);
-    const selectedCampus = state.campuses.find((c) => c.id === state.campus);
-    try {
-      dispatch({ type: "SET_GENERATING", value: true });
-      dispatch({ type: "CLOSE_MODAL" });
-      dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 0 });
-
-      const cancelAnim = animateSteps(PDF_STEPS, [300, 4000, 3000, 1500], dispatch);
-
-      const response = await fetch("/api/pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data: dataToUse,
-          periodeEvaluation: selectedPeriod?.NOM_PERIODE_EVALUATION,
-          groupName: state.selectedGroupName,
-          periodeEvaluationDates: selectedPeriod || null,
-        }),
-      });
-      if (!response.ok) throw new Error("Erreur génération PDF");
-      const data = await response.json();
-      retrievedDataRef.current = null;
-
-      // ✅ Enregistrement de la génération en BDD
-      await fetch("/api/generations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          campus: selectedCampus?.label ?? "",
-          groupe: state.selectedGroupName,
-          periode: selectedPeriod?.NOM_PERIODE_EVALUATION ?? "",
-          nbBulletins: data.studentCount,
-        }),
-      }).catch(() => {}); // silencieux — ne bloque pas le téléchargement
-
-      cancelAnim();
-      dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 100 });
-      dispatch({ type: "PDF_SUCCESS", url: data.path, count: data.studentCount });
-    } catch (error: any) {
-      dispatch({ type: "SHOW_ERROR", message: error.message });
-    } finally {
       dispatch({ type: "SET_GENERATING", value: false });
       dispatch({ type: "SET_OVERLAY_STEPS", steps: [] });
     }
@@ -638,54 +648,27 @@ export default function FormPage() {
                   </Select>
                 </div>
 
-                {/* Submit */}
+                {/* Génération — flux unifié en 1 clic */}
                 <Button
-                  onClick={handleSubmit}
-                  disabled={!isFormValid || state.isSubmitting}
+                  onClick={handleGenerate}
+                  disabled={!isFormValid || state.isSubmitting || state.isGeneratingPDF}
                   className="w-full h-10 bg-[#156082] hover:bg-[#124f6b] text-white font-medium text-sm disabled:opacity-40 transition-all mt-2"
                 >
-                  {state.isSubmitting ? (
-                    <><Loader2 className="h-4 w-4 animate-spin mr-2" />Chargement...</>
+                  {state.isSubmitting || state.isGeneratingPDF ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" />Génération en cours…</>
                   ) : (
-                    <><FileText className="w-4 h-4 mr-2" />Confirmer mon choix</>
+                    <><FileText className="w-4 h-4 mr-2" />Générer les bulletins</>
                   )}
                 </Button>
 
-                {/* Génération en cours */}
-                {state.isGeneratingPDF && (
-                  <div className="flex items-center justify-center gap-2 text-xs text-[#156082] py-1">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Génération en cours…
-                  </div>
-                )}
+                <p className="text-xs text-center text-gray-400 pt-1">
+                  Récupération des données et création des PDF en une seule étape.
+                </p>
               </div>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Modal — Succès données */}
-      <Dialog open={state.modal === "success"} onOpenChange={() => dispatch({ type: "CLOSE_MODAL" })}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="w-5 h-5" /> Données récupérées
-            </DialogTitle>
-            <DialogDescription>
-              Données prêtes pour{" "}
-              <span className="font-medium text-gray-900">{state.selectedGroupName}</span>
-              {selectedPeriodObj && <> — <span className="font-medium text-gray-900">{selectedPeriodObj.NOM_PERIODE_EVALUATION}</span></>}.
-              <br />Vous pouvez générer les bulletins.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 pt-2">
-            <Button variant="outline" onClick={() => dispatch({ type: "CLOSE_MODAL" })}>Fermer</Button>
-            <Button onClick={handleGeneratePDFs} disabled={state.isGeneratingPDF} className="bg-[#156082] hover:bg-[#124f6b]">
-              {state.isGeneratingPDF ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Génération...</> : <><FileText className="w-4 h-4 mr-2" />Générer les PDF</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Modal — PDF prêt */}
       <Dialog open={state.modal === "pdfSuccess"} onOpenChange={() => dispatch({ type: "CLOSE_MODAL" })}>
@@ -696,9 +679,23 @@ export default function FormPage() {
             </DialogTitle>
             <DialogDescription>
               <span className="font-medium text-gray-900">{state.pdfStudentCount} bulletin{state.pdfStudentCount > 1 ? "s" : ""}</span>{" "}
-              prêt{state.pdfStudentCount > 1 ? "s" : ""} dans l'archive ZIP.
+              généré{state.pdfStudentCount > 1 ? "s" : ""} pour{" "}
+              <span className="font-medium text-gray-900">{state.selectedGroupName}</span>.
+              <br />Le téléchargement a démarré automatiquement.
             </DialogDescription>
           </DialogHeader>
+
+          {/* Bandeau d'avertissement si données issues du cache (Ymag KO) */}
+          {state.pdfFromCache && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+              <span className="text-sm leading-none mt-0.5">⚠️</span>
+              <span>
+                YParéo était momentanément indisponible : ces bulletins ont été générés à partir des{" "}
+                <span className="font-semibold">dernières données enregistrées</span>. Vérifiez qu'elles sont à jour.
+              </span>
+            </div>
+          )}
+
           <DialogFooter className="pt-2">
             <Button
               onClick={async () => {
@@ -710,7 +707,7 @@ export default function FormPage() {
               }}
               className="bg-[#156082] hover:bg-[#124f6b]"
             >
-              <FileDown className="mr-2 h-4 w-4" /> Télécharger le ZIP
+              <FileDown className="mr-2 h-4 w-4" /> Re-télécharger le ZIP
             </Button>
           </DialogFooter>
         </DialogContent>
