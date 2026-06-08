@@ -1064,6 +1064,16 @@ export async function POST(req: NextRequest) {
     const { data, periodeEvaluation, groupName } = body;
     console.log(`📥 Requête PDF - Groupe: ${groupName} | Période: ${periodeEvaluation} | Étudiants: ${data.APPRENANT?.length || 0}`);
 
+    // 📅 Bornes du SEMESTRE sélectionné — pour ne compter que les absences de CE semestre
+    // (évite de cumuler toute l'année scolaire et de fausser le taux d'absence)
+    const toYMD = (s: unknown): string | null => {
+      const m = String(s ?? "").match(/^(\d{4}-\d{2}-\d{2})/);
+      return m ? m[1] : null;
+    };
+    const periodeDates = body.periodeEvaluationDates;
+    const absStart = toYMD(periodeDates?.DATE_DEB) || "2025-08-25";
+    const absEnd = toYMD(periodeDates?.DATE_FIN) || "2026-08-23";
+
     // ✅ CORRECTION 1 : Préchargement des assets UNE SEULE FOIS avant la boucle (async)
     const assets = await getAssets();
     console.log("✅ Assets préchargés (logo, fonts, signatures)");
@@ -1072,9 +1082,9 @@ export async function POST(req: NextRequest) {
     const updatedSubjects = updateUECredits(data.ECTS_PAR_MATIERE || []);
     console.log(`✅ Crédits UE calculés (${updatedSubjects.length} matières)`);
 
-    // ✅ CORRECTION 3 : processAbsences calculé UNE SEULE FOIS
-    const processedAbsences = processAbsences(data.ABSENCE || [], "2025-08-25T00:00:00", "2026-08-23T00:00:00").students;
-    console.log(`✅ Absences traitées (${processedAbsences.length} étudiants)`);
+    // ✅ CORRECTION 3 : processAbsences borné au semestre sélectionné
+    const processedAbsences = processAbsences(data.ABSENCE || [], `${absStart}T00:00:00`, `${absEnd}T23:59:59`).students;
+    console.log(`✅ Absences traitées du ${absStart} au ${absEnd} (${processedAbsences.length} étudiants)`);
 
     // Log UE/Matières
     if (data.MATIERE && data.MATIERE.length > 0) {

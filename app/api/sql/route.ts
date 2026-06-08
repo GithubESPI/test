@@ -80,6 +80,16 @@ export async function POST(request: Request) {
     const periodeEvaluation = body.periodeEvaluation;
     const semester = body.semester?.toString() || "s1";
 
+    // 📅 Dates du SEMESTRE sélectionné — pour ne compter que les absences de CE semestre
+    // (sinon le taux d'absence est faussé : il cumulait toute l'année scolaire)
+    const toYMD = (s: unknown): string | null => {
+      const m = String(s ?? "").match(/^(\d{4}-\d{2}-\d{2})/);
+      return m ? m[1] : null;
+    };
+    const periodeDates = body.periodeEvaluationDates;
+    const absStart = toYMD(periodeDates?.DATE_DEB) || "2025-08-25"; // fallback année scolaire
+    const absEnd = toYMD(periodeDates?.DATE_FIN) || "2026-08-23";
+
     if (!campus || !group || !periodeEvaluation) {
       return NextResponse.json(
         {
@@ -183,8 +193,8 @@ export async function POST(request: Request) {
         LEFT JOIN ABSENCE_DETAIL ad ON abs.CODE_ABSENCE = ad.CODE_ABSENCE 
         LEFT JOIN CALENDRIER c ON f.CODE_CALENDRIER = c.CODE_CALENDRIER 
         LEFT JOIN SESSION s ON c.CODE_SESSION = s.CODE_SESSION 
-        WHERE g.CODE_GROUPE = ${group} 
-          AND CONVERT(date, ad.DATE_ABSENCE) BETWEEN '2025-08-25' AND '2026-08-23'
+        WHERE g.CODE_GROUPE = ${group}
+          AND CONVERT(date, ad.DATE_ABSENCE) BETWEEN '${absStart}' AND '${absEnd}'
           AND ad.DUREE > 0
         ORDER BY a.NOM_APPRENANT, ad.DATE_ABSENCE
       `,
