@@ -126,7 +126,8 @@ const SIGNATURE_MAP: Record<string, string> = {
   "89152": "magali.png",
   "650429": "Anne-Lise.png",
   "2168" : "brenda.png",
-  "1057288": "ks.png"
+  "1057288": "ks.png",
+  "499" : "signature.png"
 };
 
 async function preloadAssets(): Promise<PreloadedAssets> {
