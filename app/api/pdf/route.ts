@@ -519,7 +519,8 @@ async function createStudentPDF(
   assets: PreloadedAssets,        // ✅ Assets préchargés passés en paramètre
   personnelData?: any[],
   notes?: any[],
-  generalAverages?: StudentAverage[]
+  generalAverages?: StudentAverage[],
+  anneeScolaire: string = "2025-2026"
 ): Promise<Uint8Array> {
   try {
     const pdfDoc = await PDFDocument.create();
@@ -641,7 +642,7 @@ async function createStudentPDF(
 
     // Titre
     currentY -= 10;
-    const bulletinTitle = "Bulletin de notes 2025-2026";
+    const bulletinTitle = `Bulletin de notes ${anneeScolaire}`;
     const bulletinTitleWidth = boldFont.widthOfTextAtSize(bulletinTitle, fontSizeTitle);
     page.drawText(bulletinTitle, { x: (pageWidth - bulletinTitleWidth) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
 
@@ -1063,6 +1064,12 @@ export async function POST(req: NextRequest) {
     }
 
     const { data, periodeEvaluation, groupName } = body;
+
+    // 📆 Année académique sélectionnée (ex: "2024-2025") — 2025-2026 par défaut
+    const anneeScolaire =
+      typeof body.anneeScolaire === "string" && /^\d{4}-\d{4}$/.test(body.anneeScolaire)
+        ? body.anneeScolaire
+        : "2025-2026";
     console.log(`📥 Requête PDF - Groupe: ${groupName} | Période: ${periodeEvaluation} | Étudiants: ${data.APPRENANT?.length || 0}`);
 
     // 📅 Bornes du SEMESTRE sélectionné — pour ne compter que les absences de CE semestre
@@ -1072,8 +1079,11 @@ export async function POST(req: NextRequest) {
       return m ? m[1] : null;
     };
     const periodeDates = body.periodeEvaluationDates;
-    const absStart = toYMD(periodeDates?.DATE_DEB) || "2025-08-25";
-    const absEnd = toYMD(periodeDates?.DATE_FIN) || "2026-08-23";
+    const sessionDates = body.sessionDates;
+    const absStart =
+      toYMD(periodeDates?.DATE_DEB) || toYMD(sessionDates?.DATE_DEB) || "2025-08-25";
+    const absEnd =
+      toYMD(periodeDates?.DATE_FIN) || toYMD(sessionDates?.DATE_FIN) || "2026-08-23";
 
     // ✅ CORRECTION 1 : Préchargement des assets UNE SEULE FOIS avant la boucle (async)
     const assets = await getAssets();
@@ -1184,10 +1194,11 @@ export async function POST(req: NextRequest) {
               assets,
               data.PERSONNEL || [],
               data.NOTES || [],
-              data.MOYENNE_GENERALE || []
+              data.MOYENNE_GENERALE || [],
+              anneeScolaire
             );
 
-            const filename = `2025-2026_${nomFormation}_${nomAnnee}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
+            const filename = `${anneeScolaire}_${nomFormation}_${nomAnnee}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
             return { success: true, pdfBytes, filename, student };
           } catch (error) {
             console.error(`❌ Erreur PDF pour ${student.NOM_APPRENANT}:`, error);

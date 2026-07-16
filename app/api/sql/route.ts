@@ -87,8 +87,13 @@ export async function POST(request: Request) {
       return m ? m[1] : null;
     };
     const periodeDates = body.periodeEvaluationDates;
-    const absStart = toYMD(periodeDates?.DATE_DEB) || "2025-08-25"; // fallback année scolaire
-    const absEnd = toYMD(periodeDates?.DATE_FIN) || "2026-08-23";
+    // 📆 Année académique (CODE_SESSION Yparéo) — 5 = 2025-2026 par défaut
+    const session = Number(body.session) || 5;
+    const sessionDates = body.sessionDates;
+    const absStart =
+      toYMD(periodeDates?.DATE_DEB) || toYMD(sessionDates?.DATE_DEB) || "2025-08-25"; // fallback année scolaire
+    const absEnd =
+      toYMD(periodeDates?.DATE_FIN) || toYMD(sessionDates?.DATE_FIN) || "2026-08-23";
 
     if (!campus || !group || !periodeEvaluation) {
       return NextResponse.json(
@@ -102,8 +107,8 @@ export async function POST(request: Request) {
 
     const token = process.env.TOKEN_REQUETEUR!;
 
-    // 🔁 Clé de cache unique par groupe + période — sert de secours si Ymag est KO
-    const cacheKey = `sql_${group}_${periodeEvaluationCode || String(periodeEvaluation).replace(/\s+/g, "_")}`;
+    // 🔁 Clé de cache unique par année + groupe + période — sert de secours si Ymag est KO
+    const cacheKey = `sql_${session}_${group}_${periodeEvaluationCode || String(periodeEvaluation).replace(/\s+/g, "_")}`;
 
     const { data: cachePayload, fromCache } = await withYmageCache(
       cacheKey,
@@ -134,7 +139,7 @@ export async function POST(request: Request) {
     let cdeval = periodeEvaluationCode;
     if (!cdeval) {
       const codeEvalResults = await executeQuery(
-        `SELECT DISTINCT r.CODE_PERIODE_EVALUATION FROM REFERENTIEL r WHERE r.CODE_FORMATION = ${codeFormation} AND r.CODE_SESSION = 5 AND r.CODE_ANNEE = ${codeAnnee}`,
+        `SELECT DISTINCT r.CODE_PERIODE_EVALUATION FROM REFERENTIEL r WHERE r.CODE_FORMATION = ${codeFormation} AND r.CODE_SESSION = ${session} AND r.CODE_ANNEE = ${codeAnnee}`,
         token
       );
       if (codeEvalResults.length) {
@@ -212,7 +217,7 @@ export async function POST(request: Request) {
         WHERE g.CODE_GROUPE = ${group} 
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode} 
           AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}' 
-          AND r.CODE_SESSION = 5 
+          AND r.CODE_SESSION = ${session} 
           AND g.CODE_SITE = ${campus} 
           AND r.CODE_ANNEE = ${groupNumQuery}
         ORDER BY rd.NUM_ORDRE ASC, m.NOM_MATIERE
@@ -245,7 +250,7 @@ export async function POST(request: Request) {
         WHERE g.CODE_GROUPE = ${group}
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
           AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
-          AND r.CODE_SESSION = 5
+          AND r.CODE_SESSION = ${session}
           AND g.CODE_SITE = ${campus}
           AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
           AND r.IS_DANS_MOYENNE = '1'
@@ -268,7 +273,7 @@ export async function POST(request: Request) {
         WHERE g.CODE_GROUPE = ${group}
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
           AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
-          AND r.CODE_SESSION = 5
+          AND r.CODE_SESSION = ${session}
           AND g.CODE_SITE = ${campus}
           AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
         GROUP BY g.CODE_GROUPE, g.NOM_GROUPE, ap.CODE_APPRENANT, ap.NOM_APPRENANT, ap.PRENOM_APPRENANT, pe.NOM_PERIODE_EVALUATION
@@ -291,7 +296,7 @@ export async function POST(request: Request) {
         INNER JOIN SESSION s ON i.CODE_SESSION = s.CODE_SESSION
         WHERE g.CODE_GROUPE = ${group}
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
-          AND r.CODE_SESSION = 5
+          AND r.CODE_SESSION = ${session}
           AND g.CODE_SITE = ${campus}
           ${nomGroupe && nomGroupe.includes("Rentrée décalée")
             ? `AND r.CODE_ANNEE = ${codeAnnee}`
@@ -314,7 +319,7 @@ export async function POST(request: Request) {
         INNER JOIN REFERENTIEL r ON ap.CODE_REFERENTIEL = r.CODE_REFERENTIEL
         INNER JOIN PERIODE_EVALUATION pe ON r.CODE_PERIODE_EVALUATION = pe.CODE_PERIODE_EVALUATION
         WHERE g.CODE_GROUPE = ${group}
-          AND r.CODE_SESSION = 5
+          AND r.CODE_SESSION = ${session}
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
           AND pe.NOM_PERIODE_EVALUATION = '${periodeEvaluation}'
           AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
@@ -341,7 +346,7 @@ export async function POST(request: Request) {
         INNER JOIN APPRENANT a ON n.CODE_APPRENANT = a.CODE_APPRENANT
         INNER JOIN INSCRIPTION i ON a.CODE_APPRENANT = i.CODE_APPRENANT
         INNER JOIN FREQUENTE f ON i.CODE_INSCRIPTION = f.CODE_INSCRIPTION
-        WHERE r.CODE_SESSION = 5
+        WHERE r.CODE_SESSION = ${session}
           AND r.CODE_PERIODE_EVALUATION = ${periodeEvaluationCode}
           AND (r.CODE_ANNEE = ${groupNumQuery} OR (r.CODE_ANNEE = 4 AND ${groupNumQuery} = 3))
           AND f.CODE_GROUPE = ${group}

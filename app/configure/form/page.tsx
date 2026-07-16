@@ -33,6 +33,19 @@ interface PeriodeEvaluation {
   DATE_FIN: string;
 }
 
+// Année académique Yparéo (table SESSION) — ex: CODE_SESSION 5 = "2025-2026"
+interface AcademicSession {
+  CODE_SESSION: string;
+  NOM_SESSION: string;
+  DATE_DEB: string;
+  DATE_FIN: string;
+}
+
+interface SiteInfo {
+  CODE_SITE: number;
+  NOM_SITE: string;
+}
+
 interface YpareoGroup {
   codeGroupe: number;
   nomGroupe: string;
@@ -57,14 +70,18 @@ type Modal = "none" | "success" | "error" | "pdfSuccess";
 // ============================================================
 
 interface State {
+  sessions: AcademicSession[];
+  sites: SiteInfo[];
   campuses: Campus[];
   allGroups: YpareoGroup[];
   groups: Group[];
   periods: PeriodeEvaluation[];
+  session: string;
   campus: string;
   group: string;
   semester: string;
   isLoading: boolean;
+  isLoadingGroups: boolean;
   isSubmitting: boolean;
   isGeneratingPDF: boolean;
   progress: number;
@@ -82,9 +99,9 @@ interface State {
 }
 
 const initialState: State = {
-  campuses: [], allGroups: [], groups: [], periods: [],
-  campus: "", group: "", semester: "",
-  isLoading: true, isSubmitting: false, isGeneratingPDF: false,
+  sessions: [], sites: [], campuses: [], allGroups: [], groups: [], periods: [],
+  session: "", campus: "", group: "", semester: "",
+  isLoading: true, isLoadingGroups: false, isSubmitting: false, isGeneratingPDF: false,
   progress: 0, isLoadingComplete: false,
   modal: "none", errorMessage: "",
   retrievedData: null, pdfDownloadUrl: "", pdfStudentCount: 0, pdfFromCache: false, selectedGroupName: "",
@@ -92,7 +109,9 @@ const initialState: State = {
 };
 
 type Action =
-  | { type: "INIT_DATA"; campuses: Campus[]; groups: YpareoGroup[]; periods: PeriodeEvaluation[] }
+  | { type: "INIT_DATA"; sessions: AcademicSession[]; sites: SiteInfo[]; session: string; campuses: Campus[]; groups: YpareoGroup[]; periods: PeriodeEvaluation[] }
+  | { type: "SET_SESSION"; session: string }
+  | { type: "SET_SESSION_GROUPS"; campuses: Campus[]; groups: YpareoGroup[] }
   | { type: "SET_CAMPUS"; campus: string; groups: Group[] }
   | { type: "SET_GROUP"; group: string }
   | { type: "SET_SEMESTER"; semester: string }
@@ -109,7 +128,9 @@ type Action =
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case "INIT_DATA": return { ...state, campuses: action.campuses, allGroups: action.groups, periods: action.periods, isLoading: false };
+    case "INIT_DATA": return { ...state, sessions: action.sessions, sites: action.sites, session: action.session, campuses: action.campuses, allGroups: action.groups, periods: action.periods, isLoading: false };
+    case "SET_SESSION": return { ...state, session: action.session, campus: "", group: "", semester: "", groups: [], isLoadingGroups: true };
+    case "SET_SESSION_GROUPS": return { ...state, campuses: action.campuses, allGroups: action.groups, isLoadingGroups: false };
     case "SET_CAMPUS": return { ...state, campus: action.campus, groups: action.groups, group: "", semester: "" };
     case "SET_GROUP": return { ...state, group: action.group };
     case "SET_SEMESTER": return { ...state, semester: action.semester };
@@ -140,6 +161,25 @@ function filterGroups(groups: Group[]): Group[] {
     const containsExcluded = EXCLUDED_TERMS.some((t) => g.label.includes(t));
     return !startsExcluded && !containsExcluded;
   });
+}
+
+function buildCampuses(groupsArray: YpareoGroup[], sites: SiteInfo[]): Campus[] {
+  const siteNameMap = new Map<number, string>(sites.map((s) => [Number(s.CODE_SITE), s.NOM_SITE]));
+  const uniqueCodeSites = [...new Set(groupsArray.map((g) => g.codeSite).filter(Boolean))];
+  return uniqueCodeSites
+    .map((codeSite, i) => ({ id: `campus-${codeSite}-${i}`, codeSite, label: siteNameMap.get(codeSite) ?? `Campus ${codeSite}` }))
+    .filter((c) => c.label !== "GROUPE ESPI");
+}
+
+// Année académique en cours (aujourd'hui entre DATE_DEB et DATE_FIN), sinon la plus récente déjà commencée
+function pickDefaultSession(sessions: AcademicSession[]): string {
+  const now = new Date();
+  const current = sessions.find((s) => new Date(s.DATE_DEB) <= now && now <= new Date(s.DATE_FIN));
+  if (current) return current.CODE_SESSION;
+  const started = sessions
+    .filter((s) => new Date(s.DATE_DEB) <= now)
+    .sort((a, b) => new Date(b.DATE_DEB).getTime() - new Date(a.DATE_DEB).getTime());
+  return started[0]?.CODE_SESSION ?? sessions[0]?.CODE_SESSION ?? "";
 }
 
 function checkCoherence(groupName: string, periodName: string): string | null {
@@ -205,44 +245,41 @@ export default function FormPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [periodsRes, groupsRes] = await Promise.all([
+        const [sessionsRes, periodsRes, sitesRes] = await Promise.all([
+          fetch("/api/sessions"),
           fetch("/api/periods"),
-          fetch("/api/groups"),
+          fetch("/api/students"),
         ]);
-        if (!periodsRes.ok || !groupsRes.ok) throw new Error("Erreur chargement données");
+        if (!sessionsRes.ok || !periodsRes.ok) throw new Error("Erreur chargement données");
 
-        const [periodsData, groupsData] = await Promise.all([
+        const [sessionsData, periodsData] = await Promise.all([
+          sessionsRes.json(),
           periodsRes.json(),
-          groupsRes.json(),
         ]);
 
-        const startDate = new Date("2025-08-25");
-        const endDate = new Date("2026-08-23");
-        // ✅ Filtre assoupli — garde toutes les périodes qui chevauchent l'année scolaire
-        const filteredPeriods: PeriodeEvaluation[] = periodsData.success
-          ? periodsData.data.filter((p: PeriodeEvaluation) => {
-              const s = new Date(p.DATE_DEB);
-              const e = new Date(p.DATE_FIN);
-              return s <= endDate && e >= startDate;
-            })
-          : [];
+        const sitesRaw = sitesRes.ok ? await sitesRes.json() : [];
+        const sitesArray: SiteInfo[] = Array.isArray(sitesRaw) ? sitesRaw : Object.values(sitesRaw);
 
+        // Années académiques déjà commencées, de la plus récente à la plus ancienne
+        const now = new Date();
+        const sessions: AcademicSession[] = (sessionsData.success ? sessionsData.data : [])
+          .filter((s: AcademicSession) => new Date(s.DATE_DEB) <= now)
+          .sort((a: AcademicSession, b: AcademicSession) => new Date(b.DATE_DEB).getTime() - new Date(a.DATE_DEB).getTime());
+        const defaultSession = pickDefaultSession(sessions);
+
+        const allPeriods: PeriodeEvaluation[] = periodsData.success ? periodsData.data : [];
+
+        // Groupes de l'année académique par défaut
+        const groupsRes = await fetch(`/api/groups?session=${defaultSession}`);
+        const groupsData = groupsRes.ok ? await groupsRes.json() : {};
         const groupsArray: YpareoGroup[] = groupsData ? Object.values(groupsData) : [];
 
-        const sitesRes = await fetch("/api/students");
-        const sitesRaw = sitesRes.ok ? await sitesRes.json() : [];
-        const sitesArray: { CODE_SITE: number; NOM_SITE: string }[] = Array.isArray(sitesRaw) ? sitesRaw : Object.values(sitesRaw);
-        const siteNameMap = new Map<number, string>(sitesArray.map((s) => [Number(s.CODE_SITE), s.NOM_SITE]));
+        const campuses = buildCampuses(groupsArray, sitesArray);
 
-        const uniqueCodeSites = [...new Set(groupsArray.map((g) => g.codeSite).filter(Boolean))];
-        const campuses: Campus[] = uniqueCodeSites
-          .map((codeSite, i) => ({ id: `campus-${codeSite}-${i}`, codeSite, label: siteNameMap.get(codeSite) ?? `Campus ${codeSite}` }))
-          .filter((c) => c.label !== "GROUPE ESPI");
-
-        dispatch({ type: "INIT_DATA", campuses, groups: groupsArray, periods: filteredPeriods });
+        dispatch({ type: "INIT_DATA", sessions, sites: sitesArray, session: defaultSession, campuses, groups: groupsArray, periods: allPeriods });
       } catch (error: any) {
         dispatch({ type: "SHOW_ERROR", message: error.message || "Erreur chargement" });
-        dispatch({ type: "INIT_DATA", campuses: [], groups: [], periods: [] });
+        dispatch({ type: "INIT_DATA", sessions: [], sites: [], session: "", campuses: [], groups: [], periods: [] });
       }
     };
     fetchData();
@@ -268,6 +305,20 @@ export default function FormPage() {
       return () => { if (completeIntervalRef.current) clearInterval(completeIntervalRef.current); };
     }
   }, [state.isLoading, state.progress]);
+
+  // Changement d'année académique → reset des sélections + rechargement des groupes de cette année
+  const handleSessionChange = useCallback(async (sessionCode: string) => {
+    dispatch({ type: "SET_SESSION", session: sessionCode });
+    try {
+      const res = await fetch(`/api/groups?session=${sessionCode}`);
+      const data = res.ok ? await res.json() : {};
+      const groupsArray: YpareoGroup[] = data ? Object.values(data) : [];
+      dispatch({ type: "SET_SESSION_GROUPS", campuses: buildCampuses(groupsArray, state.sites), groups: groupsArray });
+    } catch {
+      dispatch({ type: "SET_SESSION_GROUPS", campuses: [], groups: [] });
+      dispatch({ type: "SHOW_ERROR", message: "Erreur lors du chargement des groupes de cette année académique." });
+    }
+  }, [state.sites]);
 
   const handleCampusChange = useCallback((campusId: string) => {
     const selectedCampus = state.campuses.find((c) => c.id === campusId);
@@ -324,13 +375,14 @@ export default function FormPage() {
 
   // ✅ Flux unifié : 1 clic = récupération SQL → génération PDF → téléchargement auto
   const handleGenerate = useCallback(async () => {
-    if (!state.campus || !state.group || !state.semester) {
+    if (!state.session || !state.campus || !state.group || !state.semester) {
       return dispatch({ type: "SHOW_ERROR", message: "Veuillez remplir tous les champs." });
     }
+    const selectedSession = state.sessions.find((s) => s.CODE_SESSION === state.session);
     const selectedCampus = state.campuses.find((c) => c.id === state.campus);
     const selectedPeriod = state.periods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester);
     const selectedGroup = state.groups.find((g) => g.id.toString() === state.group);
-    if (!selectedCampus || !selectedPeriod || !selectedGroup) {
+    if (!selectedSession || !selectedCampus || !selectedPeriod || !selectedGroup) {
       return dispatch({ type: "SHOW_ERROR", message: "Sélection invalide." });
     }
 
@@ -355,6 +407,11 @@ export default function FormPage() {
           body: JSON.stringify({
             campus: selectedCampus.codeSite.toString(),
             group: state.group,
+            session: Number(state.session),
+            sessionDates: {
+              DATE_DEB: selectedSession.DATE_DEB,
+              DATE_FIN: selectedSession.DATE_FIN,
+            },
             periodeEvaluationCode: state.semester,
             periodeEvaluation: selectedPeriod.NOM_PERIODE_EVALUATION,
             semester: state.semester,
@@ -396,6 +453,11 @@ export default function FormPage() {
             periodeEvaluation: selectedPeriod.NOM_PERIODE_EVALUATION,
             groupName: selectedGroup.label,
             periodeEvaluationDates: selectedPeriod,
+            anneeScolaire: selectedSession.NOM_SESSION,
+            sessionDates: {
+              DATE_DEB: selectedSession.DATE_DEB,
+              DATE_FIN: selectedSession.DATE_FIN,
+            },
           }),
         });
       } finally {
@@ -412,7 +474,7 @@ export default function FormPage() {
         body: JSON.stringify({
           campus: selectedCampus.label,
           groupe: selectedGroup.label,
-          periode: selectedPeriod.NOM_PERIODE_EVALUATION,
+          periode: `${selectedPeriod.NOM_PERIODE_EVALUATION} (${selectedSession.NOM_SESSION})`,
           nbBulletins: pdfJson.studentCount,
         }),
       }).catch(() => {});
@@ -462,10 +524,19 @@ export default function FormPage() {
     );
   }
 
+  const selectedSessionObj = state.sessions.find((s) => s.CODE_SESSION === state.session);
   const selectedCampusLabel = state.campuses.find((c) => c.id === state.campus)?.label;
   const selectedGroupLabel = state.groups.find((g) => g.id.toString() === state.group)?.label;
   const selectedPeriodObj = state.periods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester);
-  const isFormValid = !!state.campus && !!state.group && !!state.semester;
+  // ✅ Filtre assoupli — garde toutes les périodes qui chevauchent l'année académique sélectionnée
+  const sessionPeriods = selectedSessionObj
+    ? state.periods.filter((p) => {
+        const s = new Date(p.DATE_DEB);
+        const e = new Date(p.DATE_FIN);
+        return s <= new Date(selectedSessionObj.DATE_FIN) && e >= new Date(selectedSessionObj.DATE_DEB);
+      })
+    : [];
+  const isFormValid = !!state.session && !!state.campus && !!state.group && !!state.semester;
 
   return (
     <>
@@ -545,6 +616,12 @@ export default function FormPage() {
           {/* Récapitulatif */}
           {(selectedCampusLabel || selectedGroupLabel) && (
             <div className="mt-auto bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+              {selectedSessionObj && (
+                <div>
+                  <div className="text-white/40 text-xs">Année académique</div>
+                  <div className="text-white text-sm font-medium mt-0.5">{selectedSessionObj.NOM_SESSION}</div>
+                </div>
+              )}
               {selectedCampusLabel && (
                 <div>
                   <div className="text-white/40 text-xs">Campus</div>
@@ -588,12 +665,27 @@ export default function FormPage() {
               </div>
 
               <div className="space-y-5">
+                {/* Année académique */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Année académique</label>
+                  <Select value={state.session} onValueChange={handleSessionChange}>
+                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm">
+                      <SelectValue placeholder="Sélectionnez une année" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {state.sessions.map((s) => (
+                        <SelectItem key={s.CODE_SESSION} value={s.CODE_SESSION}>{s.NOM_SESSION}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Campus */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Campus</label>
-                  <Select value={state.campus} onValueChange={handleCampusChange}>
-                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm">
-                      <SelectValue placeholder="Sélectionnez un campus" />
+                  <Select value={state.campus} onValueChange={handleCampusChange} disabled={!state.session || state.isLoadingGroups}>
+                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm disabled:opacity-50">
+                      <SelectValue placeholder={state.isLoadingGroups ? "Chargement des groupes…" : "Sélectionnez un campus"} />
                     </SelectTrigger>
                     <SelectContent>
                       {[...state.campuses]
@@ -636,7 +728,7 @@ export default function FormPage() {
                       <SelectValue placeholder="Sélectionnez une période" />
                     </SelectTrigger>
                     <SelectContent>
-                      {[...state.periods]
+                      {[...sessionPeriods]
                         .filter((p) => !p.NOM_PERIODE_EVALUATION.startsWith("BTS"))
                         .sort((a, b) => a.NOM_PERIODE_EVALUATION.localeCompare(b.NOM_PERIODE_EVALUATION))
                         .map((p) => (
