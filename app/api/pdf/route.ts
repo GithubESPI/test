@@ -61,6 +61,7 @@ interface SubjectECTS {
 interface GroupInfo {
   NOM_GROUPE: string;
   ETENDU_GROUPE?: string;
+  NUMERO_ANNEE?: string | number;
   NOM_FORMATION?: string;
   CODE_PERSONNEL?: string;
   NOM_PERSONNEL?: string;
@@ -647,7 +648,14 @@ async function createStudentPDF(
     page.drawText(bulletinTitle, { x: (pageWidth - bulletinTitleWidth) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
 
     const group = groupInfo.length > 0 ? groupInfo[0] : null;
-    const etenduGroupe = group?.ETENDU_GROUPE || "";
+    // 🩹 Le "Xème année" affiché vient d'ETENDU_GROUPE, parfois mal saisi dans Yparéo
+    // (ex: N-DSI2 MAPI ALT marqué "1ère année") → on le corrige depuis NUMERO_ANNEE, fiable
+    let etenduGroupe = group?.ETENDU_GROUPE || "";
+    const numeroAnnee = Number(group?.NUMERO_ANNEE) || 0;
+    if (numeroAnnee > 0) {
+      const ordinal = numeroAnnee === 1 ? "1ère année" : `${numeroAnnee}ème année`;
+      etenduGroupe = etenduGroupe.replace(/\d+\s*(?:ère|ere|ème|eme|re|e)\s+année/i, ordinal);
+    }
     const keyword = "spécialité";
     const indexSpecialite = etenduGroupe.indexOf(keyword);
 
