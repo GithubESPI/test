@@ -80,8 +80,10 @@ interface State {
   campus: string;
   group: string;
   semester: string;
+  groupPeriods: PeriodeEvaluation[];
   isLoading: boolean;
   isLoadingGroups: boolean;
+  isLoadingPeriods: boolean;
   isSubmitting: boolean;
   isGeneratingPDF: boolean;
   progress: number;
@@ -100,8 +102,8 @@ interface State {
 
 const initialState: State = {
   sessions: [], sites: [], campuses: [], allGroups: [], groups: [], periods: [],
-  session: "", campus: "", group: "", semester: "",
-  isLoading: true, isLoadingGroups: false, isSubmitting: false, isGeneratingPDF: false,
+  session: "", campus: "", group: "", semester: "", groupPeriods: [],
+  isLoading: true, isLoadingGroups: false, isLoadingPeriods: false, isSubmitting: false, isGeneratingPDF: false,
   progress: 0, isLoadingComplete: false,
   modal: "none", errorMessage: "",
   retrievedData: null, pdfDownloadUrl: "", pdfStudentCount: 0, pdfFromCache: false, selectedGroupName: "",
@@ -114,6 +116,7 @@ type Action =
   | { type: "SET_SESSION_GROUPS"; campuses: Campus[]; groups: YpareoGroup[] }
   | { type: "SET_CAMPUS"; campus: string; groups: Group[] }
   | { type: "SET_GROUP"; group: string }
+  | { type: "SET_GROUP_PERIODS"; periods: PeriodeEvaluation[] }
   | { type: "SET_SEMESTER"; semester: string }
   | { type: "SET_LOADING_DONE" }
   | { type: "SET_PROGRESS"; progress: number }
@@ -129,10 +132,11 @@ type Action =
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "INIT_DATA": return { ...state, sessions: action.sessions, sites: action.sites, session: action.session, campuses: action.campuses, allGroups: action.groups, periods: action.periods, isLoading: false };
-    case "SET_SESSION": return { ...state, session: action.session, campus: "", group: "", semester: "", groups: [], isLoadingGroups: true };
+    case "SET_SESSION": return { ...state, session: action.session, campus: "", group: "", semester: "", groups: [], groupPeriods: [], isLoadingGroups: true };
     case "SET_SESSION_GROUPS": return { ...state, campuses: action.campuses, allGroups: action.groups, isLoadingGroups: false };
-    case "SET_CAMPUS": return { ...state, campus: action.campus, groups: action.groups, group: "", semester: "" };
-    case "SET_GROUP": return { ...state, group: action.group };
+    case "SET_CAMPUS": return { ...state, campus: action.campus, groups: action.groups, group: "", semester: "", groupPeriods: [] };
+    case "SET_GROUP": return { ...state, group: action.group, semester: "", groupPeriods: [], isLoadingPeriods: true };
+    case "SET_GROUP_PERIODS": return { ...state, groupPeriods: action.periods, isLoadingPeriods: false };
     case "SET_SEMESTER": return { ...state, semester: action.semester };
     case "SET_LOADING_DONE": return { ...state, isLoadingComplete: true };
     case "SET_PROGRESS": return { ...state, progress: action.progress };
@@ -332,6 +336,19 @@ export default function FormPage() {
     dispatch({ type: "SET_CAMPUS", campus: campusId, groups: filtered });
   }, [state.campuses, state.allGroups]);
 
+  // Choix du groupe → charge les périodes du RÉFÉRENTIEL de ce groupe pour l'année choisie
+  // (évite les périodes homonymes d'autres années qui donnaient des bulletins vides)
+  const handleGroupChange = useCallback(async (groupId: string) => {
+    dispatch({ type: "SET_GROUP", group: groupId });
+    try {
+      const res = await fetch(`/api/periods?group=${groupId}&session=${state.session}`);
+      const json = res.ok ? await res.json() : { success: false };
+      dispatch({ type: "SET_GROUP_PERIODS", periods: json.success ? json.data : [] });
+    } catch {
+      dispatch({ type: "SET_GROUP_PERIODS", periods: [] });
+    }
+  }, [state.session]);
+
   const SQL_STEPS = [
     "Connexion à YParéo...",
     "Récupération des apprenants...",
@@ -380,7 +397,9 @@ export default function FormPage() {
     }
     const selectedSession = state.sessions.find((s) => s.CODE_SESSION === state.session);
     const selectedCampus = state.campuses.find((c) => c.id === state.campus);
-    const selectedPeriod = state.periods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester);
+    const selectedPeriod =
+      state.groupPeriods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester) ||
+      state.periods.find((p) => p.CODE_PERIODE_EVALUATION === state.semester);
     const selectedGroup = state.groups.find((g) => g.id.toString() === state.group);
     if (!selectedSession || !selectedCampus || !selectedPeriod || !selectedGroup) {
       return dispatch({ type: "SHOW_ERROR", message: "Sélection invalide." });
@@ -536,6 +555,8 @@ export default function FormPage() {
         return s <= new Date(selectedSessionObj.DATE_FIN) && e >= new Date(selectedSessionObj.DATE_DEB);
       })
     : [];
+  // Périodes proposées : celles du référentiel du groupe en priorité, sinon repli sur le filtre par dates
+  const displayedPeriods = state.groupPeriods.length > 0 ? state.groupPeriods : sessionPeriods;
   const isFormValid = !!state.session && !!state.campus && !!state.group && !!state.semester;
 
   return (
@@ -702,7 +723,7 @@ export default function FormPage() {
                   <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Groupe</label>
                   <Select
                     value={state.group}
-                    onValueChange={(v) => dispatch({ type: "SET_GROUP", group: v })}
+                    onValueChange={handleGroupChange}
                     disabled={!state.campus}
                   >
                     <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm disabled:opacity-50">
@@ -722,13 +743,13 @@ export default function FormPage() {
                   <Select
                     value={state.semester}
                     onValueChange={(v) => dispatch({ type: "SET_SEMESTER", semester: v })}
-                    disabled={!state.group}
+                    disabled={!state.group || state.isLoadingPeriods}
                   >
                     <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm disabled:opacity-50">
-                      <SelectValue placeholder="Sélectionnez une période" />
+                      <SelectValue placeholder={state.isLoadingPeriods ? "Chargement des périodes…" : "Sélectionnez une période"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {[...sessionPeriods]
+                      {[...displayedPeriods]
                         .filter((p) => !p.NOM_PERIODE_EVALUATION.startsWith("BTS"))
                         .sort((a, b) => a.NOM_PERIODE_EVALUATION.localeCompare(b.NOM_PERIODE_EVALUATION))
                         .map((p) => (
