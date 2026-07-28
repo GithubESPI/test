@@ -1,5 +1,11 @@
 export type Etat = "VA" | "NV" | "C";
 
+// Matières JAMAIS compensables (règle pédagogique ESPI) : un Mémoire de Recherche
+// avec une moyenne < 10 reste NV, même si la moyenne de son UE est ≥ 10.
+export function isNonCompensable(nomMatiere?: string | null): boolean {
+  return /m[ée]moire/i.test(String(nomMatiere ?? ""));
+}
+
 // ✅ Toute valeur libre → Etat ; "R" est converti en "NV"
 export function normalizeEtat(s: string | undefined | null): Etat {
   const up = String(s ?? "").trim().toUpperCase();

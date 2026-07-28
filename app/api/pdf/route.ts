@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Etat, getEtatUE, getUeAverage, normalizeEtat, parseUeAverage } from "@/lib/bulletin/ue";
+import { Etat, getEtatUE, getUeAverage, isNonCompensable, normalizeEtat, parseUeAverage } from "@/lib/bulletin/ue";
 import { fileStorage } from "@/lib/storage/fileStorage";
 
 import fontkit from "@pdf-lib/fontkit";
@@ -129,6 +129,12 @@ const SIGNATURE_MAP: Record<string, string> = {
   "2168" : "brenda.png",
   "1057288": "ks.png",
   "499" : "signature.png"
+};
+
+// Intitulés de fonction à afficher quand celui d'Yparéo est obsolète
+// (à retirer une fois la fiche du personnel mise à jour dans Yparéo)
+const FONCTION_OVERRIDES: Record<string, string> = {
+  "2168": "Directrice pédagogique", // Brenda ZARZOSA ARGUIJO — Yparéo indique encore "Chargé.e Enseignement & Suivi Péda"
 };
 
 async function preloadAssets(): Promise<PreloadedAssets> {
@@ -570,7 +576,8 @@ async function createStudentPDF(
           finalEtat = "VA";
         } else if (moyenneRaw !== null && moyenneRaw !== undefined && !isNaN(parseFloat(String(moyenneRaw).replace(",", ".")))) {
           const n = parseFloat(String(moyenneRaw).replace(",", "."));
-          finalEtat = n >= 10 ? "VA" : n >= 8 ? "TEMP_8_10" : "NV";
+          // Matière non compensable (ex: Mémoire de Recherche) → NV direct sous 10
+          finalEtat = n >= 10 ? "VA" : n >= 8 && !isNonCompensable((m as any).NOM_MATIERE) ? "TEMP_8_10" : "NV";
         } else if (noteInfo && Number(noteInfo.CODE_EVALUATION_NOTE) === 1) {
           finalEtat = "VA";
         }
@@ -984,6 +991,7 @@ async function createStudentPDF(
     if (!prenomPersonnel) prenomPersonnel = "Pédagogique";
     if (!nomFonctionPersonnel) nomFonctionPersonnel = "Responsable Pédagogique";
     if (!codePersonnel && campus?.CODE_PERSONNEL) codePersonnel = campus.CODE_PERSONNEL;
+    if (FONCTION_OVERRIDES[codePersonnel]) nomFonctionPersonnel = FONCTION_OVERRIDES[codePersonnel];
 
     const signatureFilename = getSignatureFilename(codePersonnel);
 
@@ -1137,7 +1145,7 @@ export async function POST(req: NextRequest) {
 
         if (noteMatiere !== null && noteMatiere >= 10) {
             etatCalculé = "VA";
-        } else if (noteMatiere !== null && noteMatiere >= 8 && moyenneUE !== null && moyenneUE >= 10 && !aUneNoteEliminatoire) {
+        } else if (noteMatiere !== null && noteMatiere >= 8 && moyenneUE !== null && moyenneUE >= 10 && !aUneNoteEliminatoire && !isNonCompensable(matiere.NOM_MATIERE)) {
             etatCalculé = "C";
         } else {
             etatCalculé = "NV";
