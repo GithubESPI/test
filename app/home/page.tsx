@@ -2,6 +2,7 @@
 
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { FileText, LayoutDashboard, LogOut, Clock, School, FileDown, X, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -31,15 +32,12 @@ function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-56 bg-[#003349] flex flex-col h-full min-h-screen py-5 px-3 shrink-0">
-      <div className="flex items-center gap-2.5 px-2 pb-5 mb-1 border-b border-white/10">
-        <div className="w-7 h-7 bg-white/15 rounded-lg flex items-center justify-center">
-          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-          </svg>
-        </div>
-        <span className="text-white font-medium text-sm">ESPI</span>
+    <aside
+      className="w-56 bg-[#002a44] bg-cover bg-center flex flex-col h-full min-h-screen py-5 px-3 shrink-0"
+      style={{ backgroundImage: "linear-gradient(rgba(0,42,68,0.88), rgba(0,42,68,0.88)), url('/images/espi-motif-bleu.png')" }}
+    >
+      <div className="px-2 pb-5 mb-1 border-b border-white/10">
+        <Image src="/images/espi-logo-blanc.png" alt="ESPI" width={120} height={50} className="h-9 w-auto" priority />
       </div>
 
       <nav className="flex flex-col gap-1 mt-3 flex-1">
@@ -85,9 +83,9 @@ function TopBar({ title }: { title: string }) {
 
   return (
     <div className="flex items-center justify-between h-14 px-6 border-b border-gray-100 bg-white shrink-0">
-      <h1 className="text-base font-medium text-gray-900">{title}</h1>
+      <h1 className="text-base font-medium text-gray-900 font-serif">{title}</h1>
       <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-full px-3 py-1.5">
-        <div className="w-6 h-6 rounded-full bg-[#156082] flex items-center justify-center text-white text-xs font-medium">
+        <div className="w-6 h-6 rounded-full bg-[#004976] flex items-center justify-center text-white text-xs font-medium">
           {initials}
         </div>
         <span className="text-xs text-gray-500">{session?.user?.name || "Utilisateur"}</span>
@@ -103,15 +101,15 @@ function TopBar({ title }: { title: string }) {
 const GUIDE_STEPS = [
   {
     icon: School,
-    iconBg: "#e6f1fb",
-    iconColor: "#156082",
+    iconBg: "#e6edf4",
+    iconColor: "#004976",
     title: "1. Sélectionnez le campus et le groupe",
     desc: "Choisissez votre campus puis le groupe d'apprenants pour lesquels générer les bulletins.",
   },
   {
     icon: FileText,
-    iconBg: "#e1f5ee",
-    iconColor: "#0f6e56",
+    iconBg: "#e6edf4",
+    iconColor: "#004976",
     title: "2. Choisissez la période d'évaluation",
     desc: "Sélectionnez la période correspondante. Les données sont récupérées automatiquement.",
   },
@@ -164,7 +162,7 @@ function GuideModal({ onClose }: { onClose: () => void }) {
         <Link
           href="/configure/form"
           onClick={onClose}
-          className="flex items-center justify-center gap-2 w-full bg-[#156082] hover:bg-[#124f6b] text-white rounded-xl py-2.5 text-sm font-medium transition-colors"
+          className="flex items-center justify-center gap-2 w-full bg-[#004976] hover:bg-[#003757] text-white rounded-xl py-2.5 text-sm font-medium transition-colors"
         >
           Commencer la génération
           <ChevronRight className="w-4 h-4" />
@@ -183,9 +181,9 @@ const ACTIONS = [
     href: "/configure/form",
     title: "Générer des bulletins",
     sub: "Sélectionner campus et groupe",
-    iconBg: "#e6f1fb",
+    iconBg: "#e6edf4",
     icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#156082" strokeWidth={2}>
+      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#004976" strokeWidth={2}>
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
         <polyline points="14 2 14 8 20 8"/>
       </svg>
@@ -195,9 +193,9 @@ const ACTIONS = [
     href: "/historique",
     title: "Historique des générations",
     sub: "Consulter les archives",
-    iconBg: "#e1f5ee",
+    iconBg: "#e6edf4",
     icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#0f6e56" strokeWidth={2}>
+      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#004976" strokeWidth={2}>
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
         <polyline points="7 10 12 15 17 10"/>
         <line x1="12" y1="15" x2="12" y2="3"/>
@@ -240,9 +238,9 @@ export default function HomePage() {
   };
 
   const STATS_ITEMS = [
-    { num: stats?.bulletinsThisMonth?.toString() ?? "—", label: "Bulletins générés ce mois", color: "#156082" },
-    { num: stats?.groupesThisMonth?.toString() ?? "—", label: "Groupes traités ce mois", color: "#003349" },
-    { num: stats?.campusActifs?.toString() ?? "—", label: "Campus actifs", color: "#1d9e75" },
+    { num: stats?.bulletinsThisMonth?.toString() ?? "—", label: "Bulletins générés ce mois", color: "#004976" },
+    { num: stats?.groupesThisMonth?.toString() ?? "—", label: "Groupes traités ce mois", color: "#002a44" },
+    { num: stats?.campusActifs?.toString() ?? "—", label: "Campus actifs", color: "#004976" },
   ];
 
   return (

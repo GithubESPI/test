@@ -3,27 +3,22 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth/options";
 import ButtonsProvider from "@/components/ButtonProvider";
 import Link from "next/link";
+import Image from "next/image";
 
 export default async function Page() {
   const session = await getServerSession(authOptions);
   if (session) redirect("/home");
 
   return (
-    <main className="min-h-screen grid">
+    <main className="min-h-screen grid lg:grid-cols-2">
       {/* Gauche — formulaire */}
       <div className="flex flex-col items-center justify-center px-8 py-12 bg-white">
         <div className="w-full max-w-sm flex flex-col items-center gap-8">
-          {/* Logo */}
+          {/* Logo charte ESPI */}
           <div className="flex flex-col items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#156082] to-[#003349] flex items-center justify-center">
-              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                <path d="M2 17l10 5 10-5"/>
-                <path d="M2 12l10 5 10-5"/>
-              </svg>
-            </div>
+            <Image src="/images/espi-logo.png" alt="ESPI" width={180} height={75} className="h-16 w-auto" priority />
             <div className="text-center">
-              <h1 className="text-xl font-semibold text-gray-900">Bulletins scolaires</h1>
+              <h1 className="text-xl font-semibold text-gray-900 font-serif">Bulletins scolaires</h1>
               <p className="text-sm text-gray-500 mt-1">Connectez-vous avec votre compte ESPI</p>
             </div>
           </div>
@@ -47,7 +42,13 @@ export default async function Page() {
         </div>
       </div>
 
-      {/* Droite — illustration */}
+      {/* Droite — motif Élévation de la charte ESPI */}
+      <div
+        className="hidden lg:flex items-center justify-center bg-[#004976] bg-cover bg-center"
+        style={{ backgroundImage: "url('/images/espi-motif-bleu.png')" }}
+      >
+        <Image src="/images/espi-logo-blanc.png" alt="ESPI" width={280} height={116} className="w-52 h-auto drop-shadow-md" priority />
+      </div>
     </main>
   );
 }

@@ -18,7 +18,17 @@ const config: Config = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["var(--font-commissioner)", "system-ui", "sans-serif"],
+        serif: ["var(--font-pt-serif)", "Georgia", "serif"],
+      },
       colors: {
+        espi: {
+          DEFAULT: "#004976", // bleu charte ESPI
+          dark: "#002a44",
+          hover: "#003757",
+          light: "#e6edf4",
+        },
         background: "var(--background)",
         foreground: "var(--foreground)",
         card: {
@@ -30,7 +40,7 @@ const config: Config = {
           foreground: "var(--popover-foreground)",
         },
         primary: {
-          "50": "#156082",
+          "50": "#004976",
           DEFAULT: "var(--primary)",
           foreground: "var(--primary-foreground)",
         },
@@ -39,7 +49,7 @@ const config: Config = {
           foreground: "var(--secondary-foreground)",
         },
         third: {
-          "50": "#003349",
+          "50": "#002a44",
           DEFAULT: "var(--primary)",
           foreground: "var(--primary-foreground)",
         },

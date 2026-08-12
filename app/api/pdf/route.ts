@@ -112,8 +112,12 @@ interface DuplicateStat {
 
 interface PreloadedAssets {
   logoBytes: Buffer;
+  logoNewBytes: Buffer; // logo charte 2026 (PNG) — maquette 2026-2027+
   poppinsRegularBytes: Buffer | null;
   poppinsBoldBytes: Buffer | null;
+  commissionerRegularBytes: Buffer | null; // charte 2026
+  commissionerBoldBytes: Buffer | null;
+  ptSerifBoldBytes: Buffer | null; // charte 2026 — titres
   signatureCache: Map<string, Buffer>;
 }
 
@@ -128,7 +132,8 @@ const SIGNATURE_MAP: Record<string, string> = {
   "650429": "Anne-Lise.png",
   "2168" : "brenda.png",
   "1057288": "ks.png",
-  "499" : "signature.png"
+  "499" : "signature.png",
+  "453" : "sebastiencostey.png" // Sébastien Costey — campus Aix-en-Provence
 };
 
 // Intitulés de fonction à afficher quand celui d'Yparéo est obsolète
@@ -149,7 +154,16 @@ async function preloadAssets(): Promise<PreloadedAssets> {
     logoBytes = Buffer.alloc(0);
   }
 
-  // Fonts Poppins — optionnelles
+  // Logo charte 2026 (maquette 2026-2027 et suivantes)
+  let logoNewBytes: Buffer;
+  try {
+    logoNewBytes = await fs.promises.readFile(path.join(publicDir, "images", "espi-logo.png"));
+  } catch (err) {
+    console.error("⚠️ Nouveau logo ESPI introuvable :", path.join(publicDir, "images", "espi-logo.png"), err);
+    logoNewBytes = Buffer.alloc(0);
+  }
+
+  // Fonts Poppins — optionnelles (maquette ≤ 2025-2026)
   let poppinsRegularBytes: Buffer | null = null;
   let poppinsBoldBytes: Buffer | null = null;
   try {
@@ -159,6 +173,20 @@ async function preloadAssets(): Promise<PreloadedAssets> {
     ]);
   } catch {
     console.warn("⚠️ Polices Poppins non trouvées → utilisation des polices standard");
+  }
+
+  // Fonts charte 2026 — Commissioner (texte) + PT Serif (titres), maquette 2026-2027+
+  let commissionerRegularBytes: Buffer | null = null;
+  let commissionerBoldBytes: Buffer | null = null;
+  let ptSerifBoldBytes: Buffer | null = null;
+  try {
+    [commissionerRegularBytes, commissionerBoldBytes, ptSerifBoldBytes] = await Promise.all([
+      fs.promises.readFile(path.join(publicDir, "fonts", "Commissioner-Regular.otf")),
+      fs.promises.readFile(path.join(publicDir, "fonts", "Commissioner-Bold.otf")),
+      fs.promises.readFile(path.join(publicDir, "fonts", "PTSerif-Bold.ttf")),
+    ]);
+  } catch {
+    console.warn("⚠️ Polices charte 2026 non trouvées → repli sur Poppins");
   }
 
   // Signatures — chargées en parallèle, silencieusement si absentes
@@ -177,7 +205,7 @@ async function preloadAssets(): Promise<PreloadedAssets> {
   );
 
   console.log(`✅ Assets chargés depuis ${publicDir} (logo: ${logoBytes.length}B, fonts: ${poppinsRegularBytes ? "ok" : "absent"}, sigs: ${signatureCache.size / 2})`);
-  return { logoBytes, poppinsRegularBytes, poppinsBoldBytes, signatureCache };
+  return { logoBytes, logoNewBytes, poppinsRegularBytes, poppinsBoldBytes, commissionerRegularBytes, commissionerBoldBytes, ptSerifBoldBytes, signatureCache };
 }
 
 // Cache singleton — chargé une seule fois à la première requête PDF
@@ -533,16 +561,36 @@ async function createStudentPDF(
     const pdfDoc = await PDFDocument.create();
     let page = pdfDoc.addPage([595.28, 841.89]);
 
+    // 🎨 Maquette 2026-2027+ : nouvelle charte (logo 2026, Commissioner, PT Serif pour les titres)
+    // Maquette ≤ 2025-2026 : ancienne charte (logo historique, Poppins)
+    // 🚩 Maquette 2026-2027 (nouveau logo + polices Commissioner/PT Serif) prête mais NON activée :
+    // les classes 2026-2027 ne sont pas encore créées dans Yparéo. Passer ENABLE_MAQUETTE_2026
+    // à true le moment venu pour activer automatiquement la nouvelle charte sur les bulletins ≥ 2026.
+    const ENABLE_MAQUETTE_2026 = false;
+    const useNewCharte = ENABLE_MAQUETTE_2026 && parseInt(anneeScolaire, 10) >= 2026;
+
     // ✅ Utiliser les assets préchargés au lieu de les lire depuis le disque
-    let poppinsRegular, poppinsBold;
-    if (assets.poppinsRegularBytes && assets.poppinsBoldBytes) {
+    const regularBytes = useNewCharte
+      ? assets.commissionerRegularBytes || assets.poppinsRegularBytes
+      : assets.poppinsRegularBytes;
+    const boldBytes = useNewCharte
+      ? assets.commissionerBoldBytes || assets.poppinsBoldBytes
+      : assets.poppinsBoldBytes;
+
+    let embeddedRegular, embeddedBold, ptSerifBold;
+    if (regularBytes && boldBytes) {
       pdfDoc.registerFontkit(fontkit);
-      poppinsRegular = await pdfDoc.embedFont(assets.poppinsRegularBytes);
-      poppinsBold = await pdfDoc.embedFont(assets.poppinsBoldBytes);
+      embeddedRegular = await pdfDoc.embedFont(regularBytes);
+      embeddedBold = await pdfDoc.embedFont(boldBytes);
+      if (useNewCharte && assets.ptSerifBoldBytes) {
+        ptSerifBold = await pdfDoc.embedFont(assets.ptSerifBoldBytes);
+      }
     }
 
-    const mainFont = poppinsRegular || (await pdfDoc.embedFont(StandardFonts.Helvetica));
-    const boldFont = poppinsBold || (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
+    const mainFont = embeddedRegular || (await pdfDoc.embedFont(StandardFonts.Helvetica));
+    const boldFont = embeddedBold || (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
+    // Titres du bulletin : PT Serif sur la nouvelle maquette, sinon la graisse habituelle
+    const titleFont = ptSerifBold || boldFont;
 
     const fontSize = 8;
     const fontSizeBold = 8;
@@ -628,13 +676,19 @@ async function createStudentPDF(
       }
     }
 
-    // ✅ Logo depuis assets préchargés
+    // ✅ Logo depuis assets préchargés — logo charte 2026 pour la maquette 2026-2027+
     const logoOffsetLeft = 20;
     currentY = pageHeight - margin / 2;
     try {
-      if (assets.logoBytes.length > 0) {
-        const logoImage = await pdfDoc.embedJpg(assets.logoBytes);
-        const logoDims = logoImage.scale(0.25);
+      const logoSourceBytes = useNewCharte && assets.logoNewBytes.length > 0 ? assets.logoNewBytes : assets.logoBytes;
+      if (logoSourceBytes.length > 0) {
+        const logoImage = useNewCharte && assets.logoNewBytes.length > 0
+          ? await pdfDoc.embedPng(logoSourceBytes)
+          : await pdfDoc.embedJpg(logoSourceBytes);
+        // Nouveau logo calé sur la même hauteur (~57 pt) que l'ancien rendu à l'échelle 0.25
+        const logoDims = useNewCharte && assets.logoNewBytes.length > 0
+          ? { width: 137, height: (logoImage.height / logoImage.width) * 137 }
+          : logoImage.scale(0.25);
         page.drawImage(logoImage, { x: margin - logoOffsetLeft, y: currentY - logoDims.height, width: logoDims.width, height: logoDims.height });
         currentY -= logoDims.height;
       } else {
@@ -651,8 +705,8 @@ async function createStudentPDF(
     // Titre
     currentY -= 10;
     const bulletinTitle = `Bulletin de notes ${anneeScolaire}`;
-    const bulletinTitleWidth = boldFont.widthOfTextAtSize(bulletinTitle, fontSizeTitle);
-    page.drawText(bulletinTitle, { x: (pageWidth - bulletinTitleWidth) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
+    const bulletinTitleWidth = titleFont.widthOfTextAtSize(bulletinTitle, fontSizeTitle);
+    page.drawText(bulletinTitle, { x: (pageWidth - bulletinTitleWidth) / 2, y: currentY, size: fontSizeTitle, font: titleFont, color: espiBlue });
 
     const group = groupInfo.length > 0 ? groupInfo[0] : null;
     // 🩹 Le "Xème année" affiché vient d'ETENDU_GROUPE, parfois mal saisi dans Yparéo
@@ -670,13 +724,13 @@ async function createStudentPDF(
       const line1 = etenduGroupe.substring(0, indexSpecialite + keyword.length);
       const line2 = etenduGroupe.substring(indexSpecialite + keyword.length).trim() + " " + period;
       currentY -= 20;
-      page.drawText(line1, { x: (pageWidth - boldFont.widthOfTextAtSize(line1, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
+      page.drawText(line1, { x: (pageWidth - titleFont.widthOfTextAtSize(line1, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: titleFont, color: espiBlue });
       currentY -= 15;
-      page.drawText(line2, { x: (pageWidth - boldFont.widthOfTextAtSize(line2, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
+      page.drawText(line2, { x: (pageWidth - titleFont.widthOfTextAtSize(line2, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: titleFont, color: espiBlue });
     } else {
       currentY -= 20;
       const periodeText = `${etenduGroupe} ${period}`;
-      page.drawText(periodeText, { x: (pageWidth - boldFont.widthOfTextAtSize(periodeText, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: boldFont, color: espiBlue });
+      page.drawText(periodeText, { x: (pageWidth - titleFont.widthOfTextAtSize(periodeText, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: titleFont, color: espiBlue });
     }
 
     currentY -= 20;
@@ -1013,11 +1067,17 @@ async function createStudentPDF(
         } else if (personnelCode === "2239") { 
             scale = 0.65; 
             currentMaxWidth = 360; 
-        } else if (personnelCode === "1057288") { 
+        } else if (personnelCode === "1057288") {
             // ✅ AGRANDISSEMENT POUR KARINE
             scale = 0.85;           // On augmente l'échelle (0.2 par défaut -> 0.85)
             currentMaxWidth = 1050;  // On élargit la zone pour qu'elle ne soit pas bridée
-        } else if (personnelCode === "2168") { 
+        } else if (codePersonnel === "453") {
+            // Sébastien Costey (Aix-en-Provence) — image recadrée ~437x157
+            // On teste codePersonnel (résolu) et non personnelCode, car Costey peut
+            // être le signataire du SITE et non du groupe
+            scale = 0.35;           // ~153pt de large, ~55pt de haut
+            currentMaxWidth = 160;
+        } else if (personnelCode === "2168") {
             // On passe à une échelle très haute pour compenser le vide dans l'image
             scale = 1.2;            
             currentMaxWidth = 1000; // On s'assure qu'aucune limite ne la réduit

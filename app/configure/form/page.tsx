@@ -214,8 +214,8 @@ function StepIndicator({ step, label, status }: { step: number; label: string; s
   return (
     <div className="flex items-start gap-3">
       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium shrink-0 mt-0.5 ${
-        status === "done" ? "bg-[#156082] text-white" :
-        status === "current" ? "bg-white text-[#003349] font-semibold" :
+        status === "done" ? "bg-[#004976] text-white" :
+        status === "current" ? "bg-white text-[#002a44] font-semibold" :
         "bg-white/10 text-white/40"
       }`}>
         {status === "done" ? "✓" : step}
@@ -264,11 +264,21 @@ export default function FormPage() {
         const sitesRaw = sitesRes.ok ? await sitesRes.json() : [];
         const sitesArray: SiteInfo[] = Array.isArray(sitesRaw) ? sitesRaw : Object.values(sitesRaw);
 
-        // Années académiques déjà commencées, de la plus récente à la plus ancienne
+        // Années académiques déjà commencées + la prochaine rentrée (pour préparer les maquettes N+1),
+        // de la plus récente à la plus ancienne
         const now = new Date();
-        const sessions: AcademicSession[] = (sessionsData.success ? sessionsData.data : [])
-          .filter((s: AcademicSession) => new Date(s.DATE_DEB) <= now)
-          .sort((a: AcademicSession, b: AcademicSession) => new Date(b.DATE_DEB).getTime() - new Date(a.DATE_DEB).getTime());
+        const allSessions: AcademicSession[] = sessionsData.success ? sessionsData.data : [];
+        const started = allSessions.filter((s) => new Date(s.DATE_DEB) <= now);
+        // 🚩 Prochaine rentrée (2026-2027) non proposée tant que la maquette n'est pas activée
+        // (cf. ENABLE_MAQUETTE_2026 dans app/api/pdf/route.ts). Passer à true le moment venu.
+        const SHOW_NEXT_SESSION = false;
+        const nextSession = SHOW_NEXT_SESSION
+          ? allSessions
+              .filter((s) => new Date(s.DATE_DEB) > now)
+              .sort((a, b) => new Date(a.DATE_DEB).getTime() - new Date(b.DATE_DEB).getTime())[0]
+          : undefined;
+        const sessions: AcademicSession[] = [...(nextSession ? [nextSession] : []), ...started]
+          .sort((a, b) => new Date(b.DATE_DEB).getTime() - new Date(a.DATE_DEB).getTime());
         const defaultSession = pickDefaultSession(sessions);
 
         const allPeriods: PeriodeEvaluation[] = periodsData.success ? periodsData.data : [];
@@ -533,7 +543,7 @@ export default function FormPage() {
         <div className="w-full max-w-xs space-y-3">
           <div className="relative w-full h-1 bg-gray-200 rounded-full overflow-hidden">
             <div
-              className="absolute inset-y-0 left-0 bg-[#156082] transition-all duration-300 rounded-full"
+              className="absolute inset-y-0 left-0 bg-[#004976] transition-all duration-300 rounded-full"
               style={{ width: `${state.progress}%` }}
             />
           </div>
@@ -566,7 +576,7 @@ export default function FormPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-7">
             <div className="flex items-center gap-3 mb-5">
-              <Loader2 className="h-5 w-5 animate-spin text-[#156082] shrink-0" />
+              <Loader2 className="h-5 w-5 animate-spin text-[#004976] shrink-0" />
               <p className="text-sm font-medium text-gray-900">
                 {state.isSubmitting ? "Récupération des données…" : "Génération des bulletins…"}
               </p>
@@ -577,8 +587,8 @@ export default function FormPage() {
               {state.overlaySteps.map((s, i) => (
                 <div key={i} className="flex items-center gap-2.5">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all ${
-                    s.status === "done"    ? "bg-[#156082] text-white" :
-                    s.status === "current" ? "bg-[#e6f1fb] text-[#156082] ring-2 ring-[#156082]/30" :
+                    s.status === "done"    ? "bg-[#004976] text-white" :
+                    s.status === "current" ? "bg-[#e6edf4] text-[#004976] ring-2 ring-[#004976]/30" :
                                             "bg-gray-100 text-gray-300"
                   }`}>
                     {s.status === "done" ? "✓" : i + 1}
@@ -597,7 +607,7 @@ export default function FormPage() {
             {/* Barre de progression */}
             <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
               <div
-                className="h-full bg-[#156082] rounded-full transition-all duration-700"
+                className="h-full bg-[#004976] rounded-full transition-all duration-700"
                 style={{ width: `${state.overlayProgress}%` }}
               />
             </div>
@@ -611,7 +621,10 @@ export default function FormPage() {
       <div className="min-h-screen flex bg-gray-50">
 
         {/* Sidebar */}
-        <aside className="w-72 bg-[#003349] flex flex-col py-8 px-5 shrink-0 min-h-screen">
+        <aside
+          className="w-72 bg-[#002a44] bg-cover bg-center flex flex-col py-8 px-5 shrink-0 min-h-screen"
+          style={{ backgroundImage: "linear-gradient(rgba(0,42,68,0.88), rgba(0,42,68,0.88)), url('/images/espi-motif-bleu.png')" }}
+        >
           {/* Back */}
           <Link
             href="/home"
@@ -622,7 +635,7 @@ export default function FormPage() {
           </Link>
 
           <div className="mb-8">
-            <h2 className="text-white font-medium text-base">Génération de bulletins</h2>
+            <h2 className="text-white font-medium text-base font-serif">Génération de bulletins</h2>
             <p className="text-white/40 text-xs mt-1">Suivez les étapes ci-dessous</p>
           </div>
 
@@ -672,14 +685,14 @@ export default function FormPage() {
             {/* Progress bar */}
             <div className="w-full h-0.5 bg-gray-200 rounded-full mb-8 overflow-hidden">
               <div
-                className="h-full bg-[#156082] rounded-full transition-all duration-500"
+                className="h-full bg-[#004976] rounded-full transition-all duration-500"
                 style={{ width: `${Math.round(((currentStep - 1) / 3) * 100)}%` }}
               />
             </div>
 
             <div className="bg-white border border-gray-100 rounded-2xl p-8 shadow-sm">
               <div className="mb-6">
-                <h1 className="text-lg font-medium text-gray-900">Choisir les bulletins à éditer</h1>
+                <h1 className="text-lg font-medium text-gray-900 font-serif">Choisir les bulletins à éditer</h1>
                 <p className="text-sm text-gray-500 mt-1">
                   {session?.user?.name ? `Bonjour ${session.user.name} —` : ""} Remplissez les champs ci-dessous
                 </p>
@@ -690,7 +703,7 @@ export default function FormPage() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Année académique</label>
                   <Select value={state.session} onValueChange={handleSessionChange}>
-                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm">
+                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#004976] focus:ring-[#004976] text-sm">
                       <SelectValue placeholder="Sélectionnez une année" />
                     </SelectTrigger>
                     <SelectContent>
@@ -705,7 +718,7 @@ export default function FormPage() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Campus</label>
                   <Select value={state.campus} onValueChange={handleCampusChange} disabled={!state.session || state.isLoadingGroups}>
-                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm disabled:opacity-50">
+                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#004976] focus:ring-[#004976] text-sm disabled:opacity-50">
                       <SelectValue placeholder={state.isLoadingGroups ? "Chargement des groupes…" : "Sélectionnez un campus"} />
                     </SelectTrigger>
                     <SelectContent>
@@ -726,7 +739,7 @@ export default function FormPage() {
                     onValueChange={handleGroupChange}
                     disabled={!state.campus}
                   >
-                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm disabled:opacity-50">
+                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#004976] focus:ring-[#004976] text-sm disabled:opacity-50">
                       <SelectValue placeholder={!state.campus ? "Choisissez d'abord un campus" : "Sélectionnez un groupe"} />
                     </SelectTrigger>
                     <SelectContent>
@@ -745,7 +758,7 @@ export default function FormPage() {
                     onValueChange={(v) => dispatch({ type: "SET_SEMESTER", semester: v })}
                     disabled={!state.group || state.isLoadingPeriods}
                   >
-                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#156082] focus:ring-[#156082] text-sm disabled:opacity-50">
+                    <SelectTrigger className="h-10 border-gray-200 focus:border-[#004976] focus:ring-[#004976] text-sm disabled:opacity-50">
                       <SelectValue placeholder={state.isLoadingPeriods ? "Chargement des périodes…" : "Sélectionnez une période"} />
                     </SelectTrigger>
                     <SelectContent>
@@ -765,7 +778,7 @@ export default function FormPage() {
                 <Button
                   onClick={handleGenerate}
                   disabled={!isFormValid || state.isSubmitting || state.isGeneratingPDF}
-                  className="w-full h-10 bg-[#156082] hover:bg-[#124f6b] text-white font-medium text-sm disabled:opacity-40 transition-all mt-2"
+                  className="w-full h-10 bg-[#004976] hover:bg-[#003757] text-white font-medium text-sm disabled:opacity-40 transition-all mt-2"
                 >
                   {state.isSubmitting || state.isGeneratingPDF ? (
                     <><Loader2 className="h-4 w-4 animate-spin mr-2" />Génération en cours…</>
@@ -818,7 +831,7 @@ export default function FormPage() {
                   dispatch({ type: "SHOW_ERROR", message: "Erreur lors du téléchargement." });
                 }
               }}
-              className="bg-[#156082] hover:bg-[#124f6b]"
+              className="bg-[#004976] hover:bg-[#003757]"
             >
               <FileDown className="mr-2 h-4 w-4" /> Re-télécharger le ZIP
             </Button>

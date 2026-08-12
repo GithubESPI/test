@@ -2,6 +2,7 @@
 
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { FileText, LayoutDashboard, LogOut, Clock, FileDown, Calendar, Users, Building2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -33,15 +34,12 @@ function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-56 bg-[#003349] flex flex-col h-full min-h-screen py-5 px-3 shrink-0">
-      <div className="flex items-center gap-2.5 px-2 pb-5 mb-1 border-b border-white/10">
-        <div className="w-7 h-7 bg-white/15 rounded-lg flex items-center justify-center">
-          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-          </svg>
-        </div>
-        <span className="text-white font-medium text-sm">ESPI</span>
+    <aside
+      className="w-56 bg-[#002a44] bg-cover bg-center flex flex-col h-full min-h-screen py-5 px-3 shrink-0"
+      style={{ backgroundImage: "linear-gradient(rgba(0,42,68,0.88), rgba(0,42,68,0.88)), url('/images/espi-motif-bleu.png')" }}
+    >
+      <div className="px-2 pb-5 mb-1 border-b border-white/10">
+        <Image src="/images/espi-logo-blanc.png" alt="ESPI" width={120} height={50} className="h-9 w-auto" priority />
       </div>
 
       <nav className="flex flex-col gap-1 mt-3 flex-1">
@@ -87,9 +85,9 @@ function TopBar({ title }: { title: string }) {
 
   return (
     <div className="flex items-center justify-between h-14 px-6 border-b border-gray-100 bg-white shrink-0">
-      <h1 className="text-base font-medium text-gray-900">{title}</h1>
+      <h1 className="text-base font-medium text-gray-900 font-serif">{title}</h1>
       <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-full px-3 py-1.5">
-        <div className="w-6 h-6 rounded-full bg-[#156082] flex items-center justify-center text-white text-xs font-medium">
+        <div className="w-6 h-6 rounded-full bg-[#004976] flex items-center justify-center text-white text-xs font-medium">
           {initials}
         </div>
         <span className="text-xs text-gray-500">{session?.user?.name || "Utilisateur"}</span>
@@ -117,15 +115,15 @@ function GenerationCard({ generation }: { generation: Generation }) {
   return (
     <div className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-4 hover:border-gray-200 hover:shadow-sm transition-all">
       {/* Icône */}
-      <div className="w-10 h-10 rounded-lg bg-[#e6f1fb] flex items-center justify-center shrink-0">
-        <FileDown className="w-5 h-5 text-[#156082]" />
+      <div className="w-10 h-10 rounded-lg bg-[#e6edf4] flex items-center justify-center shrink-0">
+        <FileDown className="w-5 h-5 text-[#004976]" />
       </div>
 
       {/* Infos */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium text-gray-900 truncate">{generation.groupe}</span>
-          <span className="text-xs bg-[#e6f1fb] text-[#156082] px-2 py-0.5 rounded-full shrink-0">
+          <span className="text-xs bg-[#e6edf4] text-[#004976] px-2 py-0.5 rounded-full shrink-0">
             {generation.nbBulletins} bulletin{generation.nbBulletins > 1 ? "s" : ""}
           </span>
         </div>
@@ -197,7 +195,7 @@ export default function HistoriquePage() {
               <div className="text-sm text-gray-500 text-center">
                 Aucune génération pour le moment.
                 <br />
-                <Link href="/configure/form" className="text-[#156082] hover:underline mt-1 inline-block">
+                <Link href="/configure/form" className="text-[#004976] hover:underline mt-1 inline-block">
                   Générer vos premiers bulletins →
                 </Link>
               </div>

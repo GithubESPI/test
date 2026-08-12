@@ -1,14 +1,32 @@
 
 import type { Metadata } from "next";
-import { Poppins } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import SessionWrapper from "@/lib/SessionWrapper";
 import Providers from "@/components/Providers";
 
-const poppins = Poppins({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+// 🎨 Charte graphique ESPI — Commissioner (sans-serif, texte) + PT Serif (titres)
+const commissioner = localFont({
+  src: [
+    { path: "./fonts/Commissioner-Light.otf", weight: "300", style: "normal" },
+    { path: "./fonts/Commissioner-Regular.otf", weight: "400", style: "normal" },
+    { path: "./fonts/Commissioner-Italic.otf", weight: "400", style: "italic" },
+    { path: "./fonts/Commissioner-SemiBold.otf", weight: "600", style: "normal" },
+    { path: "./fonts/Commissioner-Bold.otf", weight: "700", style: "normal" },
+  ],
+  variable: "--font-commissioner",
   display: "swap", // affiche le texte immédiatement avec la font système, puis swap
+});
+
+const ptSerif = localFont({
+  src: [
+    { path: "./fonts/PTSerif-Regular.ttf", weight: "400", style: "normal" },
+    { path: "./fonts/PTSerif-Italic.ttf", weight: "400", style: "italic" },
+    { path: "./fonts/PTSerif-Bold.ttf", weight: "700", style: "normal" },
+    { path: "./fonts/PTSerif-BoldItalic.ttf", weight: "700", style: "italic" },
+  ],
+  variable: "--font-pt-serif",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -24,7 +42,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={poppins.className}>
+      <body className={`${commissioner.variable} ${ptSerif.variable} ${commissioner.className}`}>
         <SessionWrapper>
           <main className="flex flex-col min-h-[calc(100vh-3.5rem-1px)]">
             <div className="flex-1 flex flex-col h-full">
