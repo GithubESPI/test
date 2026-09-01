@@ -142,6 +142,15 @@ const FONCTION_OVERRIDES: Record<string, string> = {
   "2168": "Directrice pédagogique", // Brenda ZARZOSA ARGUIJO — Yparéo indique encore "Chargé.e Enseignement & Suivi Péda"
 };
 
+// Détermine l'article correct ("du" / "de la") selon le genre du premier mot de la fonction
+// (ex: "Directrice pédagogique" → "de la", "Responsable pédagogique" → "du")
+function getArticlePourFonction(fonction: string): string {
+  const premierMot = fonction.trim().split(/\s+/)[0] || "";
+  const terminaisonsFeminines = ["trice", "euse", "ienne", "esse", "ère", "ante", "ée"];
+  const estFeminin = terminaisonsFeminines.some((fin) => premierMot.toLowerCase().endsWith(fin));
+  return estFeminin ? "de la" : "du";
+}
+
 async function preloadAssets(): Promise<PreloadedAssets> {
   const publicDir = path.join(process.cwd(), "public");
 
@@ -1086,10 +1095,10 @@ async function createStudentPDF(
             // en appliquant directement les dimensions voulues
             const signatureDims = { width: 180, height: 90 }; 
 
-            page.drawText(`Signature du ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 15, size: 7, font: mainFont });
+            page.drawText(`Signature ${getArticlePourFonction(nomFonctionPersonnel)} ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 15, size: 7, font: mainFont });
             page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 27, size: 7, font: boldFont });
-            
-            page.drawImage(signatureImage, { 
+
+            page.drawImage(signatureImage, {
                 x: pageWidth - margin - 210, // Un peu plus à gauche pour centrer si c'est large
                 y: signatureY - 45 - signatureDims.height, 
                 width: signatureDims.width, 
@@ -1105,15 +1114,15 @@ async function createStudentPDF(
         if (scaleByWidth.width > currentMaxWidth) scale = scale * (currentMaxWidth / scaleByWidth.width);
         const signatureDims = signatureImage.scale(scale);
 
-        page.drawText(`Signature du ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 15, size: 7, font: mainFont });
+        page.drawText(`Signature ${getArticlePourFonction(nomFonctionPersonnel)} ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 15, size: 7, font: mainFont });
         page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 27, size: 7, font: boldFont });
         page.drawImage(signatureImage, { x: pageWidth - margin - 200, y: signatureY - 40 - signatureDims.height, width: signatureDims.width, height: signatureDims.height });
       } catch {
-        page.drawText(`Signature du : ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 10, size: 7, font: mainFont });
+        page.drawText(`Signature ${getArticlePourFonction(nomFonctionPersonnel)} : ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 10, size: 7, font: mainFont });
         page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 22, size: 7, font: boldFont });
       }
     } else {
-      page.drawText(`Signature du : ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 10, size: fontSize, font: mainFont });
+      page.drawText(`Signature ${getArticlePourFonction(nomFonctionPersonnel)} : ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 10, size: fontSize, font: mainFont });
       page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 22, size: fontSize, font: boldFont });
     }
 
