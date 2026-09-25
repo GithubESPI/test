@@ -49,7 +49,8 @@ export function getUeAverage(
 
   const row = ueAverages.find((a) => {
     const code = toKey(a.CODE_UE ?? a.CODE_MATIERE);
-    const nom = (a as any).NOM_MATIERE ? toKey((a as any).NOM_MATIERE) : null;
+    const nomMatiere = (a as { NOM_MATIERE?: string | null }).NOM_MATIERE;
+    const nom = nomMatiere ? toKey(nomMatiere) : null;
 
     const okStudent = studentId == null ? true : String(a.CODE_APPRENANT ?? "") === String(studentId);
 

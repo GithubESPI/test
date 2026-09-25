@@ -1,74 +1,41 @@
 "use client";
 
-import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
-import Image from "next/image";
-import { usePathname } from "next/navigation";
-import { FileText, LayoutDashboard, LogOut, Clock, School, FileDown, X, ChevronRight } from "lucide-react";
+import UserMenu from "@/components/UserMenu";
+import { MobileNav, Sidebar } from "@/components/AppNav";
+import { FileText, School, FileDown, X, ChevronRight, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
+import { GenerationCard, type Generation } from "@/components/GenerationCard";
 
 // ============================================================
 // TYPES
 // ============================================================
+
+interface CampusProgress {
+  campus: string;
+  groupes: number;
+  bulletins: number;
+  derniere: string | null;
+}
+
+interface Progression {
+  periodes: string[];
+  defaultPeriode: string | null;
+  parPeriode: Record<string, CampusProgress[]>;
+}
 
 interface Stats {
   bulletinsThisMonth: number;
   groupesThisMonth: number;
   campusActifs: number;
   hasSeenGuide: boolean;
+  progression: Progression;
 }
 
-// ============================================================
-// SIDEBAR
-// ============================================================
-
-const NAV_ITEMS = [
-  { href: "/home", label: "Tableau de bord", icon: LayoutDashboard },
-  { href: "/configure/form", label: "Générer bulletins", icon: FileText },
-  { href: "/historique", label: "Historique", icon: Clock },
-];
-
-function Sidebar() {
-  const pathname = usePathname();
-
-  return (
-    <aside
-      className="w-56 bg-[#002a44] bg-cover bg-center flex flex-col h-full min-h-screen py-5 px-3 shrink-0"
-      style={{ backgroundImage: "linear-gradient(rgba(0,42,68,0.88), rgba(0,42,68,0.88)), url('/images/espi-motif-bleu.png')" }}
-    >
-      <div className="px-2 pb-5 mb-1 border-b border-white/10">
-        <Image src="/images/espi-logo-blanc.png" alt="ESPI" width={120} height={50} className="h-9 w-auto" priority />
-      </div>
-
-      <nav className="flex flex-col gap-1 mt-3 flex-1">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-                active
-                  ? "bg-white/12 text-white font-medium"
-                  : "text-white/55 hover:text-white/80 hover:bg-white/8"
-              }`}
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <button
-        onClick={() => signOut({ callbackUrl: "/" })}
-        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-white/40 hover:text-white/70 hover:bg-white/8 transition-colors mt-2"
-      >
-        <LogOut className="w-4 h-4 shrink-0" />
-        Se déconnecter
-      </button>
-    </aside>
-  );
+interface YmagStatus {
+  ok: boolean;
+  checkedAt: string;
+  cacheUpdatedAt: string | null;
 }
 
 // ============================================================
@@ -76,20 +43,10 @@ function Sidebar() {
 // ============================================================
 
 function TopBar({ title }: { title: string }) {
-  const { data: session } = useSession();
-  const initials = session?.user?.name
-    ? session.user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
-    : "?";
-
   return (
-    <div className="flex items-center justify-between h-14 px-6 border-b border-gray-100 bg-white shrink-0">
-      <h1 className="text-base font-medium text-gray-900 font-serif">{title}</h1>
-      <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-full px-3 py-1.5">
-        <div className="w-6 h-6 rounded-full bg-[#004976] flex items-center justify-center text-white text-xs font-medium">
-          {initials}
-        </div>
-        <span className="text-xs text-gray-500">{session?.user?.name || "Utilisateur"}</span>
-      </div>
+    <div className="flex items-center justify-between h-14 px-4 sm:px-6 border-b border-gray-100 bg-white shrink-0">
+      <h1 className="text-base font-semibold text-gray-900">{title}</h1>
+      <UserMenu />
     </div>
   );
 }
@@ -101,22 +58,22 @@ function TopBar({ title }: { title: string }) {
 const GUIDE_STEPS = [
   {
     icon: School,
-    iconBg: "#e6edf4",
+    iconBg: "#E6EDF1",
     iconColor: "#004976",
     title: "1. Sélectionnez le campus et le groupe",
     desc: "Choisissez votre campus puis le groupe d'apprenants pour lesquels générer les bulletins.",
   },
   {
     icon: FileText,
-    iconBg: "#e6edf4",
+    iconBg: "#E6EDF1",
     iconColor: "#004976",
     title: "2. Choisissez la période d'évaluation",
     desc: "Sélectionnez la période correspondante. Les données sont récupérées automatiquement.",
   },
   {
     icon: FileDown,
-    iconBg: "#faeeda",
-    iconColor: "#854f0b",
+    iconBg: "#FFECD8",
+    iconColor: "#004976",
     title: "3. Générez et téléchargez",
     desc: "Confirmez votre choix, attendez la génération puis téléchargez l'archive ZIP.",
   },
@@ -162,7 +119,7 @@ function GuideModal({ onClose }: { onClose: () => void }) {
         <Link
           href="/configure/form"
           onClick={onClose}
-          className="flex items-center justify-center gap-2 w-full bg-[#004976] hover:bg-[#003757] text-white rounded-xl py-2.5 text-sm font-medium transition-colors"
+          className="flex items-center justify-center gap-2 w-full bg-[#004976] hover:bg-[#336D91] text-white rounded-xl py-2.5 text-sm font-medium transition-colors"
         >
           Commencer la génération
           <ChevronRight className="w-4 h-4" />
@@ -173,40 +130,131 @@ function GuideModal({ onClose }: { onClose: () => void }) {
 }
 
 // ============================================================
-// PAGE HOME
+// ÉTAT D'YPARÉO
 // ============================================================
 
-const ACTIONS = [
-  {
-    href: "/configure/form",
-    title: "Générer des bulletins",
-    sub: "Sélectionner campus et groupe",
-    iconBg: "#e6edf4",
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#004976" strokeWidth={2}>
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-      </svg>
-    ),
-  },
-  {
-    href: "/historique",
-    title: "Historique des générations",
-    sub: "Consulter les archives",
-    iconBg: "#e6edf4",
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#004976" strokeWidth={2}>
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="7 10 12 15 17 10"/>
-        <line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-    ),
-  },
-];
+function YmagIndicator({ status }: { status: YmagStatus | null }) {
+  if (!status) return null; // vérification en cours : on n'affiche rien
+
+  if (status.ok) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+        <span className="w-2 h-2 rounded-full bg-[#47B5E0]" aria-hidden="true" />
+        Yparéo connecté
+      </span>
+    );
+  }
+
+  const copie = status.cacheUpdatedAt
+    ? new Date(status.cacheUpdatedAt).toLocaleString("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })
+    : null;
+
+  return (
+    <div className="flex items-start gap-3 text-sm text-[#004976] bg-[#FFDFE5] border border-[#FF7D97] rounded-lg px-4 py-3">
+      <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-[#FF7D97]" />
+      <div>
+        <p className="font-medium">Yparéo ne répond pas actuellement.</p>
+        <p className="text-xs mt-0.5">
+          La génération peut échouer : réessayez dans quelques minutes.
+          {copie && <> Listes issues de la dernière copie du {copie}.</>}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// Lien vers le formulaire de génération, prérempli avec le campus, l'année et la période
+function formHref(campus: string, periodeLabel: string | null) {
+  const params = new URLSearchParams({ campus });
+  const m = periodeLabel?.match(/^(.*?)\s*\((\d{4}-\d{4})\)\s*$/);
+  if (m) {
+    params.set("periode", m[1]);
+    params.set("annee", m[2]);
+  }
+  return `/configure/form?${params.toString()}`;
+}
+
+// ============================================================
+// AVANCEMENT PAR CAMPUS
+// ============================================================
+
+function CampusProgress({ progression }: { progression: Progression | null }) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const periodes = progression?.periodes ?? [];
+  const periode = selected && periodes.includes(selected) ? selected : progression?.defaultPeriode ?? null;
+  const campuses = periode && progression ? progression.parPeriode[periode] ?? [] : [];
+  const restants = campuses.filter((c) => c.groupes === 0);
+  const termines = campuses.filter((c) => c.groupes > 0);
+
+  return (
+    <section className="bg-white border border-gray-100 rounded-xl p-5">
+      <h2 className="text-sm font-medium text-gray-900 mb-3">Avancement par campus</h2>
+
+      {periodes.length === 0 ? (
+        <p className="text-sm text-gray-500">Vos campus apparaîtront ici après votre première génération.</p>
+      ) : (
+        <>
+          <select
+            value={periode ?? ""}
+            onChange={(e) => setSelected(e.target.value)}
+            aria-label="Période"
+            className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#004976] focus:ring-1 focus:ring-[#004976]"
+          >
+            {periodes.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+
+          {campuses.length === 0 ? (
+            <p className="text-sm text-gray-500 mt-4">Aucun campus concerné par cette période.</p>
+          ) : restants.length === 0 ? (
+            <p className="flex items-center gap-2 text-sm text-[#004976] mt-4">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-[#47B5E0]" />
+              Tous vos campus sont à jour.
+            </p>
+          ) : (
+            <>
+              <p className="flex items-center gap-2 text-sm text-gray-900 mt-4 mb-1">
+                <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full bg-[#FF7D97] text-[#004976] text-xs font-semibold">
+                  {restants.length}
+                </span>
+                campus restant{restants.length > 1 ? "s" : ""} à traiter
+              </p>
+              <ul className="flex flex-col divide-y divide-gray-100">
+                {restants.map((c) => (
+                  <li key={c.campus} className="flex items-center justify-between py-2">
+                    <span className="text-sm text-gray-700">{c.campus}</span>
+                    <Link href={formHref(c.campus, periode)} className="text-xs font-medium text-[#004976] hover:underline">
+                      Générer
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {termines.length > 0 && restants.length > 0 && (
+            <p className="text-xs text-gray-500 mt-3">
+              Terminé : {termines.map((c) => c.campus).join(", ")}
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ============================================================
+// PAGE HOME
+// ============================================================
 
 export default function HomePage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [recent, setRecent] = useState<Generation[] | null>(null);
+  const [retentionDays, setRetentionDays] = useState(7);
+  const [ymagStatus, setYmagStatus] = useState<YmagStatus | null>(null);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -224,7 +272,35 @@ export default function HomePage() {
         console.error("Erreur chargement stats:", error);
       }
     };
+
+    const fetchRecent = async () => {
+      try {
+        const res = await fetch("/api/generations?page=1&pageSize=4");
+        const data = await res.json();
+        if (data.success) {
+          setRecent(data.data);
+          if (typeof data.retentionDays === "number") setRetentionDays(data.retentionDays);
+        } else {
+          setRecent([]);
+        }
+      } catch {
+        setRecent([]);
+      }
+    };
+
+    const fetchYmagStatus = async () => {
+      try {
+        const res = await fetch("/api/ymag-status");
+        setYmagStatus(await res.json());
+      } catch {
+        // Impossible de joindre notre propre serveur : on n'affirme rien sur Yparéo
+        setYmagStatus(null);
+      }
+    };
+
     fetchStats();
+    fetchRecent();
+    fetchYmagStatus();
   }, []);
 
   const handleCloseGuide = async () => {
@@ -237,11 +313,8 @@ export default function HomePage() {
     }
   };
 
-  const STATS_ITEMS = [
-    { num: stats?.bulletinsThisMonth?.toString() ?? "—", label: "Bulletins générés ce mois", color: "#004976" },
-    { num: stats?.groupesThisMonth?.toString() ?? "—", label: "Groupes traités ce mois", color: "#002a44" },
-    { num: stats?.campusActifs?.toString() ?? "—", label: "Campus actifs", color: "#004976" },
-  ];
+  const bulletins = stats?.bulletinsThisMonth ?? 0;
+  const groupes = stats?.groupesThisMonth ?? 0;
 
   return (
     <>
@@ -249,46 +322,76 @@ export default function HomePage() {
 
       <div className="flex min-h-screen bg-gray-50">
         <Sidebar />
+        <MobileNav />
         <div className="flex flex-col flex-1 min-w-0">
           <TopBar title="Tableau de bord" />
-          <main className="flex-1 p-6 flex flex-col gap-6">
+          <main className="flex-1 p-4 pb-24 sm:p-6 sm:pb-24 md:pb-6">
+            <div className="max-w-5xl mx-auto flex flex-col gap-10">
 
-            {/* Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {STATS_ITEMS.map((s) => (
-                <div key={s.label} className="bg-white border border-gray-100 rounded-xl p-4">
-                  <div className="w-8 h-1 rounded-full mb-3" style={{ background: s.color }} />
-                  <div className="text-2xl font-medium text-gray-900">{s.num}</div>
-                  <div className="text-xs text-gray-500 mt-1">{s.label}</div>
+              {/* Action principale */}
+              <div className="flex flex-col gap-3">
+                {ymagStatus && !ymagStatus.ok && <YmagIndicator status={ymagStatus} />}
+
+                <Link
+                  href="/configure/form"
+                  className="flex items-center justify-between gap-3 bg-[#004976] bg-cover bg-center text-white rounded-xl px-5 py-5 transition hover:brightness-125"
+                  style={{ backgroundImage: "linear-gradient(rgba(0,73,118,0.88), rgba(0,73,118,0.88)), url('/images/espi-motif-bleu.png')" }}
+                >
+                  <div>
+                    <div className="text-base font-medium">Générer vos bulletins</div>
+                    <div className="text-sm text-white/70 mt-0.5">Campus, groupe, période</div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 shrink-0" />
+                </Link>
+
+                <div className="flex items-center justify-between gap-3 px-1 text-xs text-gray-500">
+                  <span>
+                    Ce mois-ci : <strong className="font-medium text-gray-700">{bulletins} bulletin{bulletins > 1 ? "s" : ""}</strong>
+                    {" "}· <strong className="font-medium text-gray-700">{groupes} groupe{groupes > 1 ? "s" : ""}</strong>
+                  </span>
+                  {ymagStatus?.ok && <YmagIndicator status={ymagStatus} />}
                 </div>
-              ))}
-            </div>
-
-            {/* Actions rapides */}
-            <div>
-              <h2 className="text-sm font-medium text-gray-500 mb-3">Actions rapides</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {ACTIONS.map((a) => (
-                  <Link
-                    key={a.href}
-                    href={a.href}
-                    className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-3 hover:border-gray-200 hover:shadow-sm transition-all"
-                  >
-                    <div
-                      className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ background: a.iconBg }}
-                    >
-                      {a.icon}
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{a.title}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{a.sub}</div>
-                    </div>
-                  </Link>
-                ))}
               </div>
-            </div>
 
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-10 items-start">
+                {/* Derniers bulletins générés */}
+                <section className="lg:col-span-3 flex flex-col gap-3">
+                  <div className="flex items-baseline justify-between mb-1">
+                    <h2 className="text-sm font-medium text-gray-900">Derniers bulletins générés</h2>
+                    <Link href="/historique" className="text-xs text-[#004976] hover:underline">
+                      Historique complet →
+                    </Link>
+                  </div>
+
+                  {recent === null ? (
+                    <div className="flex flex-col gap-3" aria-busy="true">
+                      {[0, 1, 2].map((i) => (
+                        <div key={i} className="bg-white border border-gray-100 rounded-xl h-[62px] animate-pulse" />
+                      ))}
+                    </div>
+                  ) : recent.length === 0 ? (
+                    <div className="bg-white border border-gray-100 rounded-xl p-6 text-center text-sm text-gray-500">
+                      Aucun bulletin généré pour le moment.
+                    </div>
+                  ) : (
+                    <>
+                      {recent.map((g) => (
+                        <GenerationCard key={g.id} generation={g} retentionDays={retentionDays} compact />
+                      ))}
+                      <p className="text-xs text-gray-500 px-1">
+                        Cliquez sur une ligne pour retélécharger l&apos;archive (disponible {retentionDays} jour{retentionDays > 1 ? "s" : ""}).
+                      </p>
+                    </>
+                  )}
+                </section>
+
+                {/* Avancement par campus */}
+                <div className="lg:col-span-2">
+                  <CampusProgress progression={stats?.progression ?? null} />
+                </div>
+              </div>
+
+            </div>
           </main>
         </div>
       </div>

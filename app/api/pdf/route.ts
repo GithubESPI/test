@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Etat, getEtatUE, getUeAverage, isNonCompensable, normalizeEtat, parseUeAverage } from "@/lib/bulletin/ue";
 import { fileStorage } from "@/lib/storage/fileStorage";
+import { prisma } from "@/lib/db/client";
+import { authOptions } from "@/lib/auth/options";
+import { getServerSession } from "next-auth";
+import { randomBytes } from "crypto";
 
 import fontkit from "@pdf-lib/fontkit";
 import fs from "fs";
@@ -117,24 +121,30 @@ interface PreloadedAssets {
   poppinsBoldBytes: Buffer | null;
   commissionerRegularBytes: Buffer | null; // charte 2026
   commissionerBoldBytes: Buffer | null;
-  ptSerifBoldBytes: Buffer | null; // charte 2026 — titres
+  ptSerifBoldBytes: Buffer | null; // charte — PT Serif Bold (sous-titres)
   signatureCache: Map<string, Buffer>;
 }
 
 const SIGNATURE_MAP: Record<string, string> = {
   "460": "christine.png",
   "482": "Ludivinelaunay.png",
-  "500": "estelle.jpg",
+  "500": "tampon.png", // tampon seul (ancien : estelle.jpg)
   "517": "signYoussefSAKER.png",
-  "2239": "marionsoustelle.png",
-  "306975": "lebon.png",
-  "89152": "magali.png",
+  "2239": "tampon.png", // tampon seul (ancien : marionsoustelle.png)
+  "306975": "tampon.png", // tampon seul (ancien : lebon.png)
+  "89152": "tampon.png", // tampon seul (ancien : magali.png)
   "650429": "Anne-Lise.png",
   "2168" : "brenda.png",
-  "1057288": "ks.png",
-  "499" : "signature.png",
+  "1057288": "tampon.png", // tampon seul (ancien : ks.png)
+  "499" : "tampon.png", // tampon seul (ancien : signature.png)
   "453" : "sebastiencostey.png" // Sébastien Costey — campus Aix-en-Provence
 };
+
+// Images « tampon » carrées (avec ou sans signature), affichées à 120 pt de large
+const STAMP_SIGNATURE_CODES = new Set([
+  "650429", "460", "517", "2168", // tampon + signature (Anne-Lise, Christine, Youssef, Brenda)
+  "500", "2239", "306975", "89152", "1057288", "499", // tampon seul
+]);
 
 // Intitulés de fonction à afficher quand celui d'Yparéo est obsolète
 // (à retirer une fois la fiche du personnel mise à jour dans Yparéo)
@@ -579,13 +589,10 @@ async function createStudentPDF(
     const pdfDoc = await PDFDocument.create();
     let page = pdfDoc.addPage([595.28, 841.89]);
 
-    // 🎨 Maquette 2026-2027+ : nouvelle charte (logo 2026, Commissioner, PT Serif pour les titres)
-    // Maquette ≤ 2025-2026 : ancienne charte (logo historique, Poppins)
-    // 🚩 Maquette 2026-2027 (nouveau logo + polices Commissioner/PT Serif) prête mais NON activée :
-    // les classes 2026-2027 ne sont pas encore créées dans Yparéo. Passer ENABLE_MAQUETTE_2026
-    // à true le moment venu pour activer automatiquement la nouvelle charte sur les bulletins ≥ 2026.
-    const ENABLE_MAQUETTE_2026 = false;
-    const useNewCharte = ENABLE_MAQUETTE_2026 && parseInt(anneeScolaire, 10) >= 2026;
+    // 🎨 Charte typographique ESPI, appliquée à TOUTES les années :
+    // Commissioner pour les titres et le texte, PT Serif pour les sous-titres.
+    // (Poppins ne sert plus que de repli si les fichiers Commissioner sont introuvables.)
+    const useNewCharte = true;
 
     // ✅ Utiliser les assets préchargés au lieu de les lire depuis le disque
     const regularBytes = useNewCharte
@@ -598,17 +605,24 @@ async function createStudentPDF(
     let embeddedRegular, embeddedBold, ptSerifBold;
     if (regularBytes && boldBytes) {
       pdfDoc.registerFontkit(fontkit);
-      embeddedRegular = await pdfDoc.embedFont(regularBytes);
-      embeddedBold = await pdfDoc.embedFont(boldBytes);
+      // ⚠️ Commissioner (OTF/CFF) : la version « allégée » (subset) de pdf-lib est défectueuse
+      // (le Bold s'affiche en Regular) → police embarquée en entier (les PDF compressent bien : ~245 Ko
+      // avec les 3 polices). Ligatures désactivées : sinon « ff », « fi »… disparaissent (« af aires »).
+      const noLigatures = { liga: false, clig: false, dlig: false, calt: false };
+      embeddedRegular = await pdfDoc.embedFont(regularBytes, { subset: false, features: noLigatures });
+      embeddedBold = await pdfDoc.embedFont(boldBytes, { subset: false, features: noLigatures });
+      // PT Serif Bold (TTF) supporte l'allègement : seuls les glyphes utilisés sont embarqués
       if (useNewCharte && assets.ptSerifBoldBytes) {
-        ptSerifBold = await pdfDoc.embedFont(assets.ptSerifBoldBytes);
+        ptSerifBold = await pdfDoc.embedFont(assets.ptSerifBoldBytes, { subset: true, features: noLigatures });
       }
     }
 
     const mainFont = embeddedRegular || (await pdfDoc.embedFont(StandardFonts.Helvetica));
     const boldFont = embeddedBold || (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
-    // Titres du bulletin : PT Serif sur la nouvelle maquette, sinon la graisse habituelle
-    const titleFont = ptSerifBold || boldFont;
+    // Titre principal : Commissioner Bold. Sous-titres (formation, période) : PT Serif Bold.
+    // (PT Serif Regular ne supporte pas l'allègement des polices : glyphes manquants.)
+    const titleFont = boldFont;
+    const subtitleFont = ptSerifBold || boldFont;
 
     const fontSize = 8;
     const fontSizeBold = 8;
@@ -619,7 +633,7 @@ async function createStudentPDF(
     let currentY = pageHeight - margin;
 
     const espiBlue = rgb(0, 73 / 255, 118 / 255); // #004976 (bleu charte ESPI)
-    const espiGray = rgb(0.925, 0.925, 0.925);
+    const espiGray = rgb(230 / 255, 237 / 255, 241 / 255); // Bleu Élévation 10 % (#E6EDF1) : fonds et traits
 
     // Filtrage des données propres à cet étudiant
     const studentGrades = grades.filter((g) => g.CODE_APPRENANT === student.CODE_APPRENANT);
@@ -707,10 +721,10 @@ async function createStudentPDF(
         page.drawImage(logoImage, { x: margin - logoOffsetLeft, y: currentY - logoDims.height, width: logoDims.width, height: logoDims.height });
         currentY -= logoDims.height;
       } else {
-        page.drawText("ESPI", { x: margin - logoOffsetLeft, y: currentY, size: 24, font: mainFont, color: rgb(0.2, 0.6, 0.6) });
+        page.drawText("ESPI", { x: margin - logoOffsetLeft, y: currentY, size: 24, font: mainFont, color: espiBlue });
       }
     } catch {
-      page.drawText("ESPI", { x: margin - logoOffsetLeft, y: currentY, size: 24, font: mainFont, color: rgb(0.2, 0.6, 0.6) });
+      page.drawText("ESPI", { x: margin - logoOffsetLeft, y: currentY, size: 24, font: mainFont, color: espiBlue });
     }
 
     // Identifiant étudiant (invisible - taille 4)
@@ -739,13 +753,13 @@ async function createStudentPDF(
       const line1 = etenduGroupe.substring(0, indexSpecialite + keyword.length);
       const line2 = etenduGroupe.substring(indexSpecialite + keyword.length).trim() + " " + period;
       currentY -= 20;
-      page.drawText(line1, { x: (pageWidth - titleFont.widthOfTextAtSize(line1, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: titleFont, color: espiBlue });
+      page.drawText(line1, { x: (pageWidth - subtitleFont.widthOfTextAtSize(line1, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: subtitleFont, color: espiBlue });
       currentY -= 15;
-      page.drawText(line2, { x: (pageWidth - titleFont.widthOfTextAtSize(line2, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: titleFont, color: espiBlue });
+      page.drawText(line2, { x: (pageWidth - subtitleFont.widthOfTextAtSize(line2, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: subtitleFont, color: espiBlue });
     } else {
       currentY -= 20;
       const periodeText = `${etenduGroupe} ${period}`;
-      page.drawText(periodeText, { x: (pageWidth - titleFont.widthOfTextAtSize(periodeText, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: titleFont, color: espiBlue });
+      page.drawText(periodeText, { x: (pageWidth - subtitleFont.widthOfTextAtSize(periodeText, fontSizeTitle)) / 2, y: currentY, size: fontSizeTitle, font: subtitleFont, color: espiBlue });
     }
 
     currentY -= 20;
@@ -884,7 +898,7 @@ async function createStudentPDF(
       page.drawLine({ start: { x: col3X, y: currentY }, end: { x: col3X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
       page.drawLine({ start: { x: col4X, y: currentY }, end: { x: col4X, y: currentY - rowHeight }, thickness: 1, color: espiGray });
 
-      page.drawText(subject.NOM_MATIERE, { x: col1X + 5, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: rgb(0, 0, 0) });
+      page.drawText(subject.NOM_MATIERE, { x: col1X + 5, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: espiBlue });
 
       // Moyenne
       let moyenne = "-";
@@ -902,7 +916,7 @@ async function createStudentPDF(
       }
 
       const moyW = mainFont.widthOfTextAtSize(moyenne, fontSize);
-      page.drawText(moyenne, { x: col2X + col2Width / 2 - moyW / 2, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: rgb(0, 0, 0) });
+      page.drawText(moyenne, { x: col2X + col2Width / 2 - moyW / 2, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: espiBlue });
 
       // État
       let etat = "-";
@@ -930,10 +944,10 @@ async function createStudentPDF(
 
       const ects = subject.CREDIT_ECTS.toString();
       const ectsW = mainFont.widthOfTextAtSize(ects, fontSize);
-      page.drawText(ects, { x: col3X + col3Width / 2 - ectsW / 2, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: rgb(0, 0, 0) });
+      page.drawText(ects, { x: col3X + col3Width / 2 - ectsW / 2, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: espiBlue });
 
       const etatFont = isUE ? boldFont : etat === "C" ? boldFont : mainFont;
-      const etatColor = etat === "C" ? espiBlue : rgb(0, 0, 0);
+      const etatColor = espiBlue;
       const etatW = mainFont.widthOfTextAtSize(etat, fontSize);
       page.drawText(etat, { x: col4X + col4Width / 2 - etatW / 2, y: currentY - 10, size: fontSize, font: etatFont, color: etatColor });
 
@@ -1076,41 +1090,20 @@ async function createStudentPDF(
         let currentMaxWidth = 120;
 
             // --- MODIFICATION ICI ---
-        if (personnelCode === "482") { 
-            scale = 0.45; 
-            currentMaxWidth = 220; 
-        } else if (personnelCode === "2239") { 
-            scale = 0.65; 
-            currentMaxWidth = 360; 
-        } else if (personnelCode === "1057288") {
-            // ✅ AGRANDISSEMENT POUR KARINE
-            scale = 0.85;           // On augmente l'échelle (0.2 par défaut -> 0.85)
-            currentMaxWidth = 1050;  // On élargit la zone pour qu'elle ne soit pas bridée
+        if (STAMP_SIGNATURE_CODES.has(codePersonnel)) {
+            // Tampon (avec ou sans signature), image carrée 500 px : toujours 120 pt de large,
+            // quelle que soit la résolution du fichier
+            scale = 120 / signatureImage.width;
+            currentMaxWidth = 120;
+        } else if (personnelCode === "482") {
+            scale = 0.45;
+            currentMaxWidth = 220;
         } else if (codePersonnel === "453") {
             // Sébastien Costey (Aix-en-Provence) — image recadrée ~437x157
             // On teste codePersonnel (résolu) et non personnelCode, car Costey peut
             // être le signataire du SITE et non du groupe
             scale = 0.35;           // ~153pt de large, ~55pt de haut
             currentMaxWidth = 160;
-        } else if (personnelCode === "2168") {
-            // On passe à une échelle très haute pour compenser le vide dans l'image
-            scale = 1.2;            
-            currentMaxWidth = 1000; // On s'assure qu'aucune limite ne la réduit
-            
-            // On court-circuite le calcul "if (scaleByWidth.width > currentMaxWidth)" 
-            // en appliquant directement les dimensions voulues
-            // Nouvelle signature avec tampon (image carrée) : on garde les proportions
-            const signatureDims = { width: 120, height: 120 * (signatureImage.height / signatureImage.width) };
-
-            page.drawText(`Signature ${getArticlePourFonction(nomFonctionPersonnel)} ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 15, size: 7, font: mainFont });
-            page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 27, size: 7, font: boldFont });
-
-            page.drawImage(signatureImage, {
-                x: pageWidth - margin - 210, // Un peu plus à gauche pour centrer si c'est large
-                y: signatureY - 45 - signatureDims.height, 
-                width: signatureDims.width, 
-                height: signatureDims.height 
-            });
         } else {
             const ow = signatureImage.width;
             if (ow > 400) scale = 0.15;
@@ -1134,7 +1127,7 @@ async function createStudentPDF(
     }
 
     // Légende
-    page.drawText("VA : Validé / NV : Non Validé / C : Compensation", { x: margin, y: 25, size: 7, font: mainFont, color: rgb(0.5, 0.5, 0.5) });
+    page.drawText("VA : Validé / NV : Non Validé / C : Compensation", { x: margin, y: 25, size: 7, font: mainFont, color: rgb(89 / 255, 137 / 255, 166 / 255) });
 
     return await pdfDoc.save();
   } catch (error) {
@@ -1147,7 +1140,59 @@ async function createStudentPDF(
 // HANDLER POST
 // ============================================================
 
+// ============================================================
+// 🚦 Limite de générations simultanées (par instance)
+// La génération est gourmande en CPU/RAM sur un process Node à un seul fil :
+// au-delà de MAX_CONCURRENT_GENERATIONS, les demandes attendent leur tour
+// (au lieu de tout ralentir / planter), et abandonnent proprement après MAX_QUEUE_WAIT_MS.
+// ============================================================
+const MAX_CONCURRENT_GENERATIONS = 2;
+const MAX_QUEUE_WAIT_MS = 90_000;
+let activeGenerations = 0;
+const waitQueue: Array<() => void> = [];
+
+function acquireGenerationSlot(): Promise<boolean> {
+  if (activeGenerations < MAX_CONCURRENT_GENERATIONS) {
+    activeGenerations++;
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    const grant = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      const idx = waitQueue.indexOf(grant);
+      if (idx >= 0) waitQueue.splice(idx, 1);
+      resolve(false);
+    }, MAX_QUEUE_WAIT_MS);
+    waitQueue.push(grant);
+  });
+}
+
+function releaseGenerationSlot() {
+  const next = waitQueue.shift();
+  if (next) next(); // le créneau passe directement au suivant
+  else activeGenerations--;
+}
+
 export async function POST(req: NextRequest) {
+  const gotSlot = await acquireGenerationSlot();
+  if (!gotSlot) {
+    return NextResponse.json(
+      { error: "Le serveur est très sollicité. Veuillez réessayer dans une minute." },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+  try {
+    return await generateBulletins(req);
+  } finally {
+    releaseGenerationSlot();
+  }
+}
+
+async function generateBulletins(req: NextRequest) {
+  const tStart = Date.now();
   try {
     const body = await req.json();
 
@@ -1293,21 +1338,25 @@ export async function POST(req: NextRequest) {
             const filename = `${anneeScolaire}_${nomFormation}_${nomAnnee}_${periodClean}_${student.NOM_APPRENANT}_${student.PRENOM_APPRENANT}.pdf`;
             return { success: true, pdfBytes, filename, student };
           } catch (error) {
-            console.error(`❌ Erreur PDF pour ${student.NOM_APPRENANT}:`, error);
+            console.error(`❌ Erreur PDF pour l'apprenant ${student.CODE_APPRENANT}:`, error);
             return { success: false, pdfBytes: null, filename: "", student };
           }
         })
       );
 
       pdfResults.push(...batchResults);
+
+      // Rend la main à la boucle d'événements entre deux lots : les autres requêtes
+      // (listes, connexion, autres utilisateurs) ne restent pas bloquées pendant la génération
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
+    const tPdfDone = Date.now();
 
     // Ajout des PDFs au ZIP
     for (const result of pdfResults) {
       if (result.success && result.pdfBytes) {
         zip.file(result.filename, result.pdfBytes);
         successCount++;
-        console.log(`📄 PDF ajouté: ${result.filename}`);
       } else {
         failureCount++;
       }
@@ -1321,18 +1370,40 @@ export async function POST(req: NextRequest) {
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
-    let groupNameForFilename = data.GROUPE?.[0]?.NOM_GROUPE || groupName;
-    let periodNameForFilename = data.MOYENNES_UE?.[0]?.NOM_PERIODE_EVALUATION || periodeEvaluation;
+    // 📚 Historique : la génération est enregistrée ICI (et non plus par le navigateur) pour que
+    // le ZIP soit rattaché à sa ligne d'historique : nom de fichier = gen_<id de la génération>.zip.
+    // Si l'enregistrement échoue, on ne bloque pas la génération : ZIP « tmp_ » à nom aléatoire.
+    let zipId = `tmp_${randomBytes(12).toString("hex")}.zip`;
+    try {
+      const session = await getServerSession(authOptions);
+      const user = session?.user?.email
+        ? await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } })
+        : null;
+      if (user) {
+        const campusLabel =
+          (typeof body.campusLabel === "string" && body.campusLabel.trim()) || data.SITE?.[0]?.NOM_SITE || "Campus";
+        const generation = await prisma.generation.create({
+          data: {
+            userId: user.id,
+            campus: campusLabel.slice(0, 100),
+            groupe: String(groupName).slice(0, 200),
+            periode: `${periodeEvaluation} (${anneeScolaire})`.slice(0, 200),
+            nbBulletins: successCount,
+          },
+        });
+        zipId = `gen_${generation.id}.zip`;
+      }
+    } catch (err) {
+      console.error("⚠️ Enregistrement de l'historique impossible (génération non bloquée) :", err);
+    }
+    const tZipDone = Date.now();
 
-    const sanitizedGroupName = groupNameForFilename.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
-    const sanitizedPeriod = periodNameForFilename.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
-    const zipId = `bulletins_${sanitizedGroupName}_${sanitizedPeriod}.zip`;
-
+    // storeFile lève une erreur si l'écriture échoue : inutile de revérifier avec hasFile (aller-retour réseau en plus)
     await fileStorage.storeFile(zipId, zipBuffer, "application/zip");
 
-    if (!await fileStorage.hasFile(zipId)) {
-      return NextResponse.json({ success: false, error: "Erreur lors du stockage du fichier ZIP" }, { status: 500 });
-    }
+    console.log(
+      `⏱️ ${successCount} bulletins — PDF: ${tPdfDone - tStart}ms | ZIP: ${tZipDone - tPdfDone}ms | Stockage: ${Date.now() - tZipDone}ms | Total: ${Date.now() - tStart}ms | ZIP: ${Math.round(zipBuffer.length / 1024)} Ko`
+    );
 
     return NextResponse.json({
       path: `/api/download?id=${zipId}`,

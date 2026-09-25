@@ -23,11 +23,20 @@ const config: Config = {
         serif: ["var(--font-pt-serif)", "Georgia", "serif"],
       },
       colors: {
+        // 🎨 Palette officielle ESPI (charte graphique) — teintes = couleur mélangée à du blanc
         espi: {
-          DEFAULT: "#004976", // bleu charte ESPI
-          dark: "#002a44",
-          hover: "#003757",
-          light: "#e6edf4",
+          DEFAULT: "#004976", // Bleu Élévation (Pantone 7693 C / RAL 5010)
+          90: "#195B84", // filigrane sur aplat (90 %-80 %)
+          80: "#336D91",
+          65: "#5989A6", // annotations (65 %-50 %)
+          50: "#80A4BB",
+          25: "#BFD2DD", // encadrés (25 %-5 %)
+          10: "#E6EDF1",
+          5: "#F2F6F8", // filigrane sur page (10 %-5 %)
+          // Palette secondaire — à associer au Bleu Élévation ou au noir, avec un contraste suffisant
+          rose: { DEFAULT: "#FF7D97", 80: "#FF97AC", 50: "#FFBECB", 25: "#FFDFE5" }, // Rose Visionnaire
+          ocre: { DEFAULT: "#FFB461", 80: "#FFC381", 50: "#FFDAB0", 25: "#FFECD8" }, // Ocre Académique
+          excellence: { DEFAULT: "#47B5E0", 80: "#6CC4E6", 50: "#A3DAF0", 25: "#D1EDF7" }, // Bleu Excellence
         },
         background: "var(--background)",
         foreground: "var(--foreground)",
@@ -49,7 +58,7 @@ const config: Config = {
           foreground: "var(--secondary-foreground)",
         },
         third: {
-          "50": "#002a44",
+          "50": "#004976",
           DEFAULT: "var(--primary)",
           foreground: "var(--primary-foreground)",
         },

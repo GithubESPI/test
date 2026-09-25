@@ -1,18 +1,23 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { RETENTION_MINUTES } from "./retention";
 
 // ============================================================
 // DÉTECTION DU MODE : Azure Blob ou stockage local
 // ============================================================
 
-const USE_AZURE = !!process.env.AZURE_STORAGE_CONNECTION_STRING;
+// En développement, on n'écrit PAS dans le partage Azure de production (même si la chaîne de
+// connexion est dans .env) : stockage local. Pour forcer Azure en local : FORCE_AZURE_STORAGE=1.
+const USE_AZURE =
+  !!process.env.AZURE_STORAGE_CONNECTION_STRING &&
+  (process.env.NODE_ENV === "production" || process.env.FORCE_AZURE_STORAGE === "1");
 const SHARE_NAME = "bulletins"; // partage Azure Files (compte de type FileStorage)
-const MAX_AGE_MINUTES = 60;
+const MAX_AGE_MINUTES = RETENTION_MINUTES; // durée de conservation des ZIP (cf. retention.ts)
 
 if (!USE_AZURE) {
   console.warn(
-    "[fileStorage] AZURE_STORAGE_CONNECTION_STRING absent → stockage local activé (1 instance max)"
+    "[fileStorage] Stockage local activé (Azure désactivé : chaîne absente ou mode développement)"
   );
 }
 
@@ -212,18 +217,34 @@ const azureStore = {
 // API UNIFIÉE — même interface async pour le reste de l'app
 // ============================================================
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export const fileStorage = {
   async storeFile(id: string, data: Buffer, contentType?: string): Promise<void> {
-    if (USE_AZURE) return azureStore.storeFile(id, data, contentType);
+    if (!USE_AZURE) return localStore.storeFile(id, data, contentType);
+
+    // Azure Files : 3 tentatives (une coupure réseau / DNS passagère ne doit pas
+    // faire perdre toute la génération), puis repli sur le stockage local de l'instance.
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await azureStore.storeFile(id, data, contentType);
+      } catch (err) {
+        lastError = err;
+        console.error(`[fileStorage] Écriture Azure échouée (tentative ${attempt}/3) :`, (err as Error).message);
+        if (attempt < 3) await sleep(500 * attempt);
+      }
+    }
+    console.error("[fileStorage] Azure indisponible → repli sur le stockage local de cette instance", lastError);
     return localStore.storeFile(id, data, contentType);
   },
   async hasFile(id: string): Promise<boolean> {
-    if (USE_AZURE) return azureStore.hasFile(id);
-    return localStore.hasFile(id);
+    if (!USE_AZURE) return localStore.hasFile(id);
+    return (await azureStore.hasFile(id)) || (await localStore.hasFile(id));
   },
   async getFile(id: string): Promise<{ data: Buffer; contentType: string } | null> {
-    if (USE_AZURE) return azureStore.getFile(id);
-    return localStore.getFile(id);
+    if (!USE_AZURE) return localStore.getFile(id);
+    return (await azureStore.getFile(id)) ?? (await localStore.getFile(id));
   },
   async deleteFile(id: string): Promise<boolean> {
     if (USE_AZURE) return azureStore.deleteFile(id);

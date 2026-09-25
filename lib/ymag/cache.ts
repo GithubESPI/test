@@ -16,8 +16,24 @@ import { prisma } from "@/lib/db/client";
 export async function withYmageCache<T>(
   key: string,
   ttlSec: number,
-  fetchFn: () => Promise<T>
+  fetchFn: () => Promise<T>,
+  options: { freshSec?: number } = {}
 ): Promise<{ data: T; fromCache: boolean }> {
+  // ── 0. Cache frais → servi directement, sans appeler Ymag ────────────────
+  // (uniquement si freshSec est fourni : pour les listes quasi statiques)
+  if (options.freshSec && options.freshSec > 0) {
+    try {
+      const cached = await prisma.ymageCache.findUnique({ where: { key } });
+      if (cached && Date.now() - cached.updatedAt.getTime() < options.freshSec * 1000) {
+        // fromCache reste false : ce n'est pas un repli (Ymag n'est pas en panne),
+        // sinon les routes afficheraient « Ymag temporairement inaccessible ».
+        return { data: cached.data as T, fromCache: false };
+      }
+    } catch (dbError) {
+      console.error(`⚠️ DB error reading fresh cache "${key}":`, dbError);
+    }
+  }
+
   // ── 1. Try live Ymag API ─────────────────────────────────────────────────
   try {
     const data = await fetchFn();

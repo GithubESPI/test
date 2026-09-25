@@ -18,8 +18,8 @@ export default async function Page() {
           <div className="flex flex-col items-center gap-4">
             <Image src="/images/espi-logo.png" alt="ESPI" width={180} height={75} className="h-16 w-auto" priority />
             <div className="text-center">
-              <h1 className="text-xl font-semibold text-gray-900 font-serif">Bulletins scolaires</h1>
-              <p className="text-sm text-gray-500 mt-1">Connectez-vous avec votre compte ESPI</p>
+              <h1 className="text-xl font-semibold text-gray-900">Bulletins scolaires</h1>
+              <p className="text-sm text-gray-500 mt-1 font-serif">Connectez-vous avec votre compte ESPI</p>
             </div>
           </div>
 

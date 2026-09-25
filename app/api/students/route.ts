@@ -34,7 +34,8 @@ export async function GET() {
 
         const data = await response.json();
         return Array.isArray(data) ? data : Object.values(data as object);
-      }
+      },
+      { freshSec: 3600 } // servi depuis la base pendant 1 h sans rappeler Ymag
     );
 
     return NextResponse.json(sitesArray, {

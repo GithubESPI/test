@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { CheckCircle2, FileDown, FileText, Loader2, XCircle, ChevronLeft } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 
 // ============================================================
@@ -215,7 +215,7 @@ function StepIndicator({ step, label, status }: { step: number; label: string; s
     <div className="flex items-start gap-3">
       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium shrink-0 mt-0.5 ${
         status === "done" ? "bg-[#004976] text-white" :
-        status === "current" ? "bg-white text-[#002a44] font-semibold" :
+        status === "current" ? "bg-white text-[#004976] font-semibold" :
         "bg-white/10 text-white/40"
       }`}>
         {status === "done" ? "✓" : step}
@@ -238,7 +238,6 @@ function StepIndicator({ step, label, status }: { step: number; label: string; s
 export default function FormPage() {
   const { data: session } = useSession();
   const [state, dispatch] = useReducer(reducer, initialState);
-  const retrievedDataRef = useRef<any>(null);
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const completeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -269,9 +268,9 @@ export default function FormPage() {
         const now = new Date();
         const allSessions: AcademicSession[] = sessionsData.success ? sessionsData.data : [];
         const started = allSessions.filter((s) => new Date(s.DATE_DEB) <= now);
-        // 🚩 Prochaine rentrée (2026-2027) non proposée tant que la maquette n'est pas activée
-        // (cf. ENABLE_MAQUETTE_2026 dans app/api/pdf/route.ts). Passer à true le moment venu.
-        const SHOW_NEXT_SESSION = false;
+        // ✅ Maquette 2026 activée (cf. ENABLE_MAQUETTE_2026 dans app/api/pdf/route.ts) :
+        // la prochaine rentrée est proposée dès qu'elle existe dans Yparéo.
+        const SHOW_NEXT_SESSION = true;
         const nextSession = SHOW_NEXT_SESSION
           ? allSessions
               .filter((s) => new Date(s.DATE_DEB) > now)
@@ -358,6 +357,64 @@ export default function FormPage() {
       dispatch({ type: "SET_GROUP_PERIODS", periods: [] });
     }
   }, [state.session]);
+
+  // 🔗 Préremplissage depuis le tableau de bord : /configure/form?campus=…&annee=…&periode=…
+  // Année et campus sont sélectionnés automatiquement ; la période est choisie dès que le groupe
+  // (qui reste à l'utilisateur) est sélectionné, car les périodes dépendent du groupe.
+  const prefillRef = useRef<{ campus?: string; annee?: string; periode?: string } | null>(null);
+  const prefillGroupRef = useRef<string>("");
+  const [prefillInfo, setPrefillInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const campus = params.get("campus") || undefined;
+    const annee = params.get("annee") || undefined;
+    const periode = params.get("periode") || undefined;
+    if (campus || annee || periode) prefillRef.current = { campus, annee, periode };
+  }, []);
+
+  useEffect(() => {
+    const p = prefillRef.current;
+    if (!p || state.isLoading || state.isLoadingGroups) return;
+
+    // 1) Année académique
+    if (p.annee) {
+      const wanted = p.annee;
+      p.annee = undefined;
+      const target = state.sessions.find((s) => s.NOM_SESSION === wanted);
+      if (!target) {
+        setPrefillInfo(`L'année ${wanted} n'est pas encore disponible dans ce formulaire : choisissez la sélection manuellement.`);
+        prefillRef.current = null;
+        return;
+      }
+      if (target.CODE_SESSION !== state.session) {
+        handleSessionChange(target.CODE_SESSION); // recharge les groupes, cet effet reprend ensuite
+        return;
+      }
+    }
+
+    // 2) Campus
+    if (p.campus) {
+      const wanted = p.campus.trim().toLowerCase();
+      p.campus = undefined;
+      const campus = state.campuses.find((c) => c.label.trim().toLowerCase() === wanted);
+      if (campus) {
+        handleCampusChange(campus.id);
+        setPrefillInfo(`Sélection préremplie : ${campus.label}${p.periode ? ` · ${p.periode}` : ""}. Il ne reste qu'à choisir le groupe.`);
+      }
+    }
+  }, [state.isLoading, state.isLoadingGroups, state.sessions, state.session, state.campuses, handleSessionChange, handleCampusChange]);
+
+  // 3) Période : sélectionnée automatiquement une fois le groupe choisi et ses périodes chargées
+  useEffect(() => {
+    const p = prefillRef.current;
+    if (!p?.periode || !state.group || state.isLoadingPeriods || state.semester) return;
+    if (prefillGroupRef.current === state.group) return; // une seule fois par groupe choisi
+    prefillGroupRef.current = state.group;
+    const wanted = p.periode.trim().toLowerCase();
+    const match = state.groupPeriods.find((x) => x.NOM_PERIODE_EVALUATION.trim().toLowerCase() === wanted);
+    if (match) dispatch({ type: "SET_SEMESTER", semester: match.CODE_PERIODE_EVALUATION });
+  }, [state.group, state.groupPeriods, state.isLoadingPeriods, state.semester]);
 
   const SQL_STEPS = [
     "Connexion à YParéo...",
@@ -481,6 +538,7 @@ export default function FormPage() {
             data: sqlData,
             periodeEvaluation: selectedPeriod.NOM_PERIODE_EVALUATION,
             groupName: selectedGroup.label,
+            campusLabel: selectedCampus.label,
             periodeEvaluationDates: selectedPeriod,
             anneeScolaire: selectedSession.NOM_SESSION,
             sessionDates: {
@@ -496,17 +554,7 @@ export default function FormPage() {
       const pdfJson = await pdfRes.json();
       if (!pdfRes.ok) throw new Error(pdfJson.error || "Erreur lors de la génération des bulletins.");
 
-      // Enregistrement en BDD — silencieux, ne bloque pas le téléchargement
-      fetch("/api/generations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          campus: selectedCampus.label,
-          groupe: selectedGroup.label,
-          periode: `${selectedPeriod.NOM_PERIODE_EVALUATION} (${selectedSession.NOM_SESSION})`,
-          nbBulletins: pdfJson.studentCount,
-        }),
-      }).catch(() => {});
+      // L'historique est désormais enregistré côté serveur par /api/pdf (rattaché au ZIP)
 
       dispatch({ type: "SET_OVERLAY_PROGRESS", progress: 100 });
 
@@ -588,7 +636,7 @@ export default function FormPage() {
                 <div key={i} className="flex items-center gap-2.5">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all ${
                     s.status === "done"    ? "bg-[#004976] text-white" :
-                    s.status === "current" ? "bg-[#e6edf4] text-[#004976] ring-2 ring-[#004976]/30" :
+                    s.status === "current" ? "bg-[#E6EDF1] text-[#004976] ring-2 ring-[#004976]/30" :
                                             "bg-gray-100 text-gray-300"
                   }`}>
                     {s.status === "done" ? "✓" : i + 1}
@@ -612,7 +660,7 @@ export default function FormPage() {
               />
             </div>
             <p className="text-xs text-gray-400 mt-2 text-center">
-              Cette opération peut prendre jusqu'à 25 secondes
+              Cette opération peut prendre jusqu&apos;à 25 secondes
             </p>
           </div>
         </div>
@@ -622,8 +670,8 @@ export default function FormPage() {
 
         {/* Sidebar */}
         <aside
-          className="w-72 bg-[#002a44] bg-cover bg-center flex flex-col py-8 px-5 shrink-0 min-h-screen"
-          style={{ backgroundImage: "linear-gradient(rgba(0,42,68,0.88), rgba(0,42,68,0.88)), url('/images/espi-motif-bleu.png')" }}
+          className="hidden md:flex w-72 bg-[#004976] bg-cover bg-center flex-col sticky top-0 h-screen self-start overflow-y-auto py-8 px-5 shrink-0"
+          style={{ backgroundImage: "linear-gradient(rgba(0,73,118,0.88), rgba(0,73,118,0.88)), url('/images/espi-motif-bleu.png')" }}
         >
           {/* Back */}
           <Link
@@ -635,7 +683,7 @@ export default function FormPage() {
           </Link>
 
           <div className="mb-8">
-            <h2 className="text-white font-medium text-base font-serif">Génération de bulletins</h2>
+            <h2 className="text-white font-semibold text-base">Génération de bulletins</h2>
             <p className="text-white/40 text-xs mt-1">Suivez les étapes ci-dessous</p>
           </div>
 
@@ -679,8 +727,19 @@ export default function FormPage() {
         </aside>
 
         {/* Contenu principal */}
-        <div className="flex-1 flex items-start justify-center p-8 pt-16">
+        <div className="flex-1 min-w-0 flex items-start justify-center p-4 pt-4 sm:p-8 sm:pt-16">
           <div className="w-full max-w-md">
+
+            {/* Téléphone : retour + étape en cours (la barre latérale des étapes est masquée) */}
+            <div className="md:hidden flex items-center justify-between mb-4">
+              <Link href="/home" className="flex items-center gap-1 text-sm text-[#004976]">
+                <ChevronLeft className="w-4 h-4" />
+                Tableau de bord
+              </Link>
+              <span className="text-xs text-gray-500">
+                Étape {currentStep} sur 4
+              </span>
+            </div>
 
             {/* Progress bar */}
             <div className="w-full h-0.5 bg-gray-200 rounded-full mb-8 overflow-hidden">
@@ -690,12 +749,15 @@ export default function FormPage() {
               />
             </div>
 
-            <div className="bg-white border border-gray-100 rounded-2xl p-8 shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-2xl p-5 sm:p-8 shadow-sm">
               <div className="mb-6">
-                <h1 className="text-lg font-medium text-gray-900 font-serif">Choisir les bulletins à éditer</h1>
-                <p className="text-sm text-gray-500 mt-1">
+                <h1 className="text-lg font-semibold text-gray-900">Choisir les bulletins à éditer</h1>
+                <p className="text-sm text-gray-500 mt-1 font-serif">
                   {session?.user?.name ? `Bonjour ${session.user.name} —` : ""} Remplissez les champs ci-dessous
                 </p>
+                {prefillInfo && (
+                  <p className="text-xs text-[#004976] bg-[#E6EDF1] rounded-lg px-3 py-2 mt-3">{prefillInfo}</p>
+                )}
               </div>
 
               <div className="space-y-5">
@@ -752,7 +814,7 @@ export default function FormPage() {
 
                 {/* Période */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Période d'évaluation</label>
+                  <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Période d&apos;évaluation</label>
                   <Select
                     value={state.semester}
                     onValueChange={(v) => dispatch({ type: "SET_SEMESTER", semester: v })}
@@ -778,7 +840,7 @@ export default function FormPage() {
                 <Button
                   onClick={handleGenerate}
                   disabled={!isFormValid || state.isSubmitting || state.isGeneratingPDF}
-                  className="w-full h-10 bg-[#004976] hover:bg-[#003757] text-white font-medium text-sm disabled:opacity-40 transition-all mt-2"
+                  className="w-full h-10 bg-[#004976] hover:bg-[#336D91] text-white font-medium text-sm disabled:opacity-40 transition-all mt-2"
                 >
                   {state.isSubmitting || state.isGeneratingPDF ? (
                     <><Loader2 className="h-4 w-4 animate-spin mr-2" />Génération en cours…</>
@@ -800,8 +862,8 @@ export default function FormPage() {
       <Dialog open={state.modal === "pdfSuccess"} onOpenChange={() => dispatch({ type: "CLOSE_MODAL" })}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="w-5 h-5" /> Bulletins générés
+            <DialogTitle className="flex items-center gap-2 text-[#004976]">
+              <CheckCircle2 className="w-5 h-5 text-[#47B5E0]" /> Bulletins générés
             </DialogTitle>
             <DialogDescription>
               <span className="font-medium text-gray-900">{state.pdfStudentCount} bulletin{state.pdfStudentCount > 1 ? "s" : ""}</span>{" "}
@@ -813,11 +875,11 @@ export default function FormPage() {
 
           {/* Bandeau d'avertissement si données issues du cache (Ymag KO) */}
           {state.pdfFromCache && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+            <div className="flex items-start gap-2 rounded-lg border border-[#FFB461] bg-[#FFECD8] px-3 py-2.5 text-xs text-[#004976]">
               <span className="text-sm leading-none mt-0.5">⚠️</span>
               <span>
                 YParéo était momentanément indisponible : ces bulletins ont été générés à partir des{" "}
-                <span className="font-semibold">dernières données enregistrées</span>. Vérifiez qu'elles sont à jour.
+                <span className="font-semibold">dernières données enregistrées</span>. Vérifiez qu&apos;elles sont à jour.
               </span>
             </div>
           )}
@@ -831,7 +893,7 @@ export default function FormPage() {
                   dispatch({ type: "SHOW_ERROR", message: "Erreur lors du téléchargement." });
                 }
               }}
-              className="bg-[#004976] hover:bg-[#003757]"
+              className="bg-[#004976] hover:bg-[#336D91]"
             >
               <FileDown className="mr-2 h-4 w-4" /> Re-télécharger le ZIP
             </Button>
@@ -843,8 +905,8 @@ export default function FormPage() {
       <Dialog open={state.modal === "error"} onOpenChange={() => dispatch({ type: "CLOSE_MODAL" })}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <XCircle className="w-5 h-5" /> Erreur
+            <DialogTitle className="flex items-center gap-2 text-[#004976]">
+              <XCircle className="w-5 h-5 text-[#FF7D97]" /> Erreur
             </DialogTitle>
             <DialogDescription>{state.errorMessage}</DialogDescription>
           </DialogHeader>

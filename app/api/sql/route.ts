@@ -1,6 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { withYmageCache } from "@/lib/ymag/cache";
+import { z } from "zod";
+
+const entierPositif = z.coerce.number().int().positive();
+
+const sqlParamsSchema = z.object({
+  campus: entierPositif,
+  group: entierPositif,
+  periodeEvaluationCode: entierPositif.nullish(),
+  periodeEvaluation: z
+    .string()
+    .min(1)
+    .max(100)
+    // pas de caractères de contrôle ni de commentaires SQL / point-virgule
+    .refine((s) => !/[\u0000-\u001f;\\]|--|\/\*/.test(s)),
+  // 5 = 2025-2026 par défaut
+  session: z.preprocess((v) => (v === undefined || v === null || v === "" ? 5 : v), entierPositif),
+});
 
 interface FormattedData {
   timestamp: string;
@@ -59,7 +76,7 @@ async function executeQuery(query: string, token: string, timeoutMs = 30000): Pr
     try {
       const data = JSON.parse(responseText);
       return Array.isArray(data) ? data : Object.values(data);
-    } catch (parseError) {
+    } catch {
       throw new Error(`Erreur de parsing JSON: ${responseText}`);
     }
   } catch (error: unknown) {
@@ -74,10 +91,24 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const campus = body.campus;
-    const group = body.group;
-    const periodeEvaluationCode = body.periodeEvaluationCode;
-    const periodeEvaluation = body.periodeEvaluation;
+    // 🔒 Validation stricte : ces valeurs sont insérées dans des requêtes SQL.
+    // Les identifiants doivent être des entiers positifs, le nom de période une chaîne
+    // courte dont les apostrophes sont doublées (échappement SQL standard).
+    const parsed = sqlParamsSchema.safeParse({
+      campus: body.campus,
+      group: body.group,
+      periodeEvaluationCode: body.periodeEvaluationCode,
+      periodeEvaluation: body.periodeEvaluation,
+      session: body.session,
+    });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Paramètres invalides", details: parsed.error.issues.map((i) => i.path.join(".")).join(", ") },
+        { status: 400 }
+      );
+    }
+    const { campus, group, periodeEvaluationCode } = parsed.data;
+    const periodeEvaluation = parsed.data.periodeEvaluation?.replace(/'/g, "''");
     const semester = body.semester?.toString() || "s1";
 
     // 📅 Dates du SEMESTRE sélectionné — pour ne compter que les absences de CE semestre
@@ -88,7 +119,7 @@ export async function POST(request: Request) {
     };
     const periodeDates = body.periodeEvaluationDates;
     // 📆 Année académique (CODE_SESSION Yparéo) — 5 = 2025-2026 par défaut
-    const session = Number(body.session) || 5;
+    const session = parsed.data.session;
     const sessionDates = body.sessionDates;
     const absStart =
       toYMD(periodeDates?.DATE_DEB) || toYMD(sessionDates?.DATE_DEB) || "2025-08-25"; // fallback année scolaire

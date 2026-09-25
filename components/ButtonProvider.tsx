@@ -26,11 +26,11 @@ const ButtonsProvider = () => {
     <div className="flex flex-col space-y-4">
       <Button
         onClick={() => handleSignIn("azure-ad")}
-        className="w-full bg-[#004976] flex items-center justify-center border border-bg-primary-50 rounded-md p-6 mb-6 transition hover:bg-[#002a44]"
+        className="w-full bg-[#004976] flex items-center justify-center border border-bg-primary-50 rounded-md p-6 mb-6 transition hover:bg-[#004976]"
         disabled={loading}
       >
         {loading ? (
-          <FaSpinner className="h-4 w-4 mr-2 animate-spin bg-[#002a44]" />
+          <FaSpinner className="h-4 w-4 mr-2 animate-spin bg-[#004976]" />
         ) : (
           <VscAzure className="h-4 w-4 mr-2" />
         )}

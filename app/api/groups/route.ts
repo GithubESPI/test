@@ -29,7 +29,8 @@ export async function GET(request: Request) {
             Accept: "application/json",
           },
         });
-      }
+      },
+      { freshSec: 900 } // servi depuis la base pendant 15 min sans rappeler Yparéo
     );
 
     const headers: Record<string, string> = {
