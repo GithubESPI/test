@@ -234,6 +234,8 @@ export async function POST(request: Request) {
             INNER JOIN EVALUATION_NOTE en2 ON n2.CODE_EVALUATION_NOTE = en2.CODE_EVALUATION_NOTE
             WHERE n2.CODE_APPRENANT = ap.CODE_APPRENANT
               AND n2.CODE_REFERENTIEL_DETAIL = rd.CODE_REFERENTIEL_DETAIL
+            -- Plusieurs contrôles : un "Non Validé" l'emporte sur un "Validé"
+            ORDER BY CASE WHEN en2.NOM_EVALUATION_NOTE LIKE 'Non%' THEN 0 ELSE 1 END
           ) AS NOM_EVALUATION_NOTE
         FROM GROUPE g 
         INNER JOIN REFERENTIEL r ON g.CODE_FORMATION = r.CODE_FORMATION 

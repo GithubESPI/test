@@ -122,10 +122,10 @@ interface PreloadedAssets {
 }
 
 const SIGNATURE_MAP: Record<string, string> = {
-  "460": "christine.jpg",
-  "482": "ludivinelaunay.png",
+  "460": "christine.png",
+  "482": "Ludivinelaunay.png",
   "500": "estelle.jpg",
-  "517": "signYoussefSAKER.jpg",
+  "517": "signYoussefSAKER.png",
   "2239": "marionsoustelle.png",
   "306975": "lebon.png",
   "89152": "magali.png",
@@ -142,6 +142,15 @@ const FONCTION_OVERRIDES: Record<string, string> = {
   "2168": "Directrice pédagogique", // Brenda ZARZOSA ARGUIJO — Yparéo indique encore "Chargé.e Enseignement & Suivi Péda"
 };
 
+// Matière évaluée par plusieurs contrôles sans note : un "Non Validé" l'emporte sur un "Validé"
+function findGradePrioriteNV(grades: any[], codeApprenant: any, codeMatiere: any): any {
+  const rows = grades.filter((g) => g.CODE_APPRENANT === codeApprenant && g.CODE_MATIERE === codeMatiere);
+  return (
+    rows.find((g) => /^non\s*valid/i.test(String(g.NOM_EVALUATION_NOTE || "").trim()) || String(g.MOYENNE).toUpperCase() === "NV") ||
+    rows[0]
+  );
+}
+
 // Détermine l'article correct ("du" / "de la") selon le genre du premier mot de la fonction
 // (ex: "Directrice pédagogique" → "de la", "Responsable pédagogique" → "du")
 function getArticlePourFonction(fonction: string): string {
@@ -157,9 +166,9 @@ async function preloadAssets(): Promise<PreloadedAssets> {
   // Logo — fallback vers un buffer vide si le fichier est absent en production
   let logoBytes: Buffer;
   try {
-    logoBytes = await fs.promises.readFile(path.join(publicDir, "logo", "espi.jpg"));
+    logoBytes = await fs.promises.readFile(path.join(publicDir, "logo", "espi-logo.png"));
   } catch (err) {
-    console.error("⚠️ Logo ESPI introuvable :", path.join(publicDir, "logo", "espi.jpg"), err);
+    console.error("⚠️ Logo ESPI introuvable :", path.join(publicDir, "logo", "espi-logo.png"), err);
     logoBytes = Buffer.alloc(0);
   }
 
@@ -609,7 +618,7 @@ async function createStudentPDF(
     const pageHeight = page.getHeight();
     let currentY = pageHeight - margin;
 
-    const espiBlue = rgb(0.04, 0.36, 0.51);
+    const espiBlue = rgb(0, 73 / 255, 118 / 255); // #004976 (bleu charte ESPI)
     const espiGray = rgb(0.925, 0.925, 0.925);
 
     // Filtrage des données propres à cet étudiant
@@ -624,7 +633,7 @@ async function createStudentPDF(
     for (const { matieres } of ueMap.values()) {
       for (const m of matieres) {
         let finalEtat: string = "NV";
-        const gradeInfo = grades.find(g => g.CODE_APPRENANT === student.CODE_APPRENANT && g.CODE_MATIERE === m.CODE_MATIERE);
+        const gradeInfo = findGradePrioriteNV(grades, student.CODE_APPRENANT, m.CODE_MATIERE);
         const noteInfo = notes?.find(n => n.CODE_APPRENANT === student.CODE_APPRENANT && n.CODE_MATIERE === m.CODE_MATIERE);
         const evalText = gradeInfo?.NOM_EVALUATION_NOTE || "";
         const moyenneRaw = gradeInfo?.MOYENNE;
@@ -689,15 +698,12 @@ async function createStudentPDF(
     const logoOffsetLeft = 20;
     currentY = pageHeight - margin / 2;
     try {
-      const logoSourceBytes = useNewCharte && assets.logoNewBytes.length > 0 ? assets.logoNewBytes : assets.logoBytes;
+      // Toutes les années : logo public/logo/espi-logo.png (PNG)
+      const logoSourceBytes = assets.logoBytes;
       if (logoSourceBytes.length > 0) {
-        const logoImage = useNewCharte && assets.logoNewBytes.length > 0
-          ? await pdfDoc.embedPng(logoSourceBytes)
-          : await pdfDoc.embedJpg(logoSourceBytes);
-        // Nouveau logo calé sur la même hauteur (~57 pt) que l'ancien rendu à l'échelle 0.25
-        const logoDims = useNewCharte && assets.logoNewBytes.length > 0
-          ? { width: 137, height: (logoImage.height / logoImage.width) * 137 }
-          : logoImage.scale(0.25);
+        const logoImage = await pdfDoc.embedPng(logoSourceBytes);
+        // Logo calé sur une hauteur d'environ 57 pt
+        const logoDims = { width: 137, height: (logoImage.height / logoImage.width) * 137 };
         page.drawImage(logoImage, { x: margin - logoOffsetLeft, y: currentY - logoDims.height, width: logoDims.width, height: logoDims.height });
         currentY -= logoDims.height;
       } else {
@@ -796,7 +802,7 @@ async function createStudentPDF(
     const allSubjects = subjects
       .filter((s) => s.CODE_APPRENANT === student.CODE_APPRENANT)
       .map((subject) => {
-        const note = grades.find((g) => g.CODE_APPRENANT === student.CODE_APPRENANT && g.CODE_MATIERE === subject.CODE_MATIERE);
+        const note = findGradePrioriteNV(grades, student.CODE_APPRENANT, subject.CODE_MATIERE);
         return {
           CODE_MATIERE: subject.CODE_MATIERE,
           NOM_MATIERE: subject.NOM_MATIERE,
@@ -927,7 +933,7 @@ async function createStudentPDF(
       page.drawText(ects, { x: col3X + col3Width / 2 - ectsW / 2, y: currentY - 10, size: fontSize, font: isUE ? boldFont : mainFont, color: rgb(0, 0, 0) });
 
       const etatFont = isUE ? boldFont : etat === "C" ? boldFont : mainFont;
-      const etatColor = etat === "C" ? rgb(0.04, 0.36, 0.51) : rgb(0, 0, 0);
+      const etatColor = etat === "C" ? espiBlue : rgb(0, 0, 0);
       const etatW = mainFont.widthOfTextAtSize(etat, fontSize);
       page.drawText(etat, { x: col4X + col4Width / 2 - etatW / 2, y: currentY - 10, size: fontSize, font: etatFont, color: etatColor });
 
@@ -1093,7 +1099,8 @@ async function createStudentPDF(
             
             // On court-circuite le calcul "if (scaleByWidth.width > currentMaxWidth)" 
             // en appliquant directement les dimensions voulues
-            const signatureDims = { width: 180, height: 90 }; 
+            // Nouvelle signature avec tampon (image carrée) : on garde les proportions
+            const signatureDims = { width: 120, height: 120 * (signatureImage.height / signatureImage.width) };
 
             page.drawText(`Signature ${getArticlePourFonction(nomFonctionPersonnel)} ${nomFonctionPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 15, size: 7, font: mainFont });
             page.drawText(`${prenomPersonnel} ${nomPersonnel}`, { x: pageWidth - margin - 200, y: signatureY - 27, size: 7, font: boldFont });
